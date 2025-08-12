@@ -5,18 +5,44 @@
 # Container Scanning customization: https://docs.gitlab.com/ee/user/application_security/container_scanning/#customizing-the-container-scanning-settings
 # Note that environment variables can be set in several places
 # See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
-:stages:
-- test
-:sast:
-  :stage: test
-:include:
-- :template: Security/SAST.gitlab-ci.yml
 stages:
-- test
-- secret-detection
+  - test
+  - security
+
+image: python:3.11
+
 variables:
-  SECRET_DETECTION_ENABLED: 'true'
-secret_detection:
-  stage: secret-detection
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  # Send GitLab-managed security jobs to the "security" stage:
+  SAST_STAGE: security
+  SECRET_DETECTION_STAGE: security
+  SECRET_DETECTION_ENABLED: "true"
+
+cache:
+  paths:
+    - .cache/pip
+
+pytest:
+  stage: test
+  script:
+    - python -m pip install --upgrade pip -q
+    - pip install -r requirements-test.txt -q
+    - pytest -q
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+    paths:
+      - junit.xml
+      - .pytest_cache
+    expire_in: 1 week
+
+# GitLab-managed security jobs (pinned to "security" via variables above)
 include:
-- template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+# Optional overrides:
+# variables:
+#   SAST_EXCLUDED_PATHS: "tests/**"
+#   SECRET_DETECTION_EXCLUDED_PATHS: "data/**,*.tar.gz,*.zip"
