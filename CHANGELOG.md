@@ -1,3 +1,9 @@
+## 0.5.4 — 2025-08-12
+
+### Commits
+- feat: initial public release of PatchVec — multi-tenant, pluggable vector search microservice
+
+---
 # Changelog
 
 ## 0.5.3 — 2025-08-12

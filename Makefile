@@ -58,11 +58,11 @@ define install_main
 	@if [ "$(USE_GPU)" = "1" ]; then \
 	  echo "Installing GPU deps from $(REQ_MAIN_GPU)"; \
 	  $(PIP_BIN) install --upgrade pip; \
-	  $(PIP_BIN) install -r $(REQ_MAIN_GPU); \
+	  $(PIP_BIN) install -r $(REQ_MAIN_GPU) | grep -v "Requirement already satisfied"; \
 	else \
 	  echo "Installing CPU deps from $(REQ_MAIN_CPU)"; \
 	  $(PIP_BIN) install --upgrade pip; \
-	  $(PIP_BIN) install -r $(REQ_MAIN_CPU); \
+	  $(PIP_BIN) install -r $(REQ_MAIN_CPU) | grep -v "Requirement already satisfied"; \
 	fi
 endef
 
@@ -73,7 +73,7 @@ install: venv
 
 .PHONY: install-dev
 install-dev: install
-	@if [ -f "$(REQ_TEST)" ]; then $(PIP_BIN) install -r $(REQ_TEST); else $(PIP_BIN) install pytest httpx; fi
+	@if [ -f "$(REQ_TEST)" ]; then $(PIP_BIN) install -r $(REQ_TEST) | grep -v "Requirement already satisfied"; else $(PIP_BIN) install pytest httpx | grep -v "Requirement already satisfied"; fi
 	@echo "✅ Dev/test deps installed."
 
 .PHONY: test
