@@ -1,0 +1,6 @@
+# Untracked secrets file with tenant API keys.
+# Name it 'tenants.yml', adjust and DO NOT commit.
+# Example content:
+api_keys:
+  acme: foo
+  umbrella: bar

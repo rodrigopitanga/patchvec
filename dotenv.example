@@ -1,0 +1,48 @@
+# PatchVec — .env.example (only REQUIRED vars per profile)
+# ---------------------------------------------------------
+# Copy to `.env` and fill ONLY the section you need.
+# This file is intentionally minimal. Optional knobs (HOST/PORT/RELOAD/etc)
+# are omitted here; you can set them in the process environment if desired.
+#
+# IMPORTANT: Do NOT commit your real `.env`. It's ignored by .gitignore.
+
+# === Profile A: Development (no auth) ====================
+# No required variables.
+# (Ensure config.yml sets: auth.mode: none)
+
+# === Profile B: Production with static auth (global admin) ===
+# Use a global admin token; keep per-tenant keys in tenants.secrets.yml (untracked).
+# Enable static auth (if not already in config.yml):
+# PATCHVEC_AUTH__MODE=static
+# REQUIRED:
+# PATCHVEC_AUTH__GLOBAL_KEY=change-me-strong-random-token
+
+# === OPTIONAL (instead of GLOBAL_KEY): define tenant keys via env ===
+# This is only required if you don't use tenants.secrets.yml
+# PATCHVEC_AUTH__API_KEYS__acme=acme-secret
+# PATCHVEC_AUTH__API_KEYS__umbrella=umbrella-secret
+
+# === Profile C: Qdrant vector store (Cloud/self-host) ====
+# REQUIRED when using Qdrant (set vector_store.type=qdrant in config):
+# PATCHVEC_VECTOR_STORE__TYPE=qdrant
+# PATCHVEC_QDRANT__URL=https://your-qdrant-endpoint
+# If your endpoint requires auth:
+# PATCHVEC_QDRANT__API_KEY=your-qdrant-api-key
+
+# === Profile D: OpenAI embedder ==========================
+# REQUIRED when using OpenAI embedder:
+# PATCHVEC_EMBEDDER__TYPE=openai
+# OPENAI_API_KEY=sk-your-openai-key
+# (Optional) model/dimension overrides:
+# PATCHVEC_EMBEDDER__MODEL=text-embedding-3-small
+# PATCHVEC_EMBEDDER__DIM=1536
+
+# === Tenants file path (untracked secrets) ===============
+# If you store tenant keys in an external file (recommended for prod),
+# ensure config.yml has: auth.tenants_file: ./tenants.secrets.yml
+# You may also override via env:
+# PATCHVEC_AUTH__TENANTS_FILE=./tenants.secrets.yml
+
+# === Optional: explicit config path ======================
+# If you keep multiple configs, point to one explicitly:
+# PATCHVEC_CONFIG=./config.yml

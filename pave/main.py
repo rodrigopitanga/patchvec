@@ -1,0 +1,227 @@
+# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+from __future__ import annotations
+import json, os
+from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, Query, Depends, Request, \
+    HTTPException
+from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import BaseModel
+from typing import Optional, Dict, Any, Annotated
+from .config import CFG
+from .auth import AuthContext, auth_ctx, authorize_tenant
+from .metrics import inc, set_error, snapshot, to_prometheus
+from .stores.factory import get_store
+from .stores.base import BaseStore
+from .service import create_collection as svc_create_collection, delete_collection as svc_delete_collection, \
+    ingest_document as svc_ingest_document, do_search as svc_do_search
+
+
+VERSION = "0.5.4"
+
+class SearchBody(BaseModel):
+    q: str
+    k: int = 5
+    filters: Optional[Dict[str, Any]] = None
+
+# Dependency injection builder
+
+def build_app(cfg=CFG) -> FastAPI:
+    app = FastAPI(title="PatchVec — Vector Search (pluggable, functional)")
+    app.state.store = get_store(cfg)
+
+    def current_store(request: Request) -> BaseStore:
+        return request.app.state.store
+
+
+    # -------------------- Health --------------------
+
+    def _readiness_check() -> Dict[str, Any]:
+        details: Dict[str, Any] = {
+            "data_dir": cfg.data_dir,
+            "vector_store_type": cfg.get("vector_store.type", "txtai"),
+            "writable": False,
+            "vector_backend_init": False,
+        }
+        try:
+            os.makedirs(cfg.data_dir, exist_ok=True)
+            testfile = os.path.join(cfg.data_dir, ".writetest")
+            with open(testfile, "w", encoding="utf-8") as f:
+                f.write("ok")
+            os.remove(testfile)
+            details["writable"] = True
+        except Exception as e:
+            details["writable"] = False
+            set_error(f"fs: {e}")
+        try:
+            request_store = app.state.store
+            request_store.load_or_init("_system", "health")
+            details["vector_backend_init"] = True
+        except Exception as e:
+            details["vector_backend_init"] = False
+            set_error(f"vec: {e}")
+        details["ok"] = bool(details["writable"] and details["vector_backend_init"])
+        details["version"] = VERSION
+        return details
+
+    @app.get("/health")
+    def health():
+        d = _readiness_check()
+        status = "ready" if d.get("ok") else "degraded"
+        return {"ok": d["ok"], "status": status, "version": VERSION}
+
+    @app.get("/health/live")
+    def health_live():
+        return {"ok": True, "status": "live", "version": VERSION}
+
+    @app.get("/health/ready")
+    def health_ready():
+        d = _readiness_check()
+        code = 200 if d.get("ok") else 503
+        return JSONResponse(d, status_code=code)
+
+    @app.get("/health/metrics")
+    def health_metrics():
+        extra = {"version": VERSION, "vector_store_type": cfg.get("vector_store.type", "txtai")}
+        return snapshot(extra)
+
+    @app.get("/metrics")
+    def metrics_prom():
+        txt = to_prometheus(build={"version": VERSION, "store": cfg.get("vector_store.type", "txtai")})
+        return PlainTextResponse(txt, media_type="text/plain; version=0.0.4")
+
+    
+    # ----------------- Core API ------------------
+
+    @app.post("/collections/{tenant}/{name}")
+    def create_collection(
+        tenant: str,
+        name: str,
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        return svc_create_collection(store, tenant, name)
+
+    @app.delete("/collections/{tenant}/{name}")
+    def delete_collection_route(
+        tenant: str,
+        name: str,
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        return svc_delete_collection(store, tenant, name)
+
+    @app.post("/collections/{tenant}/{name}/documents")
+    async def upload_document(
+        tenant: str,
+        name: str,
+        file: UploadFile = File(...),
+        docid: Optional[str] = Form(None),
+        metadata: Optional[str] = Form(None),
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        content = await file.read()
+        meta_doc = {}
+        if metadata:
+            try:
+                meta_doc = json.loads(metadata)
+                if not isinstance(meta_doc, dict):
+                    meta_doc = {"_meta_raw": metadata}
+            except Exception:
+                meta_doc = {"_meta_raw": metadata}
+
+        result = svc_ingest_document(store, tenant, name, file.filename, content, docid, meta_doc)
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=result.get("error", "ingest failed"))
+        return result
+
+    # POST search (supports filters)
+    @app.post("/collections/{tenant}/{name}/search")
+    def search_route_post(
+        tenant: str,
+        name: str,
+        body: SearchBody,
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        include_common = bool(cfg.common_enabled)
+        result = svc_do_search(
+            store, tenant, name, body.q, body.k, filters=body.filters,
+            include_common=include_common, common_tenant=cfg.common_tenant, common_collection=cfg.common_collection
+        )
+        inc("search_total")
+        return JSONResponse(result)
+
+    # GET search (no filters)
+    @app.get("/collections/{tenant}/{name}/search")
+    def search_route_get(
+        tenant: str,
+        name: str,
+        q: str = Query(...),
+        k: int = Query(5, ge=1),
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        include_common = bool(cfg.common_enabled)
+        result = svc_do_search(
+            store, tenant, name, q, k, filters=None,
+            include_common=include_common, common_tenant=cfg.common_tenant, common_collection=cfg.common_collection
+        )
+        inc("search_total")
+        return JSONResponse(result)
+
+    # Common collection search
+    @app.post("/search")
+    def search_common_post(
+        body: SearchBody,
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        if not cfg.common_enabled:
+            return JSONResponse({"matches": []})
+        result = svc_do_search(store, cfg.common_tenant, cfg.common_collection, body.q, body.k, filters=body.filters)
+        inc("search_total")
+        return JSONResponse(result)
+
+    @app.get("/search")
+    def search_common_get(
+        q: str = Query(...),
+        k: int = Query(5, ge=1),
+        ctx: AuthContext = Depends(auth_ctx), 
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        if not cfg.common_enabled:
+            return JSONResponse({"matches": []})
+        result = svc_do_search(store, cfg.common_tenant, cfg.common_collection, q, k, filters=None)
+        inc("search_total")
+        return JSONResponse(result)
+
+    return app
+
+def main_srv():
+    import os, uvicorn
+    uvicorn.run(
+        "pave.main:app",
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8080")),
+        reload=os.getenv("RELOAD", "0") == "1",
+        workers=int(os.getenv("WORKERS", "1")),
+        log_level=os.getenv("LOG_LEVEL", "info"),
+    )
+def main_srv():
+    """Run PatchVec FastAPI server."""
+    app = build_app()
+    host = cfg.get("server.host", "0.0.0.0")
+    host = cfg.get("server.port", "8086")
+    uvicorn.run(app, host=host, port=port)
+
+# Default app instance for `uvicorn pave.main:app`
+app = build_app()

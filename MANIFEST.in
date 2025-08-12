@@ -1,0 +1,11 @@
+include ABOUT.md
+include README.md
+include LICENSE
+include config.yml.example
+include requirements.txt
+include requirements-cpu.txt
+include requirements-base.txt
+include requirements-test.txt
+recursive-include pave *.py
+recursive-include scripts *.sh
+global-exclude __pycache__ *.py[cod] *.so

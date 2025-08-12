@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+txtai
+pydantic
+python-multipart
+pypdf
+pyyaml
+python-dotenv
+qdrant-client
+sentence-transformers
+openai>=1.0.0
