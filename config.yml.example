@@ -1,0 +1,63 @@
+# PatchVec sample configuration (commit this file as config.yml.example)
+# Copy to config.yml and adjust. Secrets should live in a separate, untracked file (see tenants.secrets.yml.example).
+
+data_dir: ./data
+
+# Optional "common" collection included in searches when enabled
+common_enabled: true
+common_tenant: global
+common_collection: common
+
+# Authentication
+auth:
+  # Modes: none | static
+  mode: static
+  # Default admin user when auth=none
+  default_access_tenant: public
+  # Global admin key (read from env; forced NOT hardcode in committed files)
+  global_key: ${PATCHVEC_GLOBAL_KEY}
+  # External tenants→keys mapping file (untracked). If present, it
+  # will be merged and override duplicates.
+  tenants_file: ./tenants.yml
+  # Inline mapping (fallback; keep empty in repo)
+  api_keys: {}
+
+# Vector store selection
+vector_store:
+  type: default           # default | qdrant
+  txtai:
+    embed_model: sentence-transformers/paraphrase-MiniLM-L3-v2
+    backend: faiss
+  qdrant:
+    url: http://localhost:6333
+    api_key: ${PATCHVEC_QDRANT_API_KEY}
+    prefer_payload_filters: true
+    collection_prefix: patchvec_
+
+# Embedder selection
+embedder:
+  type: default           # default | sbert | openai
+  # default (txtai-backed)
+  txtai:
+    path: sentence-transformers/paraphrase-MiniLM-L3-v2
+  sbert:
+    model: sentence-transformers/all-MiniLM-L6-v2
+    batch_size: 64
+    device: auto            # cpu | cuda | auto
+  openai:
+    api_key: ${PATCHVEC_OPENAI_API_KEY}
+    dim: 1536
+
+# Text preprocessing
+preprocess:
+  txt_chunk_size: 1000
+  txt_chunk_overlap: 200
+
+# Optional server defaults
+# (env HOST/PORT/RELOAD/WORKERS/LOG_LEVEL always override)
+server:
+  host: 0.0.0.0
+  port: 8086
+  reload: false
+  workers: 1
+  log_level: info

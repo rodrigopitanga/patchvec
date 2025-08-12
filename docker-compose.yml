@@ -1,0 +1,18 @@
+services:
+  patchvec:
+    image: patchvec:0.5.4
+    build: .
+    container_name: patchvec
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./data:/app/data
+      - ./config.yml:/app/config.yml:ro
+    environment:
+      - PATCHVEC_CONFIG=/app/config.yml
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8086/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

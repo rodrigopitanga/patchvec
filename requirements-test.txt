@@ -1,0 +1,4 @@
+pytest
+httpx
+pytest-asyncio
+-r requirements-cpu.txt

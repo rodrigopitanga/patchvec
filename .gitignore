@@ -1,0 +1,54 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.artifacts/
+artifacts/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+#*#
+
+# Local data & indices
+data/
+**/index/
+**/catalog.json
+**/meta.json
+
+# Caches
+.cache/
+.huggingface/
+hf_cache/
+transformers_cache/
+
+# Local env/config (keep only examples in VCS)
+.env
+*.env
+config.yml
+tenants.secrets.yml
+!config.yml.example
+!tenants.secrets.yml.example
+
+# Logs
+*.log
+logs/
