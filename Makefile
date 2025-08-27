@@ -2,9 +2,9 @@
 # External name: patchvec ; internal package: pave
 # CPU-only by default for dev. Set USE_GPU=1 to install GPU deps instead.
 
-PYTHON          ?= python
+PYTHON          ?= python3
 PIP             ?= $(PYTHON) -m pip
-UVICORN         ?= $(PYTHON) -m uvicorn
+UVICORN         ?= uvicorn
 PKG_NAME        ?= patchvec
 PKG_INTERNAL    ?= pave
 
@@ -31,6 +31,14 @@ DIST_DIR        := dist
 BUILD_DIR       := build
 ART_DIR         := artifacts
 
+# Docker / publish
+REGISTRY        ?=                  # e.g. registry.gitlab.com/<group>/patchvec
+IMAGE_NAME      ?= $(PKG_NAME)
+DOCKERFILE      ?= Dockerfile
+CONTEXT         ?= .
+PUSH_LATEST     ?= 1
+DOCKER_PUBLISH  ?= 0               # set to 1 to publish during `make release`
+
 .PHONY: help
 help:
 	@echo "🍰 PatchVec Make Targets"
@@ -38,31 +46,37 @@ help:
 	@echo "  install         Install runtime deps (CPU by default; USE_GPU=1 for GPU)"
 	@echo "  install-dev     Install dev/test deps (CPU by default; USE_GPU=1 for GPU)"
 	@echo "  test            Run pytest"
-	@echo "  serve           Run API server (dev, autoreload)"
+	@echo "  serve           Run API server (dev, autoreload) — bootstraps everything"
 	@echo "  cli             Run CLI (pass ARGS='...')"
 	@echo "  bump            Bump file versions everywhere"
 	@echo "  build           Build sdist+wheel to ./dist"
 	@echo "  package         Build artifacts (.zip + .tar.gz) to ./artifacts"
+	@echo "  docker-build    Build Docker image (VERSION=x.y.z)"
+	@echo "  docker-push     Push Docker image (VERSION=x.y.z, REGISTRY=...)"
 	@echo "  clean           Remove caches"
 	@echo "  clean-dist      Remove dist/build/artifacts"
-	@echo "  release         Bump/tag/push; also updates Dockerfile & compose (VERSION=x.y.z)"
+	@echo "  release         Bump/tag/push; updates CHANGELOG; optional Docker publish"
 
-$(VENV)/bin/activate:
-	$( PYTHON) -m venv $(VENV)
-	@echo "Run '. $(VENV)/bin/activate' to activate the venv"
+# -------- venv (robust, idempotent) --------
+$(VENV)/.created:
+	@if ! command -v $(PYTHON) >/dev/null 2>&1; then echo "ERROR: '$(PYTHON)' not found"; exit 127; fi
+	@echo "Creating virtual environment in $(VENV) using: $(PYTHON)"
+	@$(PYTHON) -m venv $(VENV)
+	@$(PIP_BIN) install -q --upgrade pip
+	@touch $@
 
 .PHONY: venv
-venv: $(VENV)/bin/activate
+venv: $(VENV)/.created
+	@echo "✅ Virtual env ready: $(VENV)"
 
+# -------- install --------
 define install_main
 	@if [ "$(USE_GPU)" = "1" ]; then \
 	  echo "Installing GPU deps from $(REQ_MAIN_GPU)"; \
-	  $(PIP_BIN) install --upgrade pip; \
-	  $(PIP_BIN) install -r $(REQ_MAIN_GPU) | grep -v "Requirement already satisfied"; \
+	  $(PIP_BIN) install -q -r $(REQ_MAIN_GPU); \
 	else \
 	  echo "Installing CPU deps from $(REQ_MAIN_CPU)"; \
-	  $(PIP_BIN) install --upgrade pip; \
-	  $(PIP_BIN) install -r $(REQ_MAIN_CPU) | grep -v "Requirement already satisfied"; \
+	  $(PIP_BIN) install -q -r $(REQ_MAIN_CPU); \
 	fi
 endef
 
@@ -73,9 +87,10 @@ install: venv
 
 .PHONY: install-dev
 install-dev: install
-	@if [ -f "$(REQ_TEST)" ]; then $(PIP_BIN) install -r $(REQ_TEST) | grep -v "Requirement already satisfied"; else $(PIP_BIN) install pytest httpx | grep -v "Requirement already satisfied"; fi
+	@if [ -f "$(REQ_TEST)" ]; then $(PIP_BIN) install -q -r $(REQ_TEST); else $(PIP_BIN) install -q pytest httpx; fi
 	@echo "✅ Dev/test deps installed."
 
+# -------- test / serve / cli --------
 .PHONY: test
 test: install-dev
 	PATCHVEC_CONFIG=./config.yml.example PYTHONPATH=. $(PYTHON_BIN) -m pytest -q
@@ -84,13 +99,14 @@ test: install-dev
 serve: install
 	@echo "Starting server on $(HOST):$(PORT) (reload=$(RELOAD), workers=$(WORKERS))"
 	PYTHONPATH=. PATCHVEC_CONFIG=./config.yml.example \
-	$(UVICORN) $(PKG_INTERNAL).main:app --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL) $(if $(filter 1,$(RELOAD)),--reload,) --workers $(WORKERS)
+	$(PYTHON_BIN) -m $(UVICORN) $(PKG_INTERNAL).main:app --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL) $(if $(filter 1,$(RELOAD)),--reload,) --workers $(WORKERS)
 
 .PHONY: cli
 cli: install
 	PYTHONPATH=. PATCHVEC_CONFIG=./config.yml.example \
 	$(PYTHON_BIN) -m $(PKG_INTERNAL).cli $(ARGS)
 
+# -------- bump --------
 .PHONY: bump
 bump:
 	@if [ -z "$(VERSION)" ]; then \
@@ -123,16 +139,17 @@ bump:
 	@if [ -f README.md ] && grep -q 'docker build -t patchvec:' README.md; then \
 	  sed -i -E 's@(docker build -t patchvec:).*@\1$(VERSION) \.@' README.md; \
 	fi
-	@if [ -f README.md ] && grep -q 'docker run --rm -p 8080:8080 -v $$\(pwd\)/data:/app/data patchvec:' README.md; then \
-	  sed -i -E 's@(docker run --rm -p 8080:8080 -v \$$\(pwd\)/data:/app/data patchvec:).*@\1$(VERSION)@' README.md; \
+	@if [ -f README.md ] && grep -q 'docker run --rm -p 8086:8086 -v $$\(pwd\)/data:/app/data patchvec:' README.md; then \
+	  sed -i -E 's@(docker run --rm -p 8086:8086 -v \$$\(pwd\)/data:/app/data patchvec:).*@\1$(VERSION)@' README.md; \
 	fi
 	@echo "✅ Bumped to $(VERSION). Review changes, then commit:"
 	@echo "   git add -A && git commit -m \"chore: bump version to $(VERSION)\""
 
+# -------- build / package --------
 .PHONY: build
 build: install
 	rm -rf $(DIST_DIR) $(BUILD_DIR)
-	$(PYTHON_BIN) -m pip install build twine
+	$(PYTHON_BIN) -m pip install -q build twine
 	$(PYTHON_BIN) -m build
 	$(PYTHON_BIN) -m twine check $(DIST_DIR)/*
 
@@ -151,8 +168,41 @@ package: build $(ART_DIR)
 	  tar --exclude="$(VENV)" --exclude="$(DIST_DIR)" --exclude="$(BUILD_DIR)" --exclude="$(ART_DIR)" --exclude=".git" \
 	    -czf $(ART_DIR)/$(ARCHIVE_BASENAME).tar.gz . ; \
 	fi
-	@echo "Artifacts available in $(ART_DIR)/"
+	@echo "✅ Artifacts available in $(ART_DIR)/"
 
+# -------- docker build/push --------
+.PHONY: docker-build
+docker-build:
+	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-build VERSION=0.5.4')"; exit 1; fi
+	@if [ -n "$(REGISTRY)" ]; then \
+	  echo "Building $(REGISTRY)/$(IMAGE_NAME):$(VERSION) from $(DOCKERFILE)"; \
+	  docker build -t $(REGISTRY)/$(IMAGE_NAME):$(VERSION) -f $(DOCKERFILE) $(CONTEXT); \
+	else \
+	  echo "Building $(IMAGE_NAME):$(VERSION) from $(DOCKERFILE)"; \
+	  docker build -t $(IMAGE_NAME):$(VERSION) -f $(DOCKERFILE) $(CONTEXT); \
+	fi
+	@if [ "$(PUSH_LATEST)" = "1" ]; then \
+	  if [ -n "$(REGISTRY)" ]; then \
+	    docker tag $(REGISTRY)/$(IMAGE_NAME):$(VERSION) $(REGISTRY)/$(IMAGE_NAME):latest; \
+	  else \
+	    docker tag $(IMAGE_NAME):$(VERSION) $(IMAGE_NAME):latest; \
+	  fi; \
+	fi
+
+.PHONY: docker-push
+docker-push:
+	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-push VERSION=0.5.4')"; exit 1; fi
+	@if [ -n "$(REGISTRY)" ]; then \
+	  echo "Pushing $(REGISTRY)/$(IMAGE_NAME):$(VERSION)"; \
+	  docker push $(REGISTRY)/$(IMAGE_NAME):$(VERSION); \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(REGISTRY)/$(IMAGE_NAME):latest; fi; \
+	else \
+	  echo "Pushing $(IMAGE_NAME):$(VERSION)"; \
+	  docker push $(IMAGE_NAME):$(VERSION); \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(IMAGE_NAME):latest; fi; \
+	fi
+
+# -------- clean --------
 .PHONY: clean
 clean:
 	rm -rf __pycache__ */__pycache__ *.pyc *.pyo *.pyd .pytest_cache .ruff_cache .mypy_cache .pytype
@@ -164,14 +214,14 @@ clean-dist:
 	rm -rf $(DIST_DIR) $(BUILD_DIR) $(ART_DIR)
 	@echo "Removed dist/build/artifacts."
 
-
-# Release flow:
+# -------- release --------
 # - ensure clean tree
-# - (optional) bump versions (setup.py, pave/main.py, Dockerfile, compose, README tags) unless SKIP_BUMP=1
-# - update CHANGELOG with sorted commit subjects since last tag
-# - run tests (must pass) and build (must succeed); otherwise revert
+# - (optional) bump versions unless SKIP_BUMP=1
+# - update CHANGELOG via scripts/update_changelog.py
+# - run tests and build; otherwise revert
 # - commit, tag, push
-# - package artifacts (.zip .tar.gz)
+# - package artifacts
+# - optionally docker-build & docker-push when DOCKER_PUBLISH=1
 .PHONY: release
 release:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make release VERSION=0.5.4')"; exit 1; fi
