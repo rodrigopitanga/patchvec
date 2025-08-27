@@ -1,4 +1,5 @@
 pytest
 httpx
 pytest-asyncio
+sqlite4
 -r requirements-cpu.txt
