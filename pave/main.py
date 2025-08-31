@@ -8,8 +8,9 @@ from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, Query, 
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, Annotated
+import uvicorn
 from .config import CFG
-from .auth import AuthContext, auth_ctx, authorize_tenant
+from .auth import AuthContext, auth_ctx, authorize_tenant, enforce_policy, resolve_bind
 from .metrics import inc, set_error, snapshot, to_prometheus
 from .stores.factory import get_store
 from .stores.base import BaseStore
@@ -207,21 +208,28 @@ def build_app(cfg=CFG) -> FastAPI:
     return app
 
 def main_srv():
-    import os, uvicorn
-    uvicorn.run(
-        "pave.main:app",
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8080")),
-        reload=os.getenv("RELOAD", "0") == "1",
-        workers=int(os.getenv("WORKERS", "1")),
-        log_level=os.getenv("LOG_LEVEL", "info"),
-    )
-def main_srv():
-    """Run PatchVec FastAPI server."""
-    app = build_app()
-    host = cfg.get("server.host", "0.0.0.0")
-    host = cfg.get("server.port", "8086")
-    uvicorn.run(app, host=host, port=port)
+    """
+    PatchVec server entrypoint.
+    Precedence: CFG (reads env first) > defaults.
+    Policy: fail fast without auth in prod; auth=none only in dev with loopback.
+    """
+    # enforce security policy (raises on invalid config)
+    enforce_policy(CFG)
+
+    # resolve bind host/port
+    host, port = resolve_bind(CFG)
+
+    # flags from CFG
+    reload = bool(CFG.get("server.reload", False))
+    workers = int(CFG.get("server.workers", 1))
+    log_level = str(CFG.get("server.log_level", "info"))
+
+    # run server
+    uvicorn.run(app, host=host, port=port,
+                reload=reload, workers=workers, log_level=log_level)
 
 # Default app instance for `uvicorn pave.main:app`
 app = build_app()
+
+if __name__ == "__main__":
+    main_srv()

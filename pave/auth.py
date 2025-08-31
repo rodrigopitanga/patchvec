@@ -3,8 +3,9 @@
 
 # pave/auth.py
 
+from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 from fastapi import HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from . import config as cfg
@@ -62,3 +63,46 @@ def authorize_tenant(tenant: str, ctx: AuthContext = Depends(auth_ctx)) -> AuthC
     if ctx.is_admin or ctx.tenant == tenant:
         return ctx
     _raise_403()
+
+
+# --- Startup security policy -------------------------------------------------
+
+def _is_dev(cfg) -> bool:
+    # check dev flag (CFG or PATCHVEC_DEV)
+    return bool(cfg.get("dev", False)) or str(cfg.get("PATCHVEC_DEV", "0")) == "1"
+
+def enforce_policy(cfg) -> None:
+    """
+    Fail fast if auth is not configured in prod.
+    Allow auth=none only in dev mode, force loopback bind.
+    """
+    mode = str(cfg.get("auth.mode", "none")).strip().lower()
+    dev = _is_dev(cfg)
+
+    if mode == "none":
+        if not dev:
+            raise RuntimeError(
+                "auth.mode=none not allowed in production. "
+                "Set auth.mode=static with a key or run with PATCHVEC_DEV=1 for dev."
+            )
+        host = str(cfg.get("server.host", "127.0.0.1")).strip()
+        if host not in ("127.0.0.1", "localhost"):
+            # enforce loopback in dev
+            try:
+                cfg._data["server.host"] = "127.0.0.1"
+            except Exception:
+                pass
+
+    if mode == "static":
+        has_global = bool(cfg.get("auth.global_key"))
+        has_map = bool(cfg.get("auth.api_keys"))
+        if not (has_global or has_map):
+            raise RuntimeError(
+                "auth.mode=static requires global_key or api_keys"
+            )
+
+def resolve_bind(cfg) -> Tuple[str, int]:
+    # return host/port after policy enforcement
+    host = str(cfg.get("server.host", "127.0.0.1"))
+    port = int(cfg.get("server.port", 8086))
+    return host, port
