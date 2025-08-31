@@ -233,26 +233,19 @@ release:
 	  git restore --staged CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
 	  git checkout -- CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
 	}; \
-	# 1) Bump (unless SKIP_BUMP=1)
 	if [ "$(SKIP_BUMP)" != "1" ]; then \
 	  echo "Bumping to $(VERSION) via 'make bump'..."; \
 	  $(MAKE) bump VERSION=$(VERSION); \
 	fi; \
-	# 2) Update CHANGELOG with a Python helper (no shell-escape issues)
-	$(PYTHON_BIN) scripts/update_changelog.py $(VERSION) || { echo "Changelog generation failed"; exit 1; } \
-	# Stage files so we can revert if tests/build fail
+	$(PYTHON_BIN) scripts/update_changelog.py $(VERSION) || { echo "Changelog generation failed"; exit 1; }; \
 	git add CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
-	# 3) Tests
 	echo "Running tests..."; \
 	$(MAKE) test || { echo "Tests failed."; revert_changes; exit 1; }; \
-	# 4) Build dists
 	echo "Building dists..."; \
 	$(MAKE) build || { echo "Build failed."; revert_changes; exit 1; }; \
-	# 5) Commit, tag, push
 	git commit -m "chore(release): v$(VERSION)"; \
 	git tag v$(VERSION); \
 	git push origin HEAD --tags; \
-	# 6) Package artifacts
 	$(MAKE) package; \
 	echo "Release v$(VERSION) done."
 

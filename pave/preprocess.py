@@ -22,7 +22,7 @@ def preprocess(filename: str, content: bytes):
     """
     Yields (local_id, text, extra_meta):
     - PDF: one chunk per page
-    - TXT: char-based chunks
+    - TXT: charcount-based chunks
     - CSV: one chunk per row ("; " join)
     """
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
