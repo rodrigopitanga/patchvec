@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY pave /app/pave
 COPY pavesrv.sh /app/pavesrv.sh
-COPY config.yml.example /app/config.yml.example
+COPY config.yml.example /app/config.yml
 
 RUN mkdir -p /app/data
 ENV PATCHVEC_CONFIG=/app/config.yml

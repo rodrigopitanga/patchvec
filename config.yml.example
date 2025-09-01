@@ -1,5 +1,5 @@
 # PatchVec sample configuration (commit this file as config.yml.example)
-# Copy to config.yml and adjust. Secrets should live in a separate, untracked file (see tenants.secrets.yml.example).
+# Copy to config.yml and adjust. Secrets should live in a separate, untracked file (see tenants.yml.example).
 
 data_dir: ./data
 

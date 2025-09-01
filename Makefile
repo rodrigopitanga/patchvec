@@ -1,4 +1,4 @@
-# PatchVec — Makefile
+# Patchvec — Makefile
 # External name: patchvec ; internal package: pave
 # CPU-only by default for dev. Set USE_GPU=1 to install GPU deps instead.
 
@@ -16,7 +16,7 @@ HOST            ?= 0.0.0.0
 PORT            ?= 8086
 WORKERS         ?= 1
 RELOAD          ?= 1
-LOG_LEVEL       ?= info
+LOG_LEVEL       ?= debug
 
 # Requirements flavor (cpu default)
 USE_GPU         ?= 0
@@ -32,29 +32,33 @@ BUILD_DIR       := build
 ART_DIR         := artifacts
 
 # Docker / publish
-REGISTRY        ?=                  # e.g. registry.gitlab.com/<group>/patchvec
+REGISTRY        ?= #registry.gitlab.com/pitanga/patchvec
 IMAGE_NAME      ?= $(PKG_NAME)
 DOCKERFILE      ?= Dockerfile
 CONTEXT         ?= .
 PUSH_LATEST     ?= 1
 DOCKER_PUBLISH  ?= 0               # set to 1 to publish during `make release`
 
+.ONESHELL:
+SHELL := /bin/bash
+
 .PHONY: help
 help:
-	@echo "🍰 PatchVec Make Targets"
+	@echo "🍰 Patchvec Make Targets"
 	@echo "  venv            Create local virtualenv (.venv)"
 	@echo "  install         Install runtime deps (CPU by default; USE_GPU=1 for GPU)"
 	@echo "  install-dev     Install dev/test deps (CPU by default; USE_GPU=1 for GPU)"
 	@echo "  test            Run pytest"
-	@echo "  serve           Run API server (dev, autoreload) — bootstraps everything"
+	@echo "  serve           Run API server (DEV: PATCHVEC_DEV=1, auth=none, loopback)"
 	@echo "  cli             Run CLI (pass ARGS='...')"
 	@echo "  bump            Bump file versions everywhere"
 	@echo "  build           Build sdist+wheel to ./dist"
 	@echo "  package         Build artifacts (.zip + .tar.gz) to ./artifacts"
 	@echo "  docker-build    Build Docker image (VERSION=x.y.z)"
 	@echo "  docker-push     Push Docker image (VERSION=x.y.z, REGISTRY=...)"
-	@echo "  clean           Remove caches"
-	@echo "  clean-dist      Remove dist/build/artifacts"
+	@echo "  dist-clean      Remove dist/build/caches/artifacts"
+	@echo "  data-clean      Remove local data/indexes"
+	@echo "  clean           dist-clean + data-clean"
 	@echo "  release         Bump/tag/push; updates CHANGELOG; optional Docker publish"
 
 # -------- venv (robust, idempotent) --------
@@ -93,18 +97,21 @@ install-dev: install
 # -------- test / serve / cli --------
 .PHONY: test
 test: install-dev
-	PATCHVEC_CONFIG=./config.yml.example PYTHONPATH=. $(PYTHON_BIN) -m pytest -q
+	PYTHONPATH=. $(PYTHON_BIN) -m pytest -q
 
 .PHONY: serve
 serve: install
-	@echo "Starting server on $(HOST):$(PORT) (reload=$(RELOAD), workers=$(WORKERS))"
-	PYTHONPATH=. PATCHVEC_CONFIG=./config.yml.example \
-	$(PYTHON_BIN) -m $(UVICORN) $(PKG_INTERNAL).main:app --host $(HOST) --port $(PORT) --log-level $(LOG_LEVEL) $(if $(filter 1,$(RELOAD)),--reload,) --workers $(WORKERS)
+	@echo "Starting 🍰 DEV server on 127.0.0.1:$(PORT)"
+	PYTHONPATH=. \
+	PATCHVEC_DEV=1 \
+	PATCHVEC_AUTH__MODE=none \
+	PATCHVEC_SERVER_HOST=127.0.0.1 \
+	PATCHVEC_SERVER_PORT=$(PORT) \
+	$(PYTHON_BIN) -m $(PKG_INTERNAL).main
 
 .PHONY: cli
 cli: install
-	PYTHONPATH=. PATCHVEC_CONFIG=./config.yml.example \
-	$(PYTHON_BIN) -m $(PKG_INTERNAL).cli $(ARGS)
+	PYTHONPATH=. $(PYTHON_BIN) -m $(PKG_INTERNAL).cli $(ARGS)
 
 # -------- bump --------
 .PHONY: bump
@@ -202,26 +209,26 @@ docker-push:
 	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(IMAGE_NAME):latest; fi; \
 	fi
 
-# -------- clean --------
-.PHONY: clean
-clean:
+# -------- clean (refactored) --------
+.PHONY: dist-clean
+dist-clean:
 	rm -rf __pycache__ */__pycache__ *.pyc *.pyo *.pyd .pytest_cache .ruff_cache .mypy_cache .pytype
 	find . -name '*.egg-info' -prune -exec rm -rf {} +
-	@echo "Cleaned caches."
-
-.PHONY: clean-dist
-clean-dist:
 	rm -rf $(DIST_DIR) $(BUILD_DIR) $(ART_DIR)
-	@echo "Removed dist/build/artifacts."
+	-@rm -f uvicorn-demo.log .demo.pid .e2e_ingest.json .e2e_search.json
+	@echo "Cleaned build/dist/artifacts."
+
+.PHONY: data-clean
+data-clean:
+	-@rm -rf data/ var/lib/patchvec/data 2>/dev/null || true
+	@echo "Cleaned data/indexes."
+
+.PHONY: clean
+clean: dist-clean data-clean
+	@echo "Cleaned caches and data."
 
 # -------- release --------
-# - ensure clean tree
-# - (optional) bump versions unless SKIP_BUMP=1
-# - update CHANGELOG via scripts/update_changelog.py
-# - run tests and build; otherwise revert
-# - commit, tag, push
-# - package artifacts
-# - optionally docker-build & docker-push when DOCKER_PUBLISH=1
+# (unchanged)
 .PHONY: release
 release:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make release VERSION=0.5.4')"; exit 1; fi
@@ -247,5 +254,125 @@ release:
 	git tag v$(VERSION); \
 	git push origin HEAD --tags; \
 	$(MAKE) package; \
-	echo "Release v$(VERSION) done."
+	if [ "$(DOCKER_PUBLISH)" = "1" ]; then \
+	  echo "Publishing Docker image(s)..."; \
+	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)"; \
+	  $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)"; \
+	fi; \
+	echo "✅ Release v$(VERSION) done."
 
+# ------------------- E2E CHECK (dockerized) -------------------
+# Build+run container, create collection, ingest 20k leagues, search, stop.
+
+CHECK_NAME        ?= patchvec-check
+CHECK_HOST        ?= 127.0.0.1
+CHECK_PORT        ?= 18086
+CHECK_TIMEOUT_S   ?= 45
+
+# Auth + API params
+CHECK_AUTH_MODE   ?= static
+CHECK_TOKEN       ?= sekret-token
+CHECK_TENANT      ?= demo
+CHECK_COLL        ?= books
+CHECK_DOCID       ?= DEMO-TXT
+CHECK_QUERY       ?= investigated the winds, seas and currents
+CHECK_K           ?= 7
+
+# Vector backend
+CHECK_TXTAI_BACKEND ?= faiss
+
+# Test document (host path)
+CHECK_TXT_FILE    ?= ./demo/20k_leagues.txt
+
+# Image ref (fallback to :latest if VERSION is empty)
+CHECK_TAG   := $(if $(strip $(VERSION)),$(VERSION),latest)
+ifdef REGISTRY
+CHECK_IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(CHECK_TAG)
+else
+CHECK_IMAGE := $(IMAGE_NAME):$(CHECK_TAG)
+endif
+
+.PHONY: check-up
+check-up:
+	@set -euo pipefail; set -x; \
+	IMG="$(CHECK_IMAGE)"; \
+	if ! docker image inspect $$IMG >/dev/null 2>&1; then docker build -t $$IMG -f "$(DOCKERFILE)" "$(CONTEXT)"; fi; \
+	docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true; \
+	docker run -d --rm \
+	  --name $(CHECK_NAME) \
+	  -p "$(CHECK_PORT):8086" \
+	  --env PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
+	  --env PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
+	  --env PATCHVEC_SERVER_HOST=0.0.0.0 \
+	  --env PATCHVEC_SERVER_PORT=8086 \
+	  --env PATCHVEC_VECTOR_STORE__TYPE=txtai \
+	  --env PATCHVEC_VECTOR_STORE__TXTAI__backend=$(CHECK_TXTAI_BACKEND) \
+	  $$IMG
+
+.PHONY: check-down
+check-down:
+	@docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true
+
+.PHONY: check
+check: install
+	@set -euo pipefail; \
+	IMG="$(CHECK_IMAGE)"; \
+	if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 127; fi; \
+	if ! docker image inspect "$$IMG" >/dev/null 2>&1; then \
+	  echo "Image $$IMG not found. Building locally..."; \
+	  docker build -t "$$IMG" -f "$(DOCKERFILE)" "$(CONTEXT)"; \
+	fi; \
+	echo "==> Running container: $(CHECK_NAME) on $(CHECK_HOST):$(CHECK_PORT)"; \
+	docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true; \
+	docker run -d --rm \
+	  --name $(CHECK_NAME) \
+	  -p $(CHECK_PORT):8086 \
+	  -e PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
+	  -e PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
+	  -e PATCHVEC_SERVER_HOST=0.0.0.0 \
+	  -e PATCHVEC_SERVER_PORT=8086 \
+	  -e PATCHVEC_VECTOR_STORE__TYPE=txtai \
+	  -e PATCHVEC_VECTOR_STORE__TXTAI__backend=$(CHECK_TXTAI_BACKEND) \
+	  "$$IMG" >/dev/null; \
+	trap 'echo "==> Stopping container $(CHECK_NAME)"; docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true' EXIT INT TERM; \
+	BASE="http://$(CHECK_HOST):$(CHECK_PORT)"; \
+	echo "==> Waiting for live $$BASE/health/live (timeout $(CHECK_TIMEOUT_S)s)"; \
+	for i in $$(seq 1 $(CHECK_TIMEOUT_S)); do \
+	  if curl -sf "$$BASE/health/live" >/dev/null; then echo "   Live."; break; fi; \
+	  sleep 1; \
+	  if ! docker ps --format '{{.Names}}' | grep -q '^$(CHECK_NAME)$$'; then \
+	    echo "Container died early; logs:"; docker logs $(CHECK_NAME) || true; exit 1; \
+	  fi; \
+	  if [ $$i -eq $(CHECK_TIMEOUT_S) ]; then \
+	    echo "Timeout waiting for live"; docker logs $(CHECK_NAME) || true; exit 1; \
+	  fi; \
+	done; \
+	AHDR=""; if [ "$(CHECK_AUTH_MODE)" = "static" ]; then AHDR="Authorization: Bearer $(CHECK_TOKEN)"; fi; \
+	echo "==> Create collection: $(CHECK_TENANT)/$(CHECK_COLL)"; \
+	if [ -n "$$AHDR" ]; then \
+	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" -H "Content-Length: 0" >/dev/null; \
+	else \
+	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "Content-Length: 0" >/dev/null; \
+	fi; \
+	[ -f "$(CHECK_TXT_FILE)" ] || { echo "Missing file: $(CHECK_TXT_FILE)"; exit 1; }; \
+	echo "==> Ingest: $(CHECK_TXT_FILE) (docid=$(CHECK_DOCID))"; \
+	if [ -n "$$AHDR" ]; then \
+	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" -H "$$AHDR" \
+	    -F "file=@$(CHECK_TXT_FILE)" \
+	    -F "docid=$(CHECK_DOCID)" \
+	    -F "metadata={\"lang\":\"en\",\"source\":\"Gutenberg\"}" >/dev/null; \
+	else \
+	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" \
+	    -F "file=@$(CHECK_TXT_FILE)" \
+	    -F "docid=$(CHECK_DOCID)" \
+	    -F "metadata={\"lang\":\"en\",\"source\":\"Gutenberg\"}" >/dev/null; \
+	fi; \
+	echo "==> Search (GET) q='$(CHECK_QUERY)' k=$(CHECK_K)"; \
+	ENCQ=$$(printf %s "$(CHECK_QUERY)" | jq -sRr @uri 2>/dev/null || printf %s "$(CHECK_QUERY)"); \
+	if [ -n "$$AHDR" ]; then \
+	  curl -sf "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" -H "$$AHDR" | tee .check_search.json >/dev/null; \
+	else \
+	  curl -sf "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" | tee .check_search.json >/dev/null; \
+	fi; \
+	grep -q '"matches":\[\{' .check_search.json || { echo "Empty search results"; exit 1; }; \
+	echo "✅ make check passed."
