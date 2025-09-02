@@ -7,52 +7,7 @@ import os
 import io
 import pytest
 from pathlib import Path
-
-# --- Fake Embeddings (no model downloads) ------------------------------------
-class FakeEmbeddings:
-    """
-    Minimal drop-in for txtai. Stores (id, text, meta_json) in-memory and on disk.
-    """
-    def __init__(self, config):
-        self.config = config
-        self._docs = {}  # id -> (text, meta_json)
-
-    # txtai API used by TxtaiStore
-    def index(self, docs):
-        # docs: list[(id, text, meta_json)]
-        for rid, text, meta_json in docs:
-            assert isinstance(meta_json, str)  # must be JSON string
-            self._docs[rid] = (text, meta_json)
-
-    def search(self, query, k):
-        # naive contains search, highest score first by length match
-        matches = []
-        q = (query or "").lower()
-        for rid, (text, meta_json) in self._docs.items():
-            t = (text or "").lower()
-            if q in t:
-                score = float(min(len(q), len(t)))  # arbitrary stable score
-                matches.append({"id": rid, "score": score, "text": text})
-        # return top-k dicts like txtai does
-        return sorted(matches, key=lambda r: r["score"], reverse=True)[:k]
-
-    def lookup(self, ids):
-        return {rid: self._docs.get(rid, ("", ""))[0] for rid in ids}
-
-    def delete(self, ids):
-        for rid in ids:
-            self._docs.pop(rid, None)
-
-    def save(self, path):
-        os.makedirs(path, exist_ok=True)
-        with open(os.path.join(path, "_fake_index.json"), "w", encoding="utf-8") as f:
-            json.dump(self._docs, f, ensure_ascii=False)
-
-    def load(self, path):
-        p = os.path.join(path, "_fake_index.json")
-        if os.path.isfile(p):
-            with open(p, "r", encoding="utf-8") as f:
-                self._docs = json.load(f)
+from utils import FakeEmbeddings
 
 # --- Fixtures ----------------------------------------------------------------
 @pytest.fixture(autouse=True)

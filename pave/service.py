@@ -13,19 +13,19 @@ def create_collection(store, tenant: str, name: str) -> Dict[str, Any]:
     store.save(tenant, name)
     return {"ok": True, "tenant": tenant, "collection": name}
 
-
 def delete_collection(store, tenant: str, name: str) -> Dict[str, Any]:
     store.delete_collection(tenant, name)
     return {"ok": True, "tenant": tenant, "deleted": name}
 
-
-def ingest_document(store, tenant: str, name: str, filename: str, content: bytes, docid: str | None, metadata: Dict[str, Any] | None) -> Dict[str, Any]:
+def ingest_document(store, tenant: str, name: str, filename: str, content: bytes,
+                    docid: str | None, metadata: Dict[str, Any] | None,
+                    csv_options: Dict[str, Any] | None = None) -> Dict[str, Any]:
     baseid = docid or str(uuid.uuid4())
     store.purge_doc(tenant, name, baseid)
 
     meta_doc = metadata or {}
     records = []
-    for local_id, text, extra in preprocess(filename, content):
+    for local_id, text, extra in preprocess(filename, content, csv_options=csv_options):
         rid = f"{baseid}::{local_id}"
         m = {"docid": baseid, "filename": filename}
         m.update(meta_doc)
@@ -35,7 +35,6 @@ def ingest_document(store, tenant: str, name: str, filename: str, content: bytes
         return {"ok": False, "error": "no text extracted"}
     count = store.index_records(tenant, name, baseid, records)
     return {"ok": True, "tenant": tenant, "collection": name, "docid": baseid, "chunks": count}
-
 
 def do_search(store, tenant: str, name: str, q: str, k: int = 5, filters: Dict[str, Any] | None = None,
               include_common: bool = False, common_tenant: str | None = None, common_collection: str | None = None) -> Dict[str, Any]:

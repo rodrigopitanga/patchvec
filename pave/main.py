@@ -114,31 +114,47 @@ def build_app(cfg=CFG) -> FastAPI:
         inc("requests_total")
         return svc_delete_collection(store, tenant, name)
 
-    @app.post("/collections/{tenant}/{name}/documents")
+    @app.post("/collections/{tenant}/{collection}/documents")
     async def upload_document(
         tenant: str,
-        name: str,
+        collection: str,
         file: UploadFile = File(...),
         docid: Optional[str] = Form(None),
         metadata: Optional[str] = Form(None),
+        # CSV controls as optional query params (kept out of form to not clash with file upload)
+        csv_has_header: Optional[str] = Query(None, pattern="^(auto|yes|no)$"),
+        csv_meta_cols: Optional[str] = Query(None),
+        csv_include_cols: Optional[str] = Query(None),
         ctx: AuthContext = Depends(authorize_tenant),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
-        content = await file.read()
-        meta_doc = {}
+        meta_obj = None
         if metadata:
             try:
-                meta_doc = json.loads(metadata)
-                if not isinstance(meta_doc, dict):
-                    meta_doc = {"_meta_raw": metadata}
-            except Exception:
-                meta_doc = {"_meta_raw": metadata}
+                import json
+                meta_obj = json.loads(metadata)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"invalid metadata json: {e}")
 
-        result = svc_ingest_document(store, tenant, name, file.filename, content, docid, meta_doc)
-        if not result.get("ok"):
-            raise HTTPException(status_code=400, detail=result.get("error", "ingest failed"))
-        return result
+        content = await file.read()
+
+        csv_opts = None
+        if csv_has_header or csv_meta_cols or csv_include_cols:
+            csv_opts = {
+                "has_header": csv_has_header or "auto",
+                "meta_cols": csv_meta_cols or "",
+                "include_cols": csv_include_cols or "",
+            }
+
+        try:
+            out = svc_ingest_document(
+                store, tenant, collection, file.filename, content,
+                docid, meta_obj, csv_options=csv_opts
+            )
+            return out
+        except ValueError as ve:
+            # e.g., names provided but no header
+            raise HTTPException(status_code=400, detail=str(ve))
 
     # POST search (supports filters)
     @app.post("/collections/{tenant}/{name}/search")

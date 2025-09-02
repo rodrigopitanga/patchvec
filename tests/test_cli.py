@@ -3,6 +3,7 @@ import pathlib
 import pytest
 from pave import cli as pvcli
 from conftest import DummyStore
+from utils import FakeEmbeddings
 
 def test_cli_flow(tmp_path):
     pvcli.store = DummyStore()
@@ -13,45 +14,6 @@ def test_cli_flow(tmp_path):
     main(["upload", "acme", "invoices", str(sample), "--docid", "D1", "--metadata", '{"k":"v"}'])
     main(["search", "acme", "invoices", "two", "-k", "3"])
     main(["delete-collection", "acme", "invoices"])
-
-# Minimal FakeEmbeddings to avoid model downloads (mirrors the one in test_txtai_store)
-class _FakeEmbeddings:
-    def __init__(self, config):
-        self.config = config
-        self._docs = {}  # rid -> (text, meta_json)
-
-    def index(self, docs):
-        for rid, text, meta_json in docs:
-            assert isinstance(meta_json, str)
-            self._docs[rid] = (text, meta_json)
-
-    def search(self, query, k):
-        q = (query or "").lower()
-        matches = []
-        for rid, (text, _) in self._docs.items():
-            t = (text or "").lower()
-            if q in t:
-                # txtai returns dict entries when content=True
-                matches.append({"id": rid, "score": float(len(q)), "text": text})
-        return matches[:k]
-
-    def lookup(self, ids):
-        return {rid: self._docs.get(rid, ("", ""))[0] for rid in ids}
-
-    def delete(self, ids):
-        for rid in ids:
-            self._docs.pop(rid, None)
-
-    def save(self, path):
-        os.makedirs(path, exist_ok=True)
-        with open(os.path.join(path, "_fake_index.json"), "w", encoding="utf-8") as f:
-            json.dump(self._docs, f, ensure_ascii=False)
-
-    def load(self, path):
-        p = os.path.join(path, "_fake_index.json")
-        if os.path.isfile(p):
-            with open(p, "r", encoding="utf-8") as f:
-                self._docs = json.load(f)
 
 @pytest.fixture
 def cli_env(monkeypatch, tmp_path):
@@ -69,7 +31,7 @@ def cli_env(monkeypatch, tmp_path):
 
     # Use real TxtaiStore in CLI but swap Embeddings with fake
     import pave.stores.txtai_store as store_mod
-    monkeypatch.setattr(store_mod, "Embeddings", _FakeEmbeddings, raising=True)
+    monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
 
     # Rebuild CLI.store with the patched CFG+Embeddings
     import importlib

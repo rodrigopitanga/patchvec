@@ -1,9 +1,6 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
-# SPDX-License-Identifier: GPL-3.0-or-later
-
 from __future__ import annotations
 import argparse, json, uuid, pathlib
 from .stores.factory import get_store
@@ -28,9 +25,19 @@ def cmd_upload(args):
     baseid = args.docid or str(uuid.uuid4())
     meta = json.loads(args.metadata) if args.metadata else {}
     content = _read(args.file)
+
+    # CSV controls (optional)
+    csv_opts = None
+    if args.csv_has_header or args.csv_meta_cols or args.csv_include_cols:
+        csv_opts = {
+            "has_header": args.csv_has_header or "auto", # "auto" | "yes" | "no"
+            "meta_cols": args.csv_meta_cols or "",       # "name1,name2" or "1,3"
+            "include_cols": args.csv_include_cols or "", # "nameA,2,5"
+        }
+
     out = svc_ingest_document(
         store, args.tenant, args.collection, args.file, content,
-        baseid if args.docid else None, meta
+        baseid if args.docid else None, meta, csv_options=csv_opts
     )
     print(json.dumps(out, ensure_ascii=False))
 
@@ -58,6 +65,15 @@ def main_cli(argv=None):
     p_upload.add_argument("file")
     p_upload.add_argument("--docid")
     p_upload.add_argument("--metadata")
+
+    # --- CSV controls ---
+    p_upload.add_argument("--csv-has-header", choices=["auto", "yes", "no"],
+                          help="CSV header handling: auto (sniff), yes, or no")
+    p_upload.add_argument("--csv-meta-cols",
+                          help="CSV columns to store as metadata only (exclude from text). Names or 1-based indices, comma-separated")
+    p_upload.add_argument("--csv-include-cols",
+                          help="CSV columns to include in indexed text. Names or 1-based indices, comma-separated. Defaults to all non-meta columns")
+
     p_upload.set_defaults(func=cmd_upload)
 
     p_search = sub.add_parser("search")

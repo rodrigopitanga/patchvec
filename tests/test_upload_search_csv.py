@@ -13,8 +13,8 @@ def test_upload_csv_and_search(client):
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["ok"] is True
-    # Preprocess makes one chunk per row (including header)
-    assert out["chunks"] == 3
+    # Preprocess makes one chunk per row (ignore header)
+    assert out["chunks"] == 2
 
     # POST search with filters by docid — should find "banana"
     body = {"q": "banana", "k": 5, "filters": {"docid": "DOC-CSV"}}
