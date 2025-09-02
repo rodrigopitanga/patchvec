@@ -1,3 +1,23 @@
+## 0.5.4 — 2025-09-02
+
+### Commits
+- [buid] Add e2e check target and cleanup Makefile
+- [build] Enhance startup scripts, add dependency clean Makefile target
+- [core] Add CSV ingestion options: headers (yes|no), meta_cols and include_cols
+- [core] Add default docid behavior so that vectors are seamlessly overriden when same file is ingested even if no docid is provided
+- [core] Fixed txtai_store to handle indexes correctly and always return search text.
+- [core] Fixing auth and adding tests
+- [core] Normalize entry point config and add binding and auth safeguards for prod envs
+- [core] Standardize request metrics in API and enable service metrics in service pipeline
+- [pkg] Add docker targets and make further adjustments do Makefile
+- [pkg] Add pypi publish makefile target
+- [pkg] Fix dependencies: add sqlite4 to testing and explicitly add faiss-cpu to cpu-only target
+- [store] Make sure FAISS indexes and dir structure are initialized upon collection creation.
+- chore(release): v0.5.4
+- feat: initial public release of PatchVec — multi-tenant, pluggable vector search microservice
+- Fix .gitlab-ci.yml file
+
+---
 ## 0.5.4 — 2025-08-12
 
 ### Commits
