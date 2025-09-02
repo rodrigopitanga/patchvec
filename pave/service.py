@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
-import uuid, json
+import uuid, json, re
 from typing import Dict, Any, Iterable, Tuple, List
 from .preprocess import preprocess
 
@@ -17,10 +17,21 @@ def delete_collection(store, tenant: str, name: str) -> Dict[str, Any]:
     store.delete_collection(tenant, name)
     return {"ok": True, "tenant": tenant, "deleted": name}
 
+def _default_docid(filename: str) -> str:
+    # Uppercase
+    base = filename.upper()
+    # replace space and dot with underscore
+    base = base.replace(" ", "_").replace(".", "_")
+    # replace all non A-Z0-9_ with underscore
+    base = re.sub(r"[^A-Z0-9_]", "_", base)
+    # collapse multiple underscores
+    base = re.sub(r"_+", "_", base)
+    return base.strip("_") or ("PVDOC_"+str(uuid.uuid4()))
+
 def ingest_document(store, tenant: str, name: str, filename: str, content: bytes,
                     docid: str | None, metadata: Dict[str, Any] | None,
                     csv_options: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    baseid = docid or str(uuid.uuid4())
+    baseid = docid or _default_docid(filename)
     store.purge_doc(tenant, name, baseid)
 
     meta_doc = metadata or {}
