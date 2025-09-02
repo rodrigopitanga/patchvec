@@ -56,10 +56,14 @@ help:
 	@echo "  package         Build artifacts (.zip + .tar.gz) to ./artifacts"
 	@echo "  docker-build    Build Docker image (VERSION=x.y.z)"
 	@echo "  docker-push     Push Docker image (VERSION=x.y.z, REGISTRY=...)"
+	@echo "  deps-clean      Remove .venv (deps dir)"
 	@echo "  dist-clean      Remove dist/build/caches/artifacts"
 	@echo "  data-clean      Remove local data/indexes"
-	@echo "  clean           dist-clean + data-clean"
+	@echo "  clean           Full clean (except deps)"
+	@echo "  check           Run end-to-end demo inside Docker container"
 	@echo "  release         Bump/tag/push; updates CHANGELOG; optional Docker publish"
+	@echo "  publish-test    Upload to TestPyPI (builds first)"
+	@echo "  publish         Upload to PyPI (builds first)"
 
 # -------- venv (robust, idempotent) --------
 $(VENV)/.created:
@@ -382,3 +386,13 @@ check: install
 	fi; \
 	grep -q '"matches":\[\{' .check_search.json || { echo "Empty search results"; exit 1; }; \
 	echo "✅ make check passed."
+
+.PHONY: publish-test publish
+
+# Upload para o TestPyPI (faz build antes)
+publish-test: build
+	$(TWINE) upload --repository testpypi $(DIST_DIR)/*
+
+# Upload para o PyPI oficial (requer token)
+publish: build
+	$(TWINE) upload $(DIST_DIR)/*
