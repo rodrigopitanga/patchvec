@@ -67,27 +67,32 @@ def build_app(cfg=CFG) -> FastAPI:
 
     @app.get("/health")
     def health():
+        inc("requests_total")
         d = _readiness_check()
         status = "ready" if d.get("ok") else "degraded"
         return {"ok": d["ok"], "status": status, "version": VERSION}
 
     @app.get("/health/live")
     def health_live():
+        inc("requests_total")
         return {"ok": True, "status": "live", "version": VERSION}
 
     @app.get("/health/ready")
     def health_ready():
+        inc("requests_total")
         d = _readiness_check()
         code = 200 if d.get("ok") else 503
         return JSONResponse(d, status_code=code)
 
     @app.get("/health/metrics")
     def health_metrics():
+        inc("requests_total")
         extra = {"version": VERSION, "vector_store_type": cfg.get("vector_store.type", "txtai")}
         return snapshot(extra)
 
     @app.get("/metrics")
     def metrics_prom():
+        inc("requests_total")
         txt = to_prometheus(build={"version": VERSION, "store": cfg.get("vector_store.type", "txtai")})
         return PlainTextResponse(txt, media_type="text/plain; version=0.0.4")
 
@@ -171,7 +176,6 @@ def build_app(cfg=CFG) -> FastAPI:
             store, tenant, name, body.q, body.k, filters=body.filters,
             include_common=include_common, common_tenant=cfg.common_tenant, common_collection=cfg.common_collection
         )
-        inc("search_total")
         return JSONResponse(result)
 
     # GET search (no filters)
@@ -190,7 +194,6 @@ def build_app(cfg=CFG) -> FastAPI:
             store, tenant, name, q, k, filters=None,
             include_common=include_common, common_tenant=cfg.common_tenant, common_collection=cfg.common_collection
         )
-        inc("search_total")
         return JSONResponse(result)
 
     # Common collection search
@@ -204,7 +207,6 @@ def build_app(cfg=CFG) -> FastAPI:
         if not cfg.common_enabled:
             return JSONResponse({"matches": []})
         result = svc_do_search(store, cfg.common_tenant, cfg.common_collection, body.q, body.k, filters=body.filters)
-        inc("search_total")
         return JSONResponse(result)
 
     @app.get("/search")
@@ -218,7 +220,6 @@ def build_app(cfg=CFG) -> FastAPI:
         if not cfg.common_enabled:
             return JSONResponse({"matches": []})
         result = svc_do_search(store, cfg.common_tenant, cfg.common_collection, q, k, filters=None)
-        inc("search_total")
         return JSONResponse(result)
 
     return app

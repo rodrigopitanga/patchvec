@@ -5,16 +5,19 @@ from __future__ import annotations
 import uuid, json, re
 from typing import Dict, Any, Iterable, Tuple, List
 from .preprocess import preprocess
+from .metrics import inc as m_inc
 
 # Pure-ish service functions operating on a store adapter
 
 def create_collection(store, tenant: str, name: str) -> Dict[str, Any]:
     store.load_or_init(tenant, name)
     store.save(tenant, name)
+    m_inc("collections_created_total", 1.0)
     return {"ok": True, "tenant": tenant, "collection": name}
 
 def delete_collection(store, tenant: str, name: str) -> Dict[str, Any]:
     store.delete_collection(tenant, name)
+    m_inc("collections_deleted_total", 1.0)
     return {"ok": True, "tenant": tenant, "deleted": name}
 
 def _default_docid(filename: str) -> str:
@@ -45,15 +48,21 @@ def ingest_document(store, tenant: str, name: str, filename: str, content: bytes
     if not records:
         return {"ok": False, "error": "no text extracted"}
     count = store.index_records(tenant, name, baseid, records)
+    m_inc("documents_indexed_total", 1.0)
+    m_inc("chunks_indexed_total", float(count or 0))
     return {"ok": True, "tenant": tenant, "collection": name, "docid": baseid, "chunks": count}
 
 def do_search(store, tenant: str, name: str, q: str, k: int = 5, filters: Dict[str, Any] | None = None,
               include_common: bool = False, common_tenant: str | None = None, common_collection: str | None = None) -> Dict[str, Any]:
+    m_inc("search_total", 1.0)
     if include_common and common_tenant and common_collection:
         matches: List[Dict[str, Any]] = []
         matches.extend(store.search(tenant, name, q, max(10, k * 2), filters=filters))
         matches.extend(store.search(common_tenant, common_collection, q, max(10, k * 2), filters=filters))
         from heapq import nlargest
         top = nlargest(k, matches, key=lambda x: x["score"])
+        m_inc("matches_total", float(len(top) or 0))
         return {"matches": top}
-    return {"matches": store.search(tenant, name, q, k, filters=filters)}
+    top = store.search(tenant, name, q, k, filters=filters)
+    m_inc("matches_total", float(len(top) or 0))
+    return {"matches": top}
