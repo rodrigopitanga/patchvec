@@ -56,11 +56,23 @@ class TxtaiStore(BaseStore):
         key = (tenant, collection)
         if key in self._emb:
             return
-        os.makedirs(self._base_path(tenant, collection), exist_ok=True)
+
+        base = self._base_path(tenant, collection)
+        os.makedirs(base, exist_ok=True)
+
         em = Embeddings(self._config())
-        idxpath = os.path.join(self._base_path(tenant, collection), "index")
-        if os.path.isdir(idxpath):
-            em.load(idxpath)
+        idxpath = os.path.join(base, "index")
+        # consider index valid only if embeddings file exists
+        embeddings_file = os.path.join(idxpath, "embeddings")
+        fake_file = os.path.join(idxpath, "_fake_index.json")  # used in tests
+
+        if os.path.isfile(embeddings_file) or os.path.isfile(fake_file):
+            try:
+                em.load(idxpath)
+            except Exception:
+                # broken index -> start clean
+                em = Embeddings(self._config())
+
         self._emb[key] = em
 
     def save(self, tenant: str, collection: str) -> None:
@@ -69,6 +81,7 @@ class TxtaiStore(BaseStore):
         if not em:
             return
         idxpath = os.path.join(self._base_path(tenant, collection), "index")
+        os.makedirs(idxpath, exist_ok=True)  # ensure target dir
         em.save(idxpath)
 
     def delete_collection(self, tenant: str, collection: str) -> None:

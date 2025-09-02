@@ -129,3 +129,27 @@ def test_purge_doc_removes_ids(store):
     # now no matches
     hits = store.search("ten", "c2", "primeiro", k=3)
     assert hits == []
+
+def test_load_or_init_handles_empty_index_dir(store, tmp_path):
+    """
+    Repro of FAISS crash: empty ./data/T/C/index/ existed -> em.load() tried to read non-existent embeddings.
+    Expectation: store should initialize fresh instead of loading.
+    """
+    tenant, coll = "tnew", "cnew"
+
+    # Pre-create empty index dir to mimic the broken state
+    base = os.path.join(tmp_path, "data", tenant, coll)
+    os.makedirs(os.path.join(base, "index"), exist_ok=True)
+
+    # Ingest one record; should not raise, and should persist fake index json
+    recs = [{"id": "r::0", "content": "hello world", "metadata": {"lang": "en"}}]
+    n = store.index_records(tenant, coll, "DOC", recs)
+    assert n == 1
+
+    # force a save; the fake backend writes a sentinel file we can assert on
+    store.save(tenant, coll)
+
+    # resolve base via the store (avoid tmp_path vs CFG.data_dir drift)
+    base = store._base_path(tenant, coll)  # ok to use a protected helper in tests
+    fake_idx = os.path.join(base, "index", "_fake_index.json")
+    assert os.path.isfile(fake_idx), "fake index file must exist after save"
