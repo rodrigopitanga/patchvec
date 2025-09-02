@@ -1,22 +1,15 @@
 #!/usr/bin/env bash
+# simple CLI wrapper: prefer project venv; fallback to system python
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+VENV_PY="$ROOT/.venv-pave/bin/python"
 
-# Activate local venv if present
-if [[ -d ".venv" && -x ".venv/bin/activate" ]]; then
-  # shellcheck disable=SC1091
-  source ".venv/bin/activate"
+# prefer venv python if available
+if [ -x "$VENV_PY" ]; then
+  exec "$VENV_PY" -m pave.cli "$@"
 fi
 
-# Make project importable without installing
-export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
-
-# Auto config path if not provided
-if [[ -z "${PATCHVEC_CONFIG:-}" && -f "${ROOT}/config.yml" ]]; then
-  export PATCHVEC_CONFIG="${ROOT}/config.yml"
-fi
-
-# Run CLI
-exec python -m pave.cli "$@"
+# fallback to system python (warn once)
+echo "WARN: .venv not found, using system python" >&2
+exec python3 -m pave.cli "$@"

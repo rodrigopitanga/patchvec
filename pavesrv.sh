@@ -1,47 +1,17 @@
 #!/usr/bin/env bash
+# simple server wrapper: prefer project venv; fallback to system python
 set -euo pipefail
 
-# Resolve repo root (dir of this script)
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+VENV_PY="$ROOT/.venv-pave/bin/python"
 
-# Activate local venv if present
-if [[ -d ".venv" && -x ".venv/bin/activate" ]]; then
-  # shellcheck disable=SC1091
-  source ".venv/bin/activate"
+# defaults are resolved in code via CFG; only pass overrides via env
+: "${PATCHVEC_SERVER_HOST:=0.0.0.0}"
+: "${PATCHVEC_SERVER_PORT:=8086}"
+
+if [ -x "$VENV_PY" ]; then
+  exec "$VENV_PY" -m pave.main
 fi
 
-# Defaults (override via env)
-export HOST="${HOST:-0.0.0.0}"
-export PORT="${PORT:-8086}"
-export WORKERS="${WORKERS:-1}"
-export RELOAD="${RELOAD:-1}"   # 1 = dev autoreload (forces WORKERS=1)
-export LOG_LEVEL="${LOG_LEVEL:-info}"
-
-# Make project importable without installing
-export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
-
-# Auto config path if not provided
-if [[ -z "${PATCHVEC_CONFIG:-}" && -f "${ROOT}/config.yml" ]]; then
-  export PATCHVEC_CONFIG="${ROOT}/config.yml"
-fi
-
-# Pick uvicorn launcher
-if command -v uvicorn >/dev/null 2>&1; then
-  UVICORN="uvicorn"
-else
-  UVICORN="python -m uvicorn"
-fi
-
-# Compose flags
-UV_FLAGS=( "pave.main:app" "--host" "$HOST" "--port" "$PORT" "--log-level" "$LOG_LEVEL" )
-if [[ "$RELOAD" == "1" ]]; then
-  UV_FLAGS+=( "--reload" )
-  WORKERS=1
-fi
-UV_FLAGS+=( "--workers" "$WORKERS" )
-
-echo "[pavesrv] PYTHONPATH=$PYTHONPATH"
-echo "[pavesrv] PATCHVEC_CONFIG=${PATCHVEC_CONFIG:-<unset>}"
-echo "[pavesrv] Starting: $UVICORN ${UV_FLAGS[*]}"
-exec $UVICORN "${UV_FLAGS[@]}"
+echo "WARN: .venv not found, using system python" >&2
+exec python3 -m pave.main

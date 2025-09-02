@@ -8,7 +8,7 @@ UVICORN         ?= uvicorn
 PKG_NAME        ?= patchvec
 PKG_INTERNAL    ?= pave
 
-VENV            ?= .venv
+VENV            ?= .venv-$(PKG_INTERNAL)
 PYTHON_BIN      ?= $(VENV)/bin/python
 PIP_BIN         ?= $(VENV)/bin/pip
 
@@ -65,7 +65,7 @@ help:
 $(VENV)/.created:
 	@if ! command -v $(PYTHON) >/dev/null 2>&1; then echo "ERROR: '$(PYTHON)' not found"; exit 127; fi
 	@echo "Creating virtual environment in $(VENV) using: $(PYTHON)"
-	@$(PYTHON) -m venv $(VENV)
+	@$(PYTHON) -m venv $(VENV) --prompt $(PKG_NAME)
 	@$(PIP_BIN) install -q --upgrade pip
 	@touch $@
 
@@ -226,6 +226,12 @@ data-clean:
 .PHONY: clean
 clean: dist-clean data-clean
 	@echo "Cleaned caches and data."
+
+
+.PHONY: dep-clean
+dep-clean:
+	rm -rf $(VENV)
+	@echo "Cleaned deps (.venv)."
 
 # -------- release --------
 # (unchanged)
