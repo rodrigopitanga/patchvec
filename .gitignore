@@ -16,9 +16,9 @@ artifacts/
 .pytest_cache/
 
 # Virtual environments
-.venv/
-venv/
-env/
+.venv*/
+venv*/
+env*/
 
 # Editors / OS
 .DS_Store
