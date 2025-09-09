@@ -32,7 +32,7 @@ BUILD_DIR       := build
 ART_DIR         := artifacts
 
 # Docker / publish
-REGISTRY        ?= #registry.gitlab.com/pitanga/patchvec
+REGISTRY        ?= registry.gitlab.com/pitanga/patchvec
 IMAGE_NAME      ?= $(PKG_NAME)
 DOCKERFILE      ?= Dockerfile
 CONTEXT         ?= .
@@ -183,7 +183,7 @@ package: build $(ART_DIR)
 
 # -------- docker build/push --------
 .PHONY: docker-build
-docker-build:
+docker-build: install
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-build VERSION=0.5.4')"; exit 1; fi
 	@if [ -n "$(REGISTRY)" ]; then \
 	  echo "Building $(REGISTRY)/$(IMAGE_NAME):$(VERSION) from $(DOCKERFILE)"; \
@@ -201,7 +201,7 @@ docker-build:
 	fi
 
 .PHONY: docker-push
-docker-push:
+docker-push: docker-build
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-push VERSION=0.5.4')"; exit 1; fi
 	@if [ -n "$(REGISTRY)" ]; then \
 	  echo "Pushing $(REGISTRY)/$(IMAGE_NAME):$(VERSION)"; \
