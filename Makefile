@@ -391,8 +391,8 @@ check: install
 
 # Upload para o TestPyPI (faz build antes)
 publish-test: build
-	$(TWINE) upload --repository testpypi $(DIST_DIR)/*
+	$(PYTHON_BIN) -m twine upload --repository testpypi $(DIST_DIR)/*
 
 # Upload para o PyPI oficial (requer token)
 publish: build
-	$(TWINE) upload $(DIST_DIR)/*
+	$(PYTHON_BIN) -m twine upload $(DIST_DIR)/*

@@ -28,16 +28,16 @@ setup(
     packages=find_packages(include=["pave", "pave.*"]),  # internal package
     include_package_data=True,
     install_requires=[
-        "fastapi==0.115.0",
-        "uvicorn[standard]==0.30.6",
-        "txtai==6.5.0",
-        "pydantic==2.8.2",
-        "python-multipart==0.0.9",
-        "pypdf==5.0.0",
-        "pyyaml==6.0.2",
-        "python-dotenv==1.0.1",
-        "qdrant-client==1.9.2",
-        "sentence-transformers==2.7.0",
+        "fastapi>=0.115.0",
+        "uvicorn[standard]>=0.30.6",
+        "txtai>=6.3.0",
+        "pydantic>=2.8.2",
+        "python-multipart>=0.0.9",
+        "pypdf>=5.0.0",
+        "pyyaml>=6.0.2",
+        "python-dotenv>=1.0.1",
+        "qdrant-client>=1.9.2",
+        "sentence-transformers>=2.7.0",
         "openai>=1.0.0",
     ],
     entry_points={
@@ -59,8 +59,8 @@ setup(
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     ],
     project_urls={
-        "Homepage": "https://github.com/rodrigopitanga/patchvec",
-        "Source": "https://github.com/rodrigopitanga/patchvec",
-        "Tracker": "https://github.com/youruser/rodrigopitanga/issues",
+        "Homepage": "https://gitlab.com/pitanga/patchvec",
+        "Source": "https://gitlab.com/pitanga/patchvec",
+        "Tracker": "https://gitlab.com/pitanga/patchvec/issues",
     },
 )
