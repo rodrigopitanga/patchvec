@@ -213,6 +213,26 @@ docker-push: docker-build
 	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(IMAGE_NAME):latest; fi; \
 	fi
 
+.PHONY: docker-save
+docker-save:
+docker save -o patchvec.tar patchvec:latest
+
+# SSH deploy to dev server
+.PHONY: deploy-dev
+deploy-dev: docker-save
+	@echo "🚀 Deploy via SSH para $(DEV_HOST)"
+	ssh -i $(SSH_KEY_PATH) $(DEV_USER)@$(DEV_HOST) "\
+	docker stop patchvec-dev || true && \
+	docker rm patchvec-dev || true && \
+	docker image rm patchvec:latest || true"
+	scp -i $(SSH_KEY_PATH) patchvec.tar $(DEV_USER)@$(DEV_HOST):~/patchvec.tar
+	ssh -i $(SSH_KEY_PATH) $(DEV_USER)@$(DEV_HOST) "\
+	docker load -i patchvec.tar && \
+	docker run -d --name patchvec-dev \
+	-p 8086:8086 \
+	-e PATCHVEC_AUTH__GLOBAL_KEY=$(PATCHVEC_AUTH__GLOBAL_KEY) \
+	patchvec:latest"
+
 # -------- clean (refactored) --------
 .PHONY: dist-clean
 dist-clean:
