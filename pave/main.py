@@ -18,7 +18,7 @@ from .service import create_collection as svc_create_collection, delete_collecti
     ingest_document as svc_ingest_document, do_search as svc_do_search
 
 
-VERSION = "0.5.5"
+VERSION = "0.5.6dev0"
 
 class SearchBody(BaseModel):
     q: str

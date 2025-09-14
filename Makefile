@@ -32,7 +32,7 @@ BUILD_DIR       := build
 ART_DIR         := artifacts
 
 # Docker / publish
-REGISTRY        ?= registry.gitlab.com/pitanga/patchvec
+REGISTRY        ?= registry.gitlab.com/flowlexi/patchvec
 IMAGE_NAME      ?= $(PKG_NAME)
 DOCKERFILE      ?= Dockerfile
 CONTEXT         ?= .
@@ -68,14 +68,14 @@ help:
 # -------- venv (robust, idempotent) --------
 $(VENV)/.created:
 	@if ! command -v $(PYTHON) >/dev/null 2>&1; then echo "ERROR: '$(PYTHON)' not found"; exit 127; fi
-	@echo "Creating virtual environment in $(VENV) using: $(PYTHON)"
+	@echo "⏳ Creating virtual environment in $(VENV) using: $(PYTHON)"
 	@$(PYTHON) -m venv $(VENV) --prompt $(PKG_NAME)
 	@$(PIP_BIN) install -q --upgrade pip
 	@touch $@
 
 .PHONY: venv
 venv: $(VENV)/.created
-	@echo "✅ Virtual env ready: $(VENV)"
+	@echo "✅ Virtual env ready 👉 Run: source $(VENV)/bin/activate"
 
 # -------- install --------
 define install_main
@@ -305,7 +305,7 @@ CHECK_TOKEN       ?= sekret-token
 CHECK_TENANT      ?= demo
 CHECK_COLL        ?= books
 CHECK_DOCID       ?= DEMO-TXT
-CHECK_QUERY       ?= investigated the winds, seas and currents
+CHECK_QUERY       ?= currents
 CHECK_K           ?= 7
 
 # Vector backend

@@ -1,12 +1,12 @@
 services:
   patchvec:
-    image: patchvec:0.5.5
+    image: patchvec:0.5.6dev0
     build: .
     container_name: patchvec
     ports:
       - "8086:8086"
     volumes:
-      - ./data:/app/data
+      - ./data:/data
       - ./config.yml:/app/config.yml:ro
     environment:
       - PATCHVEC_CONFIG=/app/config.yml
