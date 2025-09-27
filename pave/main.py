@@ -245,8 +245,12 @@ def main_srv():
     log_level = str(CFG.get("server.log_level", "info"))
 
     # run server
-    uvicorn.run(app, host=host, port=port,
-                reload=reload, workers=workers, log_level=log_level)
+    uvicorn.run("pave.main:app",
+                host=host,
+                port=port,
+                reload=reload,
+                workers=workers,
+                log_level=log_level)
 
 # Default app instance for `uvicorn pave.main:app`
 app = build_app()
