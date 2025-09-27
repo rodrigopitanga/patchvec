@@ -1,12 +1,21 @@
 # Patchvec — Makefile
-# External name: patchvec ; internal package: pave
-# CPU-only by default for dev. Set USE_GPU=1 to install GPU deps instead.
+#
+# Basic usage:
+#   make install            # default: GPU deps (requirements.txt)
+#   make install USE_CPU=1  # override: CPU-only deps (requirements-cpu.txt)
+#
+# GPU by default. Set USE_CPU=1 to install CPU deps instead.
+
+PKG_NAME        := patchvec
+PKG_ICON	:= 🍰
+PKG_LONGNAME    := $(PKG_ICON) Patchvec
+PKG_INTERNAL   	:= pave
+REGISTRY_HOST	?= registry.gitlab.com
+REGISTRY_GROUP	?= flowlexi
 
 PYTHON          ?= python3
 PIP             ?= $(PYTHON) -m pip
 UVICORN         ?= uvicorn
-PKG_NAME        ?= patchvec
-PKG_INTERNAL    ?= pave
 
 VENV            ?= .venv-$(PKG_INTERNAL)
 PYTHON_BIN      ?= $(VENV)/bin/python
@@ -18,13 +27,13 @@ WORKERS         ?= 1
 RELOAD          ?= 1
 LOG_LEVEL       ?= debug
 
-# Requirements flavor (cpu default)
-USE_GPU         ?= 0
+# Requirements flavor (gpu default)
+USE_CPU ?= 0
 REQ_MAIN_CPU    ?= requirements-cpu.txt
 REQ_MAIN_GPU    ?= requirements.txt
 REQ_TEST        ?= requirements-test.txt
 
-# Version helpers
+# Version helpers - setup.py source of truth
 VERSION         ?= $(shell sed -n 's/^ *version="\([^"]*\)".*/\1/p' setup.py | head -1)
 ARCHIVE_BASENAME := $(PKG_NAME)-$(VERSION)
 DIST_DIR        := dist
@@ -32,22 +41,31 @@ BUILD_DIR       := build
 ART_DIR         := artifacts
 
 # Docker / publish
-REGISTRY        ?= registry.gitlab.com/flowlexi/patchvec
-IMAGE_NAME      ?= $(PKG_NAME)
 DOCKERFILE      ?= Dockerfile
 CONTEXT         ?= .
 PUSH_LATEST     ?= 1
-DOCKER_PUBLISH  ?= 0               # set to 1 to publish during `make release`
+DOCKER_PUBLISH  ?= 1
+REGISTRY        ?= $(REGISTRY_HOST)/$(REGISTRY_GROUP)/$(PKG_NAME)
+IMAGE_NAME 	?= $(PKG_NAME)
+ifeq ($(USE_CPU),1)
+    IMAGE_TAG 	:= $(VERSION)-cpu
+    LATEST_TAG 	:= latest-cpu
+else
+    IMAGE_TAG 	:= $(VERSION)-gpu
+    LATEST_TAG 	:= latest-gpu
+endif
+BUILD_VARIANT 	:= $(if $(filter 1,$(USE_CPU)),cpu,gpu)
+BUILD_ID 	?= $(shell date -u +%Y%m%d%H%M%S)-$(shell git rev-parse --short HEAD)-$(BUILD_VARIANT)
 
 .ONESHELL:
 SHELL := /bin/bash
 
 .PHONY: help
 help:
-	@echo "🍰 Patchvec Make Targets"
+	@echo "$(PKG_LONGNAME) Make Targets"
 	@echo "  venv            Create local virtualenv (.venv)"
-	@echo "  install         Install runtime deps (CPU by default; USE_GPU=1 for GPU)"
-	@echo "  install-dev     Install dev/test deps (CPU by default; USE_GPU=1 for GPU)"
+	@echo "  install         Install runtime deps (GPU by default; USE_CPU=1 for CPU)"
+	@echo "  install-dev     Install dev/test deps (GPU by default; USE_CPU=1 for CPU)"
 	@echo "  test            Run pytest"
 	@echo "  serve           Run API server (DEV: PATCHVEC_DEV=1, auth=none, loopback)"
 	@echo "  cli             Run CLI (pass ARGS='...')"
@@ -79,12 +97,12 @@ venv: $(VENV)/.created
 
 # -------- install --------
 define install_main
-	@if [ "$(USE_GPU)" = "1" ]; then \
-	  echo "Installing GPU deps from $(REQ_MAIN_GPU)"; \
-	  $(PIP_BIN) install -q -r $(REQ_MAIN_GPU); \
-	else \
+	@if [ "$(USE_CPU)" = "1" ]; then \
 	  echo "Installing CPU deps from $(REQ_MAIN_CPU)"; \
 	  $(PIP_BIN) install -q -r $(REQ_MAIN_CPU); \
+	else \
+	  echo "Installing GPU deps from $(REQ_MAIN_GPU)"; \
+	  $(PIP_BIN) install -q -r $(REQ_MAIN_GPU); \
 	fi
 endef
 
@@ -125,9 +143,10 @@ bump:
 	  exit 1; \
 	fi
 	@echo "Bumping version to $(VERSION)..."
-	# setup.py: version="x.y.z"
+
+	# setup.py: version="x.y.z" or version="x.y.zdevN"
 	@if [ -f setup.py ]; then \
-	  sed -i -E 's/(version=)\"[0-9]+\.[0-9]+\.[0-9]+\"/\1"$(VERSION)"/' setup.py; \
+	  sed -i -E 's/(version=)\"[^\"]*\"/\1"$(VERSION)"/' setup.py; \
 	fi
 	# pave/main.py: VERSION = "x.y.z"
 	@if [ -f pave/main.py ] && grep -qE '^VERSION\s*=' pave/main.py; then \
@@ -147,8 +166,8 @@ bump:
 	  sed -i -E 's/(image:\s*patchvec:).*/\1$(VERSION)/' docker-compose.yml; \
 	fi
 	# README.md example tags for docker build/run
-	@if [ -f README.md ] && grep -q 'docker build -t patchvec:' README.md; then \
-	  sed -i -E 's@(docker build -t patchvec:).*@\1$(VERSION) \.@' README.md; \
+	@if [ -f README.md ] && grep -q 'docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t patchvec:' README.md; then \
+	  sed -i -E 's@(docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t patchvec:).*@\1$(VERSION) \.@' README.md; \
 	fi
 	@if [ -f README.md ] && grep -q 'docker run --rm -p 8086:8086 -v $$\(pwd\)/data:/app/data patchvec:' README.md; then \
 	  sed -i -E 's@(docker run --rm -p 8086:8086 -v \$$\(pwd\)/data:/app/data patchvec:).*@\1$(VERSION)@' README.md; \
@@ -186,36 +205,36 @@ package: build $(ART_DIR)
 docker-build: install
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-build VERSION=0.5.4')"; exit 1; fi
 	@if [ -n "$(REGISTRY)" ]; then \
-	  echo "Building $(REGISTRY)/$(IMAGE_NAME):$(VERSION) from $(DOCKERFILE)"; \
-	  docker build -t $(REGISTRY)/$(IMAGE_NAME):$(VERSION) -f $(DOCKERFILE) $(CONTEXT); \
+	  echo "Building $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) from $(DOCKERFILE)"; \
+	  docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
 	else \
-	  echo "Building $(IMAGE_NAME):$(VERSION) from $(DOCKERFILE)"; \
-	  docker build -t $(IMAGE_NAME):$(VERSION) -f $(DOCKERFILE) $(CONTEXT); \
+	  echo "Building $(IMAGE_NAME):$(IMAGE_TAG) from $(DOCKERFILE)"; \
+	  docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
 	fi
 	@if [ "$(PUSH_LATEST)" = "1" ]; then \
 	  if [ -n "$(REGISTRY)" ]; then \
-	    docker tag $(REGISTRY)/$(IMAGE_NAME):$(VERSION) $(REGISTRY)/$(IMAGE_NAME):latest; \
+	    docker tag $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) $(REGISTRY)/$(IMAGE_NAME):$(LATEST_TAG); \
 	  else \
-	    docker tag $(IMAGE_NAME):$(VERSION) $(IMAGE_NAME):latest; \
+	    docker tag $(IMAGE_NAME):$(IMAGE_TAG) $(IMAGE_NAME):$(LATEST_TAG); \
 	  fi; \
 	fi
 
 .PHONY: docker-push
-docker-push: docker-build
+docker-push:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-push VERSION=0.5.4')"; exit 1; fi
 	@if [ -n "$(REGISTRY)" ]; then \
-	  echo "Pushing $(REGISTRY)/$(IMAGE_NAME):$(VERSION)"; \
-	  docker push $(REGISTRY)/$(IMAGE_NAME):$(VERSION); \
-	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(REGISTRY)/$(IMAGE_NAME):latest; fi; \
+	  echo "Pushing $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)"; \
+	  docker push $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG); \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(REGISTRY)/$(IMAGE_NAME):$(LATEST_TAG); fi; \
 	else \
-	  echo "Pushing $(IMAGE_NAME):$(VERSION)"; \
-	  docker push $(IMAGE_NAME):$(VERSION); \
-	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(IMAGE_NAME):latest; fi; \
+	  echo "Pushing $(IMAGE_NAME):$(IMAGE_TAG)"; \
+	  docker push $(IMAGE_NAME):$(IMAGE_TAG); \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(IMAGE_NAME):$(LATEST_TAG); fi; \
 	fi
 
 .PHONY: docker-save
 docker-save:
-docker save -o patchvec.tar patchvec:latest
+        docker save -o patchvec.tar $(IMAGE_NAME)-dev:$(LATEST_TAG)
 
 # SSH deploy to dev server
 .PHONY: deploy-dev
@@ -224,14 +243,14 @@ deploy-dev: docker-save
 	ssh -i $(SSH_KEY_PATH) $(DEV_USER)@$(DEV_HOST) "\
 	docker stop patchvec-dev || true && \
 	docker rm patchvec-dev || true && \
-	docker image rm patchvec:latest || true"
+	docker image rm $(IMAGE_NAME):$(LATEST_TAG) || true"
 	scp -i $(SSH_KEY_PATH) patchvec.tar $(DEV_USER)@$(DEV_HOST):~/patchvec.tar
 	ssh -i $(SSH_KEY_PATH) $(DEV_USER)@$(DEV_HOST) "\
 	docker load -i patchvec.tar && \
 	docker run -d --name patchvec-dev \
 	-p 8086:8086 \
 	-e PATCHVEC_AUTH__GLOBAL_KEY=$(PATCHVEC_AUTH__GLOBAL_KEY) \
-	patchvec:latest"
+	$(IMAGE_NAME)-dev:$(LATEST_TAG)"
 
 # -------- clean (refactored) --------
 .PHONY: dist-clean
@@ -296,7 +315,7 @@ release:
 
 CHECK_NAME        ?= patchvec-check
 CHECK_HOST        ?= 127.0.0.1
-CHECK_PORT        ?= 18086
+CHECK_PORT        ?= 8088
 CHECK_TIMEOUT_S   ?= 45
 
 # Auth + API params
@@ -326,15 +345,15 @@ endif
 check-up:
 	@set -euo pipefail; set -x; \
 	IMG="$(CHECK_IMAGE)"; \
-	if ! docker image inspect $$IMG >/dev/null 2>&1; then docker build -t $$IMG -f "$(DOCKERFILE)" "$(CONTEXT)"; fi; \
+	if ! docker image inspect $$IMG >/dev/null 2>&1; then docker build --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $$IMG -f "$(DOCKERFILE)" "$(CONTEXT)"; fi; \
 	docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true; \
 	docker run -d --rm \
 	  --name $(CHECK_NAME) \
 	  -p "$(CHECK_PORT):8086" \
 	  --env PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
 	  --env PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
-	  --env PATCHVEC_SERVER_HOST=0.0.0.0 \
-	  --env PATCHVEC_SERVER_PORT=8086 \
+	  --env PATCHVEC_SERVER__HOST=$(CHECK_HOST) \
+	  --env PATCHVEC_SERVER__PORT=$(CHECK_PORT) \
 	  --env PATCHVEC_VECTOR_STORE__TYPE=txtai \
 	  --env PATCHVEC_VECTOR_STORE__TXTAI__backend=$(CHECK_TXTAI_BACKEND) \
 	  $$IMG
@@ -350,7 +369,7 @@ check: install
 	if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 127; fi; \
 	if ! docker image inspect "$$IMG" >/dev/null 2>&1; then \
 	  echo "Image $$IMG not found. Building locally..."; \
-	  docker build -t "$$IMG" -f "$(DOCKERFILE)" "$(CONTEXT)"; \
+	  docker build --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t "$$IMG" -f "$(DOCKERFILE)" "$(CONTEXT)"; \
 	fi; \
 	echo "==> Running container: $(CHECK_NAME) on $(CHECK_HOST):$(CHECK_PORT)"; \
 	docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true; \
@@ -359,8 +378,8 @@ check: install
 	  -p $(CHECK_PORT):8086 \
 	  -e PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
 	  -e PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
-	  -e PATCHVEC_SERVER_HOST=0.0.0.0 \
-	  -e PATCHVEC_SERVER_PORT=8086 \
+	  -e PATCHVEC_SERVER__HOST=$(CHECK_HOST) \
+	  -e PATCHVEC_SERVER__PORT=$(CHECK_PORT) \
 	  -e PATCHVEC_VECTOR_STORE__TYPE=txtai \
 	  -e PATCHVEC_VECTOR_STORE__TXTAI__backend=$(CHECK_TXTAI_BACKEND) \
 	  "$$IMG" >/dev/null; \

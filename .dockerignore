@@ -1,0 +1,12 @@
+.git
+.vscode
+*.pyc
+__pycache__
+.venv*
+*.tar.gz
+dist
+build
+dotenv*
+.env
+.env.*
+data/

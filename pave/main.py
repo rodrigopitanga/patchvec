@@ -18,7 +18,7 @@ from .service import create_collection as svc_create_collection, delete_collecti
     ingest_document as svc_ingest_document, do_search as svc_do_search
 
 
-VERSION = "0.5.6dev0"
+VERSION = "0.5.6dev3"
 
 class SearchBody(BaseModel):
     q: str
@@ -228,9 +228,12 @@ def main_srv():
     """
     PatchVec server entrypoint.
     Precedence: CFG (reads env first) > defaults.
-    Policy: fail fast without auth in prod; auth=none only in dev with loopback.
     """
-    # enforce security policy (raises on invalid config)
+    
+    # Policy:
+    # - fail fast without auth in prod;
+    # - auth=none only in dev with loopback;
+    # - raises on invalid config.
     enforce_policy(CFG)
 
     # resolve bind host/port
