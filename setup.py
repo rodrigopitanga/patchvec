@@ -59,8 +59,8 @@ setup(
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     ],
     project_urls={
-        "Homepage": "https://gitlab.com/pitanga/patchvec",
-        "Source": "https://gitlab.com/pitanga/patchvec",
-        "Tracker": "https://gitlab.com/pitanga/patchvec/issues",
+        "Homepage": "https://gitlab.com/flowlexi/patchvec",
+        "Source": "https://gitlab.com/flowlexi/patchvec",
+        "Tracker": "https://gitlab.com/flowlexi/patchvec/issues",
     },
 )
