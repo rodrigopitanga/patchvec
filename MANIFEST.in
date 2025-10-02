@@ -8,4 +8,5 @@ include requirements-base.txt
 include requirements-test.txt
 recursive-include pave *.py
 recursive-include scripts *.sh
+recursive-include pave/assets *
 global-exclude __pycache__ *.py[cod] *.so

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<!-- favicon robusto -->
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/patchvec_icon_192.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/patchvec_icon_192.png" />
+<link rel="icon" href="/favicon.ico" />
+<title>__INST_NAME__ • Search</title>
+<style>
+  /* paleta */
+  :root{ --bg:#f6e6d9; --panel:#fffaf6; --text:#2b1e11; --muted:#6b5b53; --accent:#c9463d; --border:#ead7c7; --link:#0f2e4d; --link-accent:#14b8a6; }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1a1410; --panel:#221a14; --text:#f1e9e4; --muted:#b7a9a1; --accent:#ef6b62; --border:#3a2c22; --link:#9dd9d3; --link-accent:#34d399; }
+  }
+
+  *{ box-sizing:border-box }
+  html,body{ height:100% }
+  body{
+    min-height:100vh; display:flex; flex-direction:column; overflow:hidden;
+    margin:0; font:16px/1.45 system-ui,Segoe UI,Roboto,Inter,Arial; background:var(--bg); color:var(--text);
+  }
+
+  .bar{
+    flex:0 0 auto; display:flex; gap:10px; align-items:center;
+    padding:12px; border-bottom:1px solid var(--border); background:var(--panel);
+  }
+  .left{ display:flex; gap:8px; align-items:center }
+  .right{ margin-left:auto; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+
+  .tab{
+    padding:8px 12px; border-radius:10px; border:1px solid var(--border);
+    cursor:pointer; background:transparent; color:var(--text);
+  }
+  .tab.active{ background:var(--link-accent); color:#041318; border-color:var(--link-accent) }
+
+  .frames{ flex:1 1 auto; min-height:0; background:var(--bg) }
+  .frame{ display:none; width:100%; height:100%; border:0; background:var(--bg) }
+  .frame.active{ display:block }
+
+  .footer{
+    flex:0 0 auto; position:sticky; bottom:0;
+    display:flex; gap:12px; align-items:center; justify-content:center;
+    padding:10px; color:var(--muted); border-top:1px solid var(--border); background:var(--panel);
+  }
+  .footer a{ color:var(--link); text-decoration:none }
+  .footer a:hover{ color:var(--link-accent) }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="left">
+      <button class="tab active" data-target="search" data-title="__INST_NAME__ • Search">Search</button>
+      <button class="tab" data-target="ingest" data-title="__INST_NAME__ • Ingest">Ingest</button>
+    </div>
+    <div class="right"><strong>__INST_NAME__</strong> — <small>__INST_DESC__</small></div>
+  </div>
+
+  <div class="frames">
+    <iframe id="search" class="frame active" src="/ui/search" title="Search"></iframe>
+    <iframe id="ingest" class="frame" src="/ui/ingest" title="Ingest"></iframe>
+  </div>
+
+  <div class="footer">
+    <a href="__REPO_URL__" target="_blank" rel="noopener">patchvec v__VERSION__</a> •
+    <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE_NAME__</a>
+  </div>
+<script>
+  function activeFrame(){ return document.querySelector('.frame.active'); }
+
+  function scrubSwagger(frame){
+    const win = frame?.contentWindow;
+    const doc = win?.document;
+    if(!doc) return;
+    if(!doc.querySelector('.swagger-ui')){
+      setTimeout(()=>scrubSwagger(frame), 80);
+      return;
+    }
+
+    // CSS: remove topo/infos
+    const STYLE_ID = 'pv-clean';
+    if(!doc.getElementById(STYLE_ID)){
+      const s = doc.createElement('style');
+      s.id = STYLE_ID;
+      s.textContent = `
+        .swagger-ui .topbar,
+        .swagger-ui .download-url-wrapper,
+        .swagger-ui .information-container,
+        .swagger-ui .info,
+        .swagger-ui .scheme-container,
+        .swagger-ui .servers { display:none !important; }
+        .swagger-ui .wrapper { margin:0 !important; padding:0 0 8px !important; }
+        html, body { background:transparent !important; }
+
+        /* auth icon */
+        .swagger-ui .auth-wrapper {
+          position: absolute !important;
+          top: 8px; right: 8px;
+          margin: 0 !important; padding: 0 !important; border: 0 !important;
+          height: auto !important; overflow: visible !important;
+        }
+        .swagger-ui .auth-wrapper .authorize {
+          display:flex !important; align-items:center; justify-content:center;
+          width:28px; height:28px; padding:0 !important; border-radius:8px;
+          font-size:0 !important; line-height:0 !important;
+          border: 1px solid rgba(0,0,0,.15);
+          background: transparent;
+        }
+        .swagger-ui .auth-wrapper .authorize:hover { border-color: rgba(20,184,166,.8); }
+        .swagger-ui .auth-wrapper .authorize svg { width:14px; height:14px; }
+        .swagger-ui .auth-container,
+        .swagger-ui .auth-wrapper + .wrapper { margin-top: 0 !important; }
+      `;
+      doc.head.appendChild(s);
+    }
+  }
+
+  const tabs = document.querySelectorAll('.tab');
+  const frames = document.querySelectorAll('.frame');
+
+  tabs.forEach(function(tab){
+    tab.addEventListener('click', function(){
+      tabs.forEach(t=>t.classList.remove('active'));
+      frames.forEach(f=>f.classList.remove('active'));
+      tab.classList.add('active');
+      const fr = document.getElementById(tab.dataset.target);
+      fr.classList.add('active');
+      document.title = tab.dataset.title || document.title;
+      scrubSwagger(fr);
+    });
+  });
+
+  frames.forEach(function(fr){
+      fr.addEventListener('load', function(){ scrubSwagger(fr); });
+  });
+</script>
+</body>
+</html>

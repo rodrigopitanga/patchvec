@@ -255,5 +255,9 @@ def main_srv():
 # Default app instance for `uvicorn pave.main:app`
 app = build_app()
 
+# UI attach (minimal)
+from pave.ui import attach_ui
+attach_ui(app, CFG, VERSION)
+
 if __name__ == "__main__":
     main_srv()

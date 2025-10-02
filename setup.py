@@ -27,6 +27,7 @@ setup(
     python_requires=">=3.10",
     packages=find_packages(include=["pave", "pave.*"]),  # internal package
     include_package_data=True,
+    package_data={"pave": ["assets/*"]},
     install_requires=[
         "fastapi>=0.115.0",
         "uvicorn[standard]>=0.30.6",
