@@ -6,9 +6,9 @@ from .base import BaseStore
 from ..config import CFG
 
 def get_store(cfg: CFG = CFG) -> BaseStore:
-    stype = (cfg.get("vector_store.type", "default") or "default").lower()
+    stype = cfg.get("vector_store.type")
     match stype:
-        case "default" | "txtai":  # vendor-neutral default; bw compatible with 'txtai'
+        case "default" | "txtai":  # vendor-neutral default
             from .txtai_store import TxtaiStore
             return TxtaiStore()
         case "qdrant":

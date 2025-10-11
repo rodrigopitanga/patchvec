@@ -65,8 +65,8 @@ _FALLBACK_TMPL = """<!doctype html>
 
 def attach_ui(app, cfg, version):
     # instance strings
-    inst_name = str(cfg.instance_name or "PatchVec")
-    inst_desc = str(cfg.instance_description or "Lightweight Vector Search Microservice")
+    inst_name = str(cfg.get("instance.name"))
+    inst_desc = str(cfg.get("instance.desc"))
 
     # footer links
     repo_url = "https://github.com/flowlexi/patchvec"

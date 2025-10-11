@@ -1,4 +1,13 @@
+# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import json
+from pave.main import VERSION
+
+def test_metrics_json(client):
+    r = client.get("/health/metrics")
+    assert r.status_code == 200
+    assert "uptime_seconds" in r.json()
 
 def test_metrics_counters(client):
     # create, upload, search -> counters move
@@ -18,3 +27,9 @@ def test_metrics_counters(client):
     assert snap["chunks_indexed_total"] >= 1
     assert snap["search_total"] >= 1
     assert snap["requests_total"] >= 3  # create + upload + search
+
+def test_metrics_exposes_build_labels(client):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    txt = r.text
+    assert "version" in txt and VERSION in txt

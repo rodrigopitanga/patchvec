@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 import argparse, json, uuid, pathlib
-from .stores.factory import get_store
-from .service import (
+from pave.stores.factory import get_store
+from pave.service import (
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
     ingest_document as svc_ingest_document,
     do_search as svc_do_search,
 )
-from .config import CFG
+from pave.config import get_cfg, reload_cfg
 
-store = get_store(CFG)
+store = get_store(get_cfg())
 
 def _read(path: str) -> bytes:
     return pathlib.Path(path).read_bytes()
@@ -53,6 +53,7 @@ def cmd_delete(args):
 def main_cli(argv=None):
     p = argparse.ArgumentParser(prog="pavecli")
     sub = p.add_subparsers(dest="cmd", required=True)
+    #if p.config: reload_cfg(p.config)
 
     p_create = sub.add_parser("create-collection")
     p_create.add_argument("tenant")

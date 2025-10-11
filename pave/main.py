@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, Annotated
 import uvicorn
-from .config import CFG
+from . import config as cfg
 from .auth import AuthContext, auth_ctx, authorize_tenant, enforce_policy, resolve_bind
 from .metrics import inc, set_error, snapshot, to_prometheus
 from .stores.factory import get_store
@@ -26,10 +26,14 @@ class SearchBody(BaseModel):
     filters: Optional[Dict[str, Any]] = None
 
 # Dependency injection builder
-
-def build_app(cfg=CFG) -> FastAPI:
-    app = FastAPI(title="PatchVec — Vector Search (pluggable, functional)")
+def build_app(cfg=get_cfg()) -> FastAPI:
+    app = FastAPI(
+        title=cfg.get("instance.name","Patchvec"),
+        description=cfg.get("instance.desc","Vector Search Microservice")
+    )
     app.state.store = get_store(cfg)
+    app.state.cfg = cfg
+    app.state.version = VERSION
 
     def current_store(request: Request) -> BaseStore:
         return request.app.state.store
@@ -39,8 +43,8 @@ def build_app(cfg=CFG) -> FastAPI:
 
     def _readiness_check() -> Dict[str, Any]:
         details: Dict[str, Any] = {
-            "data_dir": cfg.data_dir,
-            "vector_store_type": cfg.get("vector_store.type", "txtai"),
+            "data_dir": cfg.get("data_dir"),
+            "vector_store": cfg.get("vector_store.type"),
             "writable": False,
             "vector_backend_init": False,
         }
@@ -61,7 +65,8 @@ def build_app(cfg=CFG) -> FastAPI:
         except Exception as e:
             details["vector_backend_init"] = False
             set_error(f"vec: {e}")
-        details["ok"] = bool(details["writable"] and details["vector_backend_init"])
+        details["ok"] = bool(
+            details["writable"] and details["vector_backend_init"])
         details["version"] = VERSION
         return details
 
@@ -87,13 +92,21 @@ def build_app(cfg=CFG) -> FastAPI:
     @app.get("/health/metrics")
     def health_metrics():
         inc("requests_total")
-        extra = {"version": VERSION, "vector_store_type": cfg.get("vector_store.type", "txtai")}
+        extra = {
+            "version": VERSION,
+            "vector_store": cfg.get("vector_store.type"),
+            "auth": cfg.get("auth.mode")
+        }
         return snapshot(extra)
 
     @app.get("/metrics")
     def metrics_prom():
         inc("requests_total")
-        txt = to_prometheus(build={"version": VERSION, "store": cfg.get("vector_store.type", "txtai")})
+        txt = to_prometheus(build={
+            "version": VERSION,
+            "vector_store": cfg.get("vector_store.type"),
+            "auth":cfg.get("auth.mode")
+        })
         return PlainTextResponse(txt, media_type="text/plain; version=0.0.4")
 
     
@@ -126,7 +139,8 @@ def build_app(cfg=CFG) -> FastAPI:
         file: UploadFile = File(...),
         docid: Optional[str] = Form(None),
         metadata: Optional[str] = Form(None),
-        # CSV controls as optional query params (kept out of form to not clash with file upload)
+        # CSV controls as optional query params
+        # (kept out of form to not clash with file upload)
         csv_has_header: Optional[str] = Query(None, pattern="^(auto|yes|no)$"),
         csv_meta_cols: Optional[str] = Query(None),
         csv_include_cols: Optional[str] = Query(None),
@@ -139,7 +153,10 @@ def build_app(cfg=CFG) -> FastAPI:
                 import json
                 meta_obj = json.loads(metadata)
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"invalid metadata json: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"invalid metadata json: {e}"
+                )
 
         content = await file.read()
 
@@ -174,7 +191,8 @@ def build_app(cfg=CFG) -> FastAPI:
         include_common = bool(cfg.common_enabled)
         result = svc_do_search(
             store, tenant, name, body.q, body.k, filters=body.filters,
-            include_common=include_common, common_tenant=cfg.common_tenant, common_collection=cfg.common_collection
+            include_common=include_common, common_tenant=cfg.common_tenant,
+            common_collection=cfg.common_collection
         )
         return JSONResponse(result)
 
@@ -192,7 +210,8 @@ def build_app(cfg=CFG) -> FastAPI:
         include_common = bool(cfg.common_enabled)
         result = svc_do_search(
             store, tenant, name, q, k, filters=None,
-            include_common=include_common, common_tenant=cfg.common_tenant, common_collection=cfg.common_collection
+            include_common=include_common, common_tenant=cfg.common_tenant,
+            common_collection=cfg.common_collection
         )
         return JSONResponse(result)
 
@@ -206,7 +225,10 @@ def build_app(cfg=CFG) -> FastAPI:
         inc("requests_total")
         if not cfg.common_enabled:
             return JSONResponse({"matches": []})
-        result = svc_do_search(store, cfg.common_tenant, cfg.common_collection, body.q, body.k, filters=body.filters)
+        result = svc_do_search(
+            store, cfg.common_tenant, cfg.common_collection, body.q, body.k,
+            filters=body.filters
+        )
         return JSONResponse(result)
 
     @app.get("/search")
@@ -219,14 +241,16 @@ def build_app(cfg=CFG) -> FastAPI:
         inc("requests_total")
         if not cfg.common_enabled:
             return JSONResponse({"matches": []})
-        result = svc_do_search(store, cfg.common_tenant, cfg.common_collection, q, k, filters=None)
+        result = svc_do_search(
+            store, cfg.common_tenant, cfg.common_collection, q, k, filters=None
+        )
         return JSONResponse(result)
 
     return app
 
 def main_srv():
     """
-    PatchVec server entrypoint.
+    HTTP server entrypoint.
     Precedence: CFG (reads env first) > defaults.
     """
     
@@ -234,15 +258,21 @@ def main_srv():
     # - fail fast without auth in prod;
     # - auth=none only in dev with loopback;
     # - raises on invalid config.
-    enforce_policy(CFG)
+    enforce_policy(cfg.CFG)
 
     # resolve bind host/port
-    host, port = resolve_bind(CFG)
+    host, port = resolve_bind(cfg.CFG)
+    cfg.CFG.set("server.host", host)
+    cfg.CFG.set("server.port", port)
 
     # flags from CFG
-    reload = bool(CFG.get("server.reload", False))
-    workers = int(CFG.get("server.workers", 1))
-    log_level = str(CFG.get("server.log_level", "info"))
+    reload = bool(cfg.CFG.get("server.reload", False))
+    workers = int(cfg.CFG.get("server.workers", 1))
+    log_level = str(cfg.CFG.get("server.log_level", "info"))
+
+    if cfg.CFG.get("dev",0):
+        log_level = "debug"
+        cfg.CFG.set("server.log_level", log_level)
 
     # run server
     uvicorn.run("pave.main:app",
@@ -257,7 +287,7 @@ app = build_app()
 
 # UI attach (minimal)
 from pave.ui import attach_ui
-attach_ui(app, CFG, VERSION)
+attach_ui(app, cfg.CFG, VERSION)
 
 if __name__ == "__main__":
     main_srv()

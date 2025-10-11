@@ -21,6 +21,8 @@ VENV            ?= .venv-$(PKG_INTERNAL)
 PYTHON_BIN      ?= $(VENV)/bin/python
 PIP_BIN         ?= $(VENV)/bin/pip
 
+DEV		?= 1
+AUTH_MODE	?= none
 HOST            ?= 0.0.0.0
 PORT            ?= 8086
 WORKERS         ?= 1
@@ -123,11 +125,13 @@ test: install-dev
 
 .PHONY: serve
 serve: install
-	@echo "Starting 🍰 DEV server on 127.0.0.1:$(PORT)"
+	@echo "Starting 🍰 server on $(HOST):$(PORT) [auth.mode=$(AUTH_MODE)]"
 	PYTHONPATH=. \
-	PATCHVEC_DEV=1 \
-	PATCHVEC_AUTH__MODE=none \
-	PATCHVEC_SERVER_HOST=127.0.0.1 \
+	PATCHVEC_DEV=$(DEV) \
+	PATCHVEC_AUTH__MODE=$(AUTH_MODE) \
+	PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
+	PATCHVEC_SERVER__LOG_LEVEL=$(LOG_LEVEL) \
+	PATCHVEC_SERVER_HOST=$(HOST) \
 	PATCHVEC_SERVER_PORT=$(PORT) \
 	$(PYTHON_BIN) -m $(PKG_INTERNAL).main
 
@@ -354,8 +358,8 @@ check-up:
 	  --env PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
 	  --env PATCHVEC_SERVER__HOST=$(CHECK_HOST) \
 	  --env PATCHVEC_SERVER__PORT=$(CHECK_PORT) \
-	  --env PATCHVEC_VECTOR_STORE__TYPE=txtai \
-	  --env PATCHVEC_VECTOR_STORE__TXTAI__backend=$(CHECK_TXTAI_BACKEND) \
+	  --env PATCHVEC_VECTOR_STORE__TYPE=default \
+	  --env PATCHVEC_VECTOR_STORE__TXTAI__BACKEND=$(CHECK_TXTAI_BACKEND) \
 	  $$IMG
 
 .PHONY: check-down
@@ -380,8 +384,8 @@ check: install
 	  -e PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
 	  -e PATCHVEC_SERVER__HOST=$(CHECK_HOST) \
 	  -e PATCHVEC_SERVER__PORT=$(CHECK_PORT) \
-	  -e PATCHVEC_VECTOR_STORE__TYPE=txtai \
-	  -e PATCHVEC_VECTOR_STORE__TXTAI__backend=$(CHECK_TXTAI_BACKEND) \
+	  -e PATCHVEC_VECTOR_STORE__TYPE=default \
+	  -e PATCHVEC_VECTOR_STORE__TXTAI__BACKEND=$(CHECK_TXTAI_BACKEND) \
 	  "$$IMG" >/dev/null; \
 	trap 'echo "==> Stopping container $(CHECK_NAME)"; docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true' EXIT INT TERM; \
 	BASE="http://$(CHECK_HOST):$(CHECK_PORT)"; \

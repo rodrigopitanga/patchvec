@@ -28,20 +28,19 @@ def test_upload_txt_and_search_post_get(client):
 
 def test_reupload_same_docid_calls_purge_and_reindexes(client):
     client.post("/collections/acme/reup")
-    store = client.app.state.store  # DummyStore injected
+    store = client.app.state.store
     # first upload
     r1 = client.post("/collections/acme/reup/documents",
                      files={"file": ("a.txt", b"alpha bravo charlie", "text/plain")},
                      data={"docid": "R-42"})
     assert r1.status_code == 200
-    initial_purge = store.purge_calls
 
     # second upload with same docid -> must call purge
     r2 = client.post("/collections/acme/reup/documents",
                      files={"file": ("b.txt", b"delta echo foxtrot", "text/plain")},
                      data={"docid": "R-42"})
     assert r2.status_code == 200
-    assert store.purge_calls == initial_purge + 1
+    assert ("purge_doc", "acme", "reup", "R-42") in store.calls
 
     # confirm only new content appears
     s = client.post("/collections/acme/reup/search", json={"q": "delta", "k": 5, "filters": {"docid": "R-42"}})

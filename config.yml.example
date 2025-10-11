@@ -1,4 +1,4 @@
-# PatchVec sample configuration (commit this file as config.yml.example)
+# Patchvec sample configuration (commit this file as config.yml.example)
 # Copy to config.yml and adjust. Secrets should live in a separate, untracked file (see tenants.yml.example).
 
 data_dir: ./data
@@ -61,3 +61,9 @@ server:
   reload: false
   workers: 1
   log_level: info
+
+# Optional instance customization
+instance:
+  name: PatchVec
+  desc: Vector Search Microservice (pluggable, functional)
+
