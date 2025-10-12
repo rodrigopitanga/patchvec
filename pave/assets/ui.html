@@ -63,7 +63,8 @@
   </div>
 
   <div class="footer">
-    <a href="__REPO_URL__" target="_blank" rel="noopener">patchvec v__VERSION__</a> •
+    © 2025 <a href="https://flowlexi.com" target="_blank" rel="noopener">Flowlexi</a> •
+    <a href="__REPO_URL__" target="_blank" rel="noopener">🍰 patchvec __VERSION__</a> •
     <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE_NAME__</a>
   </div>
 <script>
@@ -84,33 +85,18 @@
       const s = doc.createElement('style');
       s.id = STYLE_ID;
       s.textContent = `
+        #operations-tag-default,
         .swagger-ui .topbar,
         .swagger-ui .download-url-wrapper,
         .swagger-ui .information-container,
         .swagger-ui .info,
-        .swagger-ui .scheme-container,
         .swagger-ui .servers { display:none !important; }
         .swagger-ui .wrapper { margin:0 !important; padding:0 0 8px !important; }
         html, body { background:transparent !important; }
-
         /* auth icon */
-        .swagger-ui .auth-wrapper {
-          position: absolute !important;
-          top: 8px; right: 8px;
-          margin: 0 !important; padding: 0 !important; border: 0 !important;
-          height: auto !important; overflow: visible !important;
-        }
-        .swagger-ui .auth-wrapper .authorize {
-          display:flex !important; align-items:center; justify-content:center;
-          width:28px; height:28px; padding:0 !important; border-radius:8px;
-          font-size:0 !important; line-height:0 !important;
-          border: 1px solid rgba(0,0,0,.15);
-          background: transparent;
-        }
         .swagger-ui .auth-wrapper .authorize:hover { border-color: rgba(20,184,166,.8); }
-        .swagger-ui .auth-wrapper .authorize svg { width:14px; height:14px; }
-        .swagger-ui .auth-container,
-        .swagger-ui .auth-wrapper + .wrapper { margin-top: 0 !important; }
+        .swagger-ui .btn.authorize { background: white }
+        .swagger-ui .scheme-container { width:100%; height:; margin: 8px 0 0 0; padding: 0 0; background:transparent; border-color: transparent; box-shadow:0 0 0 0 rgba(0,0,0,0)}
       `;
       doc.head.appendChild(s);
     }

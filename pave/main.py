@@ -287,7 +287,7 @@ app = build_app()
 
 # UI attach (minimal)
 from pave.ui import attach_ui
-attach_ui(app, cfg.CFG, VERSION)
+attach_ui(app)
 
 if __name__ == "__main__":
     main_srv()

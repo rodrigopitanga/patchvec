@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # pave/ui.py — minimal, crash-proof UI wiring
+from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
@@ -15,24 +16,6 @@ _FALLBACK_TMPL = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="/favicon.ico" />
 <title>__INST_NAME__ • Search</title>
-<style>
-  :root{ --bg:#f6e6d9; --panel:#fffaf6; --text:#2b1e11; --muted:#6b5b53; --accent:#c9463d; --border:#ead7c7; }
-  :root{ --link:#0f2e4d; --link-accent:#14b8a6; }
-  @media (prefers-color-scheme: dark){
-    :root{ --bg:#1a1410; --panel:#221a14; --text:#f1e9e4; --muted:#b7a9a1; --accent:#ef6b62; --border:#3a2c22; --link:#9dd9d3; --link-accent:#34d399; }
-  }
-  html,body{height:100%}
-  body{margin:0;font:16px/1.45 system-ui,Segoe UI,Roboto,Inter,Arial;background:var(--bg);color:var(--text)}
-  .tabs{display:flex;gap:8px;padding:12px;border-bottom:1px solid var(--border);background:var(--panel);align-items:center}
-  .tab{padding:8px 12px;border-radius:10px;border:1px solid var(--border);cursor:pointer;background:transparent;color:var(--text)}
-  .tab.active{background:var(--link-accent);color:#041318;border-color:var(--link-accent)}
-  .desc{color:var(--muted);font-size:.9rem;margin-left:auto;padding:8px 12px}
-  .frame{display:none;width:100%;height:calc(100vh - 92px);border:0;background:var(--bg)}
-  .frame.active{display:block}
-  .footer{display:flex;gap:12px;align-items:center;justify-content:center;padding:10px;color:var(--muted);border-top:1px solid var(--border);background:var(--panel)}
-  .footer a{color:var(--link);text-decoration:none}
-  .footer a:hover{color:var(--link-accent)}
-</style>
 </head>
 <body>
   <div class="tabs">
@@ -43,9 +26,7 @@ _FALLBACK_TMPL = """<!doctype html>
   <iframe id="search" class="frame active" src="/ui/search" title="Search"></iframe>
   <iframe id="ingest" class="frame" src="/ui/ingest" title="Ingest"></iframe>
   <div class="footer">
-    <span>patchvec v__VERSION__</span> •
-    <a href="__REPO_URL__" target="_blank" rel="noopener">Repository</a> •
-    <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE_NAME__</a>
+    <span>patchvec v__VERSION__</span>
   </div>
 <script>
   const tabs = document.querySelectorAll('.tab');
@@ -63,23 +44,23 @@ _FALLBACK_TMPL = """<!doctype html>
 </body></html>
 """
 
-def attach_ui(app, cfg, version):
-    # instance strings
-    inst_name = str(cfg.get("instance.name"))
-    inst_desc = str(cfg.get("instance.desc"))
+def attach_ui(app: FastAPI):
+    cfg = app.state.cfg
+    version = app.state.version
 
     # footer links
-    repo_url = "https://github.com/flowlexi/patchvec"
-    license_name = "Licensed under GNU GPL v3.0"
+    repo_url = "https://gitlab.com/flowlexi/patchvec"
+    license_name = "GPL-3.0-or-later"
     license_url = "https://www.gnu.org/licenses/gpl-3.0-standalone.html"
 
-    # reflect on app header
-    app.title = inst_name
-    app.description = inst_desc
-
-    # static + favicon (hardcoded path relative to this file). never crash if dir missing.
+    # static + favicon (hardcoded path relative to this file)
+    # never crash if dir missing.
     assets_dir = (Path(__file__).parent / "assets").resolve()
-    app.mount("/assets", StaticFiles(directory=str(assets_dir), check_dir=False), name="assets")
+    app.mount(
+        "/assets", \
+        StaticFiles(directory=str(assets_dir), check_dir=False), \
+        name="assets"
+    )
 
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
@@ -93,9 +74,19 @@ def attach_ui(app, cfg, version):
     _openapi_cache = {"doc": None}
     def _openapi_full():
         if _openapi_cache["doc"] is None:
-            schema = get_openapi(title=app.title, version=version, description=app.description, routes=app.routes)
-            comps = schema.setdefault("components", {}).setdefault("securitySchemes", {})
-            comps["bearerAuth"] = {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+            schema = get_openapi(
+                title=app.title,
+                version=version,
+                description=app.description,
+                routes=app.routes
+            )
+            comps = schema.setdefault("components", {})\
+                          .setdefault("securitySchemes", {})
+            comps["bearerAuth"] = {
+                "type": "http",
+                "scheme": "bearer",  # plain bearer (no JWT - yet)
+                "description": "Send Authorization: Bearer <token>",
+            }
             schema["security"] = [{"bearerAuth": []}]
             info = schema.setdefault("info", {})
             info["x-repository"] = repo_url
@@ -120,7 +111,9 @@ def attach_ui(app, cfg, version):
 
     def _is_ingest(path: str, _op: dict) -> bool:
         p = path.lower()
-        return ("/documents" in p) or ("/collections" in p and "/search" not in p) or p.endswith("/collections")
+        return ("/documents" in p) or \
+            ("/collections" in p and "/search" not in p) or \
+            p.endswith("/collections")
 
     @app.get("/openapi-search.json", include_in_schema=False)
     def openapi_search_only():
@@ -130,20 +123,29 @@ def attach_ui(app, cfg, version):
     def openapi_ingest_only():
         return _filter(_openapi_full(), _is_ingest)
 
+    _swui_params = {
+            "defaultModelsExpandDepth": -1,
+            "displayRequestDuration": True,
+            "docExpansion": "list",
+            "tryItOutEnabled": True,
+        }
+
     @app.get("/ui/search", include_in_schema=False)
     def ui_search():
+        inst_name = cfg.get("instance.name")
         return get_swagger_ui_html(
             openapi_url="/openapi-search.json",
             title=f"{inst_name} • Search",
-            swagger_ui_parameters={"defaultModelsExpandDepth": -1, "displayRequestDuration": True, "docExpansion": "list", "tryItOutEnabled": True},
+            swagger_ui_parameters=_swui_params
         )
 
     @app.get("/ui/ingest", include_in_schema=False)
     def ui_ingest():
+        inst_name = cfg.get("instance.name")
         return get_swagger_ui_html(
             openapi_url="/openapi-ingest.json",
             title=f"{inst_name} • Ingest",
-            swagger_ui_parameters={"defaultModelsExpandDepth": -1, "displayRequestDuration": True, "docExpansion": "list", "tryItOutEnabled": True},
+            swagger_ui_parameters=_swui_params
         )
 
     # lazy-read template on request (so missing file never kills startup)
@@ -151,6 +153,9 @@ def attach_ui(app, cfg, version):
 
     @app.get("/ui", include_in_schema=False)
     def ui_home():
+        # instance strings
+        inst_name = cfg.get("instance.name")
+        inst_desc = cfg.get("instance.desc")
         try:
             html = tmpl_path.read_text(encoding="utf-8")
         except Exception:
@@ -164,7 +169,7 @@ def attach_ui(app, cfg, version):
                 .replace("__LICENSE_URL__", license_url)
         )
         return HTMLResponse(html)
-        
+
     @app.get("/", include_in_schema=False)
     def root_redirect():
         return RedirectResponse("/ui", status_code=308)
