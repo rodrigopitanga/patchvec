@@ -1,3 +1,5 @@
+# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 def test_create_and_delete_collection(client):
     r = client.post("/collections/acme/invoices")

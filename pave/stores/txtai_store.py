@@ -8,6 +8,7 @@ from txtai.embeddings import Embeddings
 from .base import BaseStore, Record
 from ..config import CFG
 
+
 class TxtaiStore(BaseStore):
     def __init__(self):
         self._emb: Dict[tuple[str, str], Embeddings] = {}

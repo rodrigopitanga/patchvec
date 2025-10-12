@@ -1,4 +1,5 @@
-# Covers: 401 (no header), 403 (bad token), 200 (good token), tenant mismatch
+# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+# SPDX-License-Identifier: GPL-3.0-or-later
 
 import pytest
 from fastapi import FastAPI, Depends

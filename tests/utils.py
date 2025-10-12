@@ -34,7 +34,8 @@ class FakeEmbeddings:
 
     def save(self, path):
         os.makedirs(path, exist_ok=True)
-        with open(os.path.join(path, "_fake_index.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(
+                path, "_fake_index.json"), "w", encoding="utf-8") as f:
             json.dump(self._docs, f, ensure_ascii=False)
 
     def load(self, path):

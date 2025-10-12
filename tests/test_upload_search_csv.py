@@ -1,3 +1,6 @@
+# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import json
 
 def test_upload_csv_and_search(client):
@@ -24,7 +27,10 @@ def test_upload_csv_and_search(client):
     assert "banana" in texts.lower()
 
     # GET search (no filters)
-    s2 = client.get("/collections/acme/csvs/search", params={"q": "abacaxi", "k": 5})
+    s2 = client.get(
+        "/collections/acme/csvs/search",
+        params={"q": "abacaxi", "k": 5}
+    )
     assert s2.status_code == 200
     texts2 = " ".join(m.get("text") or "" for m in s2.json()["matches"])
     assert "abacaxi" in texts2.lower()

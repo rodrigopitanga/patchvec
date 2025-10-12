@@ -1,5 +1,6 @@
 # (C) 2025 Rodrigo Rodrigues da Silva
 # SPDX-License-Identifier: GPL-3.0-or-later
+
 import pytest
 from pave.service import ingest_document as svc_ingest, _default_docid
 from pave.stores.txtai_store import TxtaiStore

@@ -2,20 +2,27 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
+
 import json, os
-from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, Query, Depends, Request, \
-    HTTPException
+import uvicorn
+
+from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, \
+    Query, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, Annotated
-import uvicorn
-from . import config as cfg
-from .auth import AuthContext, auth_ctx, authorize_tenant, enforce_policy, resolve_bind
-from .metrics import inc, set_error, snapshot, to_prometheus
-from .stores.factory import get_store
-from .stores.base import BaseStore
-from .service import create_collection as svc_create_collection, delete_collection as svc_delete_collection, \
-    ingest_document as svc_ingest_document, do_search as svc_do_search
+
+from pave.config import get_cfg
+from pave.auth import AuthContext, auth_ctx, authorize_tenant, \
+    enforce_policy, resolve_bind
+from pave.metrics import inc, set_error, snapshot, to_prometheus
+from pave.stores.factory import get_store
+from pave.stores.base import BaseStore
+from pave.service import \
+    create_collection as svc_create_collection, \
+    delete_collection as svc_delete_collection, \
+    ingest_document as svc_ingest_document, \
+    do_search as svc_do_search
 
 
 VERSION = "0.5.6dev3"

@@ -1,8 +1,10 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
+
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Iterable, Dict, Any, List
+
 
 Record = tuple[str, str, Dict[str, Any]]  # (rid, text, meta)
 
