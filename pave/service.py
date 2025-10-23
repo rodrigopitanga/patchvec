@@ -14,12 +14,20 @@ def create_collection(store, tenant: str, name: str) -> Dict[str, Any]:
     store.load_or_init(tenant, name)
     store.save(tenant, name)
     m_inc("collections_created_total", 1.0)
-    return {"ok": True, "tenant": tenant, "collection": name}
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "collection": name
+    }
 
 def delete_collection(store, tenant: str, name: str) -> Dict[str, Any]:
     store.delete_collection(tenant, name)
     m_inc("collections_deleted_total", 1.0)
-    return {"ok": True, "tenant": tenant, "deleted": name}
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "deleted": name
+    }
 
 def _default_docid(filename: str) -> str:
     # Uppercase
@@ -29,8 +37,9 @@ def _default_docid(filename: str) -> str:
     # replace all non A-Z0-9_ with underscore
     base = re.sub(r"[^A-Z0-9_]", "_", base)
     # collapse multiple underscores
-    base = re.sub(r"_+", "_", base)
-    return base.strip("_") or ("PVDOC_"+str(uuid.uuid4()))
+    base = re.sub(r"_+", "_", base).strip("_")
+    if base != '': return base
+    return "PVDOC_"+str(uuid.uuid4())
 
 def ingest_document(store, tenant: str, collection: str, filename: str, content: bytes,
                     docid: str | None, metadata: Dict[str, Any] | None,
@@ -50,22 +59,34 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
         records.append((rid, text, meta))
     if not records:
         return {"ok": False, "error": "no text extracted"}
-    count = store.index_records(tenant, name, baseid, records)
+    count = store.index_records(tenant, collection, baseid, records)
     m_inc("documents_indexed_total", 1.0)
     m_inc("chunks_indexed_total", float(count or 0))
-    return {"ok": True, "tenant": tenant, "collection": name, "docid": baseid, "chunks": count}
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "collection": collection,
+        "docid": baseid,
+        "chunks": count
+    }
 
-def do_search(store, tenant: str, name: str, q: str, k: int = 5, filters: Dict[str, Any] | None = None,
-              include_common: bool = False, common_tenant: str | None = None, common_collection: str | None = None) -> Dict[str, Any]:
+def do_search(store, tenant: str, collection: str, q: str, k: int = 5,
+              filters: Dict[str, Any] | None = None, include_common: bool = False,
+              common_tenant: str | None = None, common_collection: str | None = None
+              ) -> Dict[str, Any]:
     m_inc("search_total", 1.0)
     if include_common and common_tenant and common_collection:
         matches: List[Dict[str, Any]] = []
-        matches.extend(store.search(tenant, name, q, max(10, k * 2), filters=filters))
-        matches.extend(store.search(common_tenant, common_collection, q, max(10, k * 2), filters=filters))
+        matches.extend(store.search(
+            tenant, collection, q, max(10, k * 2), filters=filters))
+        matches.extend(store.search(
+            common_tenant, common_collection, q, max(10, k * 2), filters=filters))
         from heapq import nlargest
         top = nlargest(k, matches, key=lambda x: x["score"])
         m_inc("matches_total", float(len(top) or 0))
         return {"matches": top}
-    top = store.search(tenant, name, q, k, filters=filters)
+    top = store.search(tenant, collection, q, k, filters=filters)
     m_inc("matches_total", float(len(top) or 0))
-    return {"matches": top}
+    return {
+        "matches": top
+    }

@@ -88,8 +88,8 @@ def test_purge_doc_removes_ids(store):
 
 def test_load_or_init_handles_empty_index_dir(store, tmp_path):
     """
-    Repro of FAISS crash: empty ./data/T/C/index/ existed -> em.load() tried to read non-existent embeddings.
-    Expectation: store should initialize fresh instead of loading.
+    Repro of FAISS crash: empty ./data/T/C/index/ existed -> em.load() tried to read
+    non-existent embeddings. Expectation: store should initialize fresh instead of loading.
     """
     tenant, coll = "tnew", "cnew"
 

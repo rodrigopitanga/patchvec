@@ -12,7 +12,8 @@ def test_upload_txt_and_search_post_get(client):
     assert r.status_code == 200
 
     # GET without filters
-    s2 = client.get("/collections/acme/txts/search", params={"q": "patchvec", "k": 3})
+    s2 = client.get("/collections/acme/txts/search",
+                    params={"q": "patchvec", "k": 3})
     print(s2.status_code, s2.json())
     assert s2.status_code == 200 and len(s2.json()["matches"]) >= 1
 

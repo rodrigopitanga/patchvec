@@ -97,7 +97,8 @@ class DummyStore(BaseStore):
             json.dump(data, f)
         return len(ids)
 
-    def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+    def search(self, tenant: str, collection: str, text: str, k: int = 5,
+               filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         if not os.path.isfile(cat):
             return []

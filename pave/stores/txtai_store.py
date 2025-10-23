@@ -5,8 +5,8 @@ from __future__ import annotations
 import os, json
 from typing import Dict, Iterable, List, Any
 from txtai.embeddings import Embeddings
-from .base import BaseStore, Record
-from ..config import CFG
+from pave.stores.base import BaseStore, Record
+from pave.config import CFG as c
 
 
 class TxtaiStore(BaseStore):
@@ -14,7 +14,7 @@ class TxtaiStore(BaseStore):
         self._emb: Dict[tuple[str, str], Embeddings] = {}
 
     def _base_path(self, tenant: str, collection: str) -> str:
-        return os.path.join(CFG.data_dir, tenant, collection)
+        return os.path.join(c.get("data_dir"), f"t_{tenant}", f"c_{collection}")
 
     def _catalog_path(self, tenant: str, collection: str) -> str:
         return os.path.join(self._base_path(tenant, collection), "catalog.json")
@@ -39,18 +39,21 @@ class TxtaiStore(BaseStore):
     def _load_catalog(self, tenant: str, collection: str) -> Dict[str, List[str]]:
         return self._load_json(self._catalog_path(tenant, collection))
 
-    def _save_catalog(self, tenant: str, collection: str, cat: Dict[str, List[str]]) -> None:
+    def _save_catalog(self, tenant: str, collection: str,
+                      cat: Dict[str, List[str]]) -> None:
         self._save_json(self._catalog_path(tenant, collection), cat)
 
     def _load_meta(self, tenant: str, collection: str) -> Dict[str, Dict[str, Any]]:
         return self._load_json(self._meta_path(tenant, collection))
 
-    def _save_meta(self, tenant: str, collection: str, meta: Dict[str, Dict[str, Any]]) -> None:
+    def _save_meta(self, tenant: str, collection: str,
+                   meta: Dict[str, Dict[str, Any]]) -> None:
         self._save_json(self._meta_path(tenant, collection), meta)
 
     def _config(self):
-        model = CFG.get("vector_store.txtai.embed_model", CFG.get("embed_model", "sentence-transformers/paraphrase-MiniLM-L3-v2"))
-        backend = CFG.get("vector_store.txtai.backend", CFG.get("vector_backend", "faiss"))
+        model = c.get("vector_store.txtai.embed_model",
+                      "sentence-transformers/paraphrase-MiniLM-L3-v2")
+        backend = c.get("vector_store.txtai.backend", "faiss")
         return {"path": model, "backend": backend, "content": True}
 
     def load_or_init(self, tenant: str, collection: str) -> None:
@@ -136,9 +139,10 @@ class TxtaiStore(BaseStore):
                 return f.read()
         return None
 
-    def index_records(self, tenant: str, collection: str, docid: str, records: Iterable[Record]) -> int:
+    def index_records(self, tenant: str, collection: str, docid: str,
+                      records: Iterable[Record]) -> int:
         """
-        Ingests records as (id, text, meta). Guarantees non-null text, coerces
+        Ingests records as (rid, text, meta). Guarantees non-null text, coerces
         dict-records, updates catalog/meta, saves index, and verifies content
         storage via a quick lookup.
         """
@@ -147,14 +151,14 @@ class TxtaiStore(BaseStore):
 
         rlist: list[tuple[str, str, str]] = []  # (id, text, meta_json)
 
-        for rec in records:
-            if isinstance(rec, dict):
-                rid = rec.get("id") or rec.get("rid") or rec.get("uid")
-                txt = rec.get("text") or rec.get("content")
-                meta = rec.get("meta") or rec.get("metadata") or rec.get("tags") or {}
+        for r in records:
+            if isinstance(r, dict):
+                rid = r.get("rid") or r.get("id") or r.get("uid")
+                txt = r.get("text") or r.get("content")
+                meta = r.get("meta") or r.get("metadata") or r.get("tags") or {}
             else:
                 try:
-                    rid, txt, meta = rec
+                    rid, txt, meta = r
                 except Exception:
                     continue
 
@@ -204,7 +208,8 @@ class TxtaiStore(BaseStore):
                     return False
         return True
     
-    def search(self, tenant: str, collection: str, query: str, k: int = 5, filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+    def search(self, tenant: str, collection: str, query: str, k: int = 5,
+               filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         """
         Queries txtai for top-k, keeps overfetch inside the store, preserves text
         from em.search when present, and falls back to lookup if missing.
@@ -218,9 +223,15 @@ class TxtaiStore(BaseStore):
 
         # Normalize to (id, score, maybe_text)
         if raw and isinstance(raw[0], dict):
-            triples = [(r.get("id"), float(r.get("score", 0.0)), r.get("text")) for r in raw]
-        else:
-            triples = [(rid, float(score), None) for rid, score in (raw or [])]
+            triples = [
+                (r.get("id"), float(r.get("score", 0.0)), r.get("text"))
+                for r in raw
+            ]
+        else: # if raw is a tuple:
+            triples = [
+                (rid, float(score), None)
+                for rid, score in (raw or [])
+            ]
 
         meta = self._load_meta(tenant, collection)
 
