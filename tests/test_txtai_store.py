@@ -29,6 +29,46 @@ def test_index_and_search_pt_text(store):
     assert len(hits) >= 1
     assert hits[0]["text"] is not None and "avião" in hits[0]["text"].lower() or "aviao" in hits[0]["text"].lower()
 
+def test_index_two_docs_no_purge(store):
+    # Portuguese content; ensure non-null texts returned
+    recs1 = [
+        {"id": "doc1::0", "content": "Submarino amarelo.", "metadata": {"lang": "pt"}},
+    ]
+    recs2 = [
+        {"id": "doc2::0", "content": "Veludosas vozes.", "metadata": {"lang": "pt"}},
+    ]
+    n = store.index_records("acme", "undersea2", "doc1", recs1)
+    assert n == 1
+
+    n = store.index_records("acme", "undersea2", "doc2", recs2)
+    assert n == 1
+
+    hits = store.search("acme", "undersea2", "amarelo", k=5)
+    assert ("purge_doc", "acme", "undersea2", "doc1") not in store.calls
+    assert len(hits) >= 1
+    assert hits[0]["text"] is not None and "submarino" in hits[0]["text"].lower()
+
+    recs3 = [
+        {"id": "doc3::0", "content": "Som amarelo.", "metadata": {"lang": "pt"}},
+    ]
+    n = store.index_records("acme", "undersea2", "doc3", recs3)
+    assert n == 1
+
+    hits = store.search("acme", "undersea2", "amarelo", k=5)
+    assert len(hits) >= 2
+    assert hits[0]["text"] is not None and "amarelo" in hits[0]["text"].lower()
+
+def test_index_adds_docid_prefix(store):
+    recs = [
+        {"id": "0", "content": "bicicleta verde.", "metadata": {"lang": "pt"}},
+    ]
+    n = store.index_records("acme", "cycling", "docbike", recs)
+    assert n == 1
+    hits = store.search("acme", "cycling", "bicicleta", k=5)
+    assert hits[0]["text"] is not None and "bicicleta" in hits[0]["text"].lower()
+    assert hits[0]["text"] is not None and "verde" in hits[0]["text"].lower()
+    assert hits[0]["id"] is not None and "docbike::0" == hits[0]["id"]
+
 def test_meta_json_and_filters(store):
     recs = [
         {"id": "x::0", "content": "Olá mundo", "metadata": {"lang": "pt"}},

@@ -207,8 +207,8 @@ class TxtaiStore(BaseStore):
         if not len(rlist):
             return 0
 
-        # index into txtai (content=True in _config())
-        em.index(rlist)
+        # index into txtai -- update or create index: UPSERT!
+        em.upsert(rlist)
 
         # update collection catalog + meta sidecars
         cat = self._load_catalog(tenant, collection)

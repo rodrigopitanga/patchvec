@@ -17,6 +17,9 @@ class FakeEmbeddings:
             assert isinstance(meta_json, str)
             self._docs[rid] = (text, meta_json)
 
+    def upsert(self, docs):
+        return self.index(docs)
+
     def search(self, query, k):
         q = (query or "").lower()
         out = []
