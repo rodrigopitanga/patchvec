@@ -32,12 +32,13 @@ def _default_docid(filename: str) -> str:
     base = re.sub(r"_+", "_", base)
     return base.strip("_") or ("PVDOC_"+str(uuid.uuid4()))
 
-def ingest_document(store, tenant: str, name: str, filename: str, content: bytes,
+def ingest_document(store, tenant: str, collection: str, filename: str, content: bytes,
                     docid: str | None, metadata: Dict[str, Any] | None,
                     csv_options: Dict[str, Any] | None = None) -> Dict[str, Any]:
     baseid = docid or _default_docid(filename)
-    store.purge_doc(tenant, name, baseid)
-
+    if baseid and store.has_doc(tenant, collection, baseid):
+        purged = store.purge_doc(tenant, collection, baseid)
+        m_inc("purge_total", purged)
     meta_doc = metadata or {}
     records = []
     for local_id, text, extra in preprocess(filename, content, csv_options=csv_options):

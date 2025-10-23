@@ -22,7 +22,8 @@ def test_cli_upload_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
     pvcli.main_cli(["upload", tenant, coll, str(sample), "--docid", "DOC1", "--metadata", '{"lang":"pt"}'])
 
     assert ("load_or_init", tenant, coll) in store.calls
-    assert ("purge_doc", tenant, coll, "DOC1") in store.calls
+    assert ("has_doc", tenant, coll, "DOC1") in store.calls
+    assert ("purge_doc", tenant, coll, "DOC1") not in store.calls
     assert any(c[0] == "index_records" and c[1] == tenant and c[2] == coll \
                and c[3] == "DOC1" for c in store.calls)
     assert ("save", tenant, coll) in store.calls

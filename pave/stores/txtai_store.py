@@ -94,6 +94,11 @@ class TxtaiStore(BaseStore):
         if os.path.isdir(p):
             shutil.rmtree(p)
 
+    def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
+        cat = self._load_catalog(tenant, collection)
+        ids = cat.get(docid)
+        return bool(ids)
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         cat = self._load_catalog(tenant, collection)
         meta = self._load_meta(tenant, collection)

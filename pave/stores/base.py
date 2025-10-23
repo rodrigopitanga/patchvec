@@ -19,6 +19,9 @@ class BaseStore(ABC):
     def delete_collection(self, tenant: str, collection: str) -> None: ...
 
     @abstractmethod
+    def has_doc(self, tenant: str, collection: str, docid: str) -> bool: ...
+
+    @abstractmethod
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int: ...
 
     @abstractmethod

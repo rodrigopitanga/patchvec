@@ -73,7 +73,17 @@ class DummyStore(BaseStore):
             json.dump(data, f)
         return removed
 
-    def index_records(self, tenant: str, collection: str, docid: str, records: Iterable[Record]) -> int:
+    def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
+        cat = os.path.join(self._dir(tenant, collection), "catalog.json")
+        try:
+            data = json.load(open(cat, "r", encoding="utf-8"))
+        except Exception:
+            data = {}
+        ret = 1 if docid in data else 0
+        return bool(ret)
+
+    def index_records(self, tenant: str, collection: str, docid: str,
+                      records: Iterable[Record]) -> int:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         try:
             data = json.load(open(cat, "r", encoding="utf-8"))
@@ -119,6 +129,10 @@ class SpyStore(BaseStore):
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         self.calls.append(("purge_doc", tenant, collection, docid))
         return self.impl.purge_doc(tenant, collection, docid)
+
+    def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
+        self.calls.append(("has_doc", tenant, collection, docid))
+        return self.impl.has_doc(tenant, collection, docid)
 
     def index_records(self, tenant: str, collection: str, docid: str, records: Iterable[Record]) -> int:
         recs = list(records)
