@@ -26,7 +26,7 @@ auth:
 vector_store:
   type: default           # default | qdrant
   txtai:
-    embed_model: sentence-transformers/paraphrase-MiniLM-L3-v2
+    embed_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
     backend: faiss
   qdrant:
     url: http://localhost:6333
