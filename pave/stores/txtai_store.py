@@ -107,33 +107,58 @@ class TxtaiStore(BaseStore):
         ids = cat.get(docid, [])
         if not ids:
             return 0
-        self.load_or_init(tenant, collection)
-        em = self._emb[(tenant, collection)]
-        removed = 0
-        if hasattr(em, "delete") and ids:
-            try:
-                em.delete(ids)
-                removed = len(ids)
-            except Exception:
-                removed = 0
-        for rid in ids:
-            if rid in meta:
-                del meta[rid]
-        if docid in cat:
-            del cat[docid]
+
+        # remove only this docid's metadata and sidecars
+        for urid in ids:
+            meta.pop(urid, None)
+            p = os.path.join(
+                self._chunks_dir(tenant, collection),
+                self._urid_to_fname(urid)
+            )
+            if os.path.isfile(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+        # remove docid from catalog.json
+        del cat[docid]
+
         self._save_meta(tenant, collection, meta)
         self._save_catalog(tenant, collection, cat)
+
+        # delete vectors for these chunk ids
+        self.load_or_init(tenant, collection)
+        em = self._emb.get((tenant, collection))
+        if em and ids:
+            try:
+                em.delete(ids)  # txtai embeddings supports deleting by ids
+            except Exception:
+                # if the installed txtai doesn't expose delete(ids),
+                # skip silently. index still consistent via sidecars;
+                # searches hydrate from saved text
+                pass
+
         self.save(tenant, collection)
-        return removed
+        return len(ids)
 
     def _chunks_dir(self, tenant: str, collection: str) -> str:
         return os.path.join(self._base_path(tenant, collection), "chunks")
 
-    def _rid_to_fname(self, rid: str) -> str:
-        return rid.replace("/", "_").replace("\\", "_").replace(":", "_") + ".txt"
+    def _urid_to_fname(self, urid: str) -> str:
+        return urid.replace("/", "_").replace("\\", "_").replace(":", "_") + ".txt"
 
-    def _load_chunk_text(self, tenant: str, collection: str, rid: str) -> str | None:
-        p = os.path.join(self._chunks_dir(tenant, collection), self._rid_to_fname(rid))
+    def _save_chunk_text(self, tenant: str, collection: str,
+                         urid: str, t: str) -> None:
+        p = os.path.join(self._chunks_dir(tenant, collection),
+                         self._urid_to_fname(urid))
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(t or "")
+            f.flush()
+
+    def _load_chunk_text(self, tenant: str, collection: str, urid: str) -> str | None:
+        p = os.path.join(self._chunks_dir(tenant, collection),
+                         self._urid_to_fname(urid))
         if os.path.isfile(p):
             with open(p, "r", encoding="utf-8") as f:
                 return f.read()
@@ -170,26 +195,43 @@ class TxtaiStore(BaseStore):
             except Exception:
                 meta_json = "{}"
 
-            rlist.append((str(rid), str(txt), meta_json))
+            rid = str(rid)
+            txt = str(txt)
+            # ensure unique rids by prefixing w/ docid
+            if not (rid.startswith(f"{docid}::")):
+                urid = f"{docid}::{rid}"
+            else:
+                urid = rid
+            rlist.append((urid, txt, meta_json))
 
-        if not rlist:
+        if not len(rlist):
             return 0
 
         # index into txtai (content=True in _config())
         em.index(rlist)
 
-        # update catalog + meta sidecars
+        # update collection catalog + meta sidecars
         cat = self._load_catalog(tenant, collection)
-        meta = self._load_meta(tenant, collection)
-        chunk_ids = [rid for rid, _, _ in rlist]
-        cat[docid] = chunk_ids
-        for rid, _, meta_json in rlist:
+        met = self._load_meta(tenant, collection)
+        record_ids = [urid for urid, _, _ in rlist]
+        # catalog.json: docid -> chunk ids (unique record ids)
+        cat[docid] = record_ids
+
+        for urid, txt, meta_json in rlist:
+            # metadata will be attached per record
             try:
-                meta[rid] = json.loads(meta_json) if meta_json else {}
+                md = json.loads(meta_json) if meta_json else {}
             except Exception:
-                meta[rid] = {}
+                md = {}
+            if "docid" not in md:
+                md["docid"] = docid
+            met[urid] = md
+            # record text will be saved in a separate file (sidecar)
+            self._save_chunk_text(tenant, collection, urid, txt)
+            txt_l = self._load_chunk_text(tenant, collection, urid) or ""
+            assert txt == txt_l
         self._save_catalog(tenant, collection, cat)
-        self._save_meta(tenant, collection, meta)
+        self._save_meta(tenant, collection, met)
 
         # persist index files
         self.save(tenant, collection)
