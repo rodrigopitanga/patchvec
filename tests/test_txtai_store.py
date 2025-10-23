@@ -12,35 +12,8 @@ from utils import FakeEmbeddings
 
 # --- Fixtures ----------------------------------------------------------------
 @pytest.fixture(autouse=True)
-def patch_cfg_and_embeddings(monkeypatch, tmp_path):
-    """
-    - Force data_dir into a temp folder
-    - Replace txtai Embeddings with FakeEmbeddings
-    """
-    # Patch CFG
-    from pave import config as cfg_mod
-    # CFG is used like CFG.data_dir and CFG.get(...), so ensure both exist
-    class DummyCFG:
-        data_dir = str(tmp_path / "data")
-        def get(self, key, default=None):
-            # default multilingual model path -> irrelevant in fake
-            if key.endswith("embed_model"):
-                return "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-            if key.endswith("vector_backend"):
-                return "faiss"
-            return default
-    monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
-
-    # Patch Embeddings used inside TxtaiStore
-    import pave.stores.txtai_store as store_mod
-    monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
-
-    yield
-
-@pytest.fixture
-def store():
-    from pave.stores.txtai_store import TxtaiStore
-    return TxtaiStore()
+def store(app):
+    return app.state.store
 
 # --- Tests -------------------------------------------------------------------
 def test_index_and_search_pt_text(store):
