@@ -106,6 +106,7 @@ def test_load_or_init_handles_empty_index_dir(store, tmp_path):
     store.save(tenant, coll)
 
     # resolve base via the store (avoid tmp_path vs CFG.data_dir drift)
-    base = store._base_path(tenant, coll)  # ok to use a protected helper in tests
-    fake_idx = os.path.join(base, "index", "_fake_index.json")
-    assert os.path.isfile(fake_idx), "fake index file must exist after save"
+    # ok to use a protected helper in tests - remember we're using SpyStore
+    base = store.impl._base_path(tenant, coll)
+    f_idx = os.path.join(base, "index", "embeddings")
+    assert os.path.isfile(f_idx), "index file must exist after save"

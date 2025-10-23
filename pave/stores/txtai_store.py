@@ -63,11 +63,10 @@ class TxtaiStore(BaseStore):
 
         em = Embeddings(self._config())
         idxpath = os.path.join(base, "index")
-        # consider index valid only if embeddings file exists
+        # consider (existing) index valid only if embeddings file exists
         embeddings_file = os.path.join(idxpath, "embeddings")
-        fake_file = os.path.join(idxpath, "_fake_index.json")  # used in tests
 
-        if os.path.isfile(embeddings_file) or os.path.isfile(fake_file):
+        if os.path.isfile(embeddings_file):
             try:
                 em.load(idxpath)
             except Exception:
