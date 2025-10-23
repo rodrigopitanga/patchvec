@@ -4,8 +4,9 @@
 from __future__ import annotations
 import uuid, json, re
 from typing import Dict, Any, Iterable, Tuple, List
-from .preprocess import preprocess
-from .metrics import inc as m_inc
+from datetime import datetime, timezone as tz
+from pave.preprocess import preprocess
+from pave.metrics import inc as m_inc
 
 # Pure-ish service functions operating on a store adapter
 
@@ -41,10 +42,11 @@ def ingest_document(store, tenant: str, name: str, filename: str, content: bytes
     records = []
     for local_id, text, extra in preprocess(filename, content, csv_options=csv_options):
         rid = f"{baseid}::{local_id}"
-        m = {"docid": baseid, "filename": filename}
-        m.update(meta_doc)
-        m.update(extra)
-        records.append((rid, text, m))
+        now = datetime.now(tz.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        meta = {"docid": baseid, "filename": filename, "ingested_at": now}
+        meta.update(meta_doc)
+        meta.update(extra)
+        records.append((rid, text, meta))
     if not records:
         return {"ok": False, "error": "no text extracted"}
     count = store.index_records(tenant, name, baseid, records)
