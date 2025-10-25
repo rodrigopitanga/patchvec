@@ -17,7 +17,7 @@ long_description, long_type = read_long_description()
 
 setup(
     name="patchvec",                       # external name
-    version="0.5.6dev4",
+    version="0.5.6dev5",
     description="Patchvec — A lightweight, pluggable vector search microservice.",
     long_description=long_description,
     long_description_content_type="text/markdown",
