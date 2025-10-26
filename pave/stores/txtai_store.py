@@ -4,10 +4,26 @@
 from __future__ import annotations
 import os, json
 from typing import Dict, Iterable, List, Any
+from threading import Lock
+from contextlib import contextmanager
 from txtai.embeddings import Embeddings
 from pave.stores.base import BaseStore, Record
 from pave.config import CFG as c
 
+_LOCKS = {}
+def get_lock(key: str) -> Lock:
+    if key not in _LOCKS:
+        _LOCKS[key] = Lock()
+    return _LOCKS[key]
+
+@contextmanager
+def collection_lock(tenant: str, collection: str):
+    lock = get_lock(f"t_{tenant}:c_{collection}")
+    lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
 
 class TxtaiStore(BaseStore):
     def __init__(self):
@@ -186,55 +202,45 @@ class TxtaiStore(BaseStore):
                     rid, txt, meta = r
                 except Exception:
                     continue
-
             if not rid or txt is None:
                 continue
 
+            rid = str(rid)
+            txt = str(txt)
+            if not rid.startswith(f"{docid}::"):
+                rid = f"{docid}::{rid}"
             try:
                 meta_json = json.dumps(meta or {}, ensure_ascii=False)
             except Exception:
                 meta_json = "{}"
+            rlist.append((rid, txt, meta_json))
 
-            rid = str(rid)
-            txt = str(txt)
-            # ensure unique rids by prefixing w/ docid
-            if not (rid.startswith(f"{docid}::")):
-                urid = f"{docid}::{rid}"
-            else:
-                urid = rid
-            rlist.append((urid, txt, meta_json))
-
-        if not len(rlist):
+        if not rlist:
             return 0
 
-        # index into txtai -- update or create index: UPSERT!
-        em.upsert(rlist)
+        # thread-critical: embedding + saves must be atomic
+        with collection_lock(tenant, collection):
+            em.upsert(rlist)
+            cat = self._load_catalog(tenant, collection)
+            met = self._load_meta(tenant, collection)
 
-        # update collection catalog + meta sidecars
-        cat = self._load_catalog(tenant, collection)
-        met = self._load_meta(tenant, collection)
-        record_ids = [urid for urid, _, _ in rlist]
-        # catalog.json: docid -> chunk ids (unique record ids)
-        cat[docid] = record_ids
+            record_ids = [rid for rid, _, _ in rlist]
+            cat[docid] = record_ids
 
-        for urid, txt, meta_json in rlist:
-            # metadata will be attached per record
-            try:
-                md = json.loads(meta_json) if meta_json else {}
-            except Exception:
-                md = {}
-            if "docid" not in md:
-                md["docid"] = docid
-            met[urid] = md
-            # record text will be saved in a separate file (sidecar)
-            self._save_chunk_text(tenant, collection, urid, txt)
-            txt_l = self._load_chunk_text(tenant, collection, urid) or ""
-            assert txt == txt_l
-        self._save_catalog(tenant, collection, cat)
-        self._save_meta(tenant, collection, met)
+            for rid, txt, meta_json in rlist:
+                try:
+                    md = json.loads(meta_json) if meta_json else {}
+                except Exception:
+                    md = {}
+                md.setdefault("docid", docid)
+                met[rid] = md
+                self._save_chunk_text(tenant, collection, rid, txt)
+                assert txt == (self._load_chunk_text(tenant, collection, rid) or "")
 
-        # persist index files
-        self.save(tenant, collection)
+            self._save_catalog(tenant, collection, cat)
+            self._save_meta(tenant, collection, met)
+            self.save(tenant, collection)
+
         return len(rlist)
 
     def _matches_filters(self, m: Dict[str, Any], filters: Dict[str, Any]) -> bool:
