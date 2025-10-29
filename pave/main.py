@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import json, os
+import json, os, logging
 import uvicorn
 
 from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, \
@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, Annotated
 
-from pave.config import get_cfg
+from pave.config import get_cfg, get_logger
 from pave.auth import AuthContext, auth_ctx, authorize_tenant, \
     enforce_policy, resolve_bind
 from pave.metrics import inc, set_error, snapshot, to_prometheus
@@ -260,26 +260,29 @@ def main_srv():
     HTTP server entrypoint.
     Precedence: CFG (reads env first) > defaults.
     """
-    
+    cfg = get_cfg()
+    log = get_logger()
+    log.info("Welcome to PatchVEC 🍰")
     # Policy:
     # - fail fast without auth in prod;
     # - auth=none only in dev with loopback;
     # - raises on invalid config.
-    enforce_policy(cfg.CFG)
+    enforce_policy(cfg)
 
     # resolve bind host/port
-    host, port = resolve_bind(cfg.CFG)
-    cfg.CFG.set("server.host", host)
-    cfg.CFG.set("server.port", port)
+    host, port = resolve_bind(cfg)
+    cfg.set("server.host", host)
+    cfg.set("server.port", port)
 
     # flags from CFG
-    reload = bool(cfg.CFG.get("server.reload", False))
-    workers = int(cfg.CFG.get("server.workers", 1))
-    log_level = str(cfg.CFG.get("server.log_level", "info"))
+    reload = bool(cfg.get("server.reload", False))
+    workers = int(cfg.get("server.workers", 1))
+    log_level = str(cfg.get("server.log_level", "info"))
 
-    if cfg.CFG.get("dev",0):
+    if cfg.get("dev",0):
         log_level = "debug"
-        cfg.CFG.set("server.log_level", log_level)
+        cfg.set("server.log_level", log_level)
+        log.setLevel(logging.DEBUG)
 
     # run server
     uvicorn.run("pave.main:app",

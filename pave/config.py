@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
-import os, re, yaml, threading
+import os, re, yaml, threading, logging
 from pathlib import Path
 from typing import Any, Dict
 from dotenv import load_dotenv
@@ -180,3 +180,61 @@ def reload_cfg(path: str | None = None) -> Config:
     return _CFG_SINGLETON
 
 CFG = _CFG_SINGLETON
+
+# --- singleton logger ---
+def _init_logger() -> logging.Logger:
+    """
+    Initializes hierarchical logging levels:
+      - pave (base)
+      - watch namespaces (base -1 → more verbose)
+      - quiet namespaces (base +1 → less verbose)
+      - all others (base +2)
+    """
+    cfg = get_cfg()
+    base_level = getattr(logging, cfg.get("loglevel", "WARN").upper(), logging.INFO)
+
+    def shift(level, delta):
+        """Moves numeric loglevel by ±10 per step."""
+        return min(logging.CRITICAL, max(logging.DEBUG, level + 10 * delta))
+
+    root = logging.getLogger()
+    root.setLevel(shift(base_level, +2))  # default = quietest
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        "%H:%M:%S"
+    ))
+    root.handlers.clear()
+    root.addHandler(handler)
+
+    # main project
+    if cfg.get("dev",0):
+         logging.getLogger("pave").setLevel(logging.DEBUG)
+    else:
+         logging.getLogger("pave").setLevel(base_level)
+
+    #namespaces fixed to loglevel.DEBUG
+    debug = cfg.get("log.debug", [])
+    for ns in debug:
+        logging.getLogger(ns).setLevel(logging.DEBUG)
+
+    # namespaces that should be more verbose
+    watch = cfg.get("log.watch", ["txtai"])
+    for ns in watch:
+        logging.getLogger(ns).setLevel(shift(base_level, -1))
+
+    # namespaces that should be quieter
+    quiet = cfg.get("log.quiet", ["fastapi", "uvicorn", "sqlalchemy", "urllib"])
+    for ns in quiet:
+        logging.getLogger(ns).setLevel(shift(base_level, +1))
+
+    return logging.getLogger("pave")
+
+_LOGGER_SINGLETON = _init_logger()
+
+def get_logger() -> logging.Logger:
+    """Returns global PatchVec logger"""
+    return _LOGGER_SINGLETON
+
+LOG = _LOGGER_SINGLETON
