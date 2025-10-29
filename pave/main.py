@@ -25,7 +25,7 @@ from pave.service import \
     do_search as svc_do_search
 
 
-VERSION = "0.5.6dev5"
+VERSION = "0.5.6"
 
 class SearchBody(BaseModel):
     q: str
