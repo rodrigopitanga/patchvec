@@ -1,4 +1,57 @@
+# Changelog
+
+---
+## 0.5.6 — 2025-10-29
+
+### Core
+- Added ingestion timestamps to document metadata and improved CSV ingestion controls (headers, meta columns and include lists).
+- Hardened API boot by forcing string-based Uvicorn startup and gating document purges behind `has_doc` checks.
+- Normalized service entrypoint configuration, including stricter binding and authentication safeguards.
+- Standardized request metrics emission and activated service-level telemetry across the API.
+
+### Store
+- Prevented FAISS index overwrites on multi-document ingests and ensured index directories are created eagerly.
+- Improved FAISS store concurrency through SQL filtering hooks, stronger locking, and thread-safe helpers.
+- Guaranteed text chunks are persisted and hydrated when vector content retrieval falls back to storage.
+- Ensured `txtai_store` consistently returns search text results.
+
+### Build & Packaging
+- Added dedicated Makefile targets for local deployment, e2e checks (still needs work) and dependency cleanup.
+- Enabled the Docker build pipeline with split GPU/CPU flows, refined image tagging, and updated startup scripts.
+- Extended release automation with PyPI publishing support, GitLab pipeline steps, and tuned Makefile/setup.py metadata.
+- Updated dependency sets, including explicit `faiss-cpu` support and auxiliary tooling definitions in `pave.toml`.
+
+### Config
+- Introduced multilevel logging defaults and refreshed the example embedding model to a multilingual preset.
+- Expanded configuration backend coverage with additional tests.
+
+### UI
+- Added a lightweight Swagger/OpenAPI UI with branding, authorization helpers, and contextual headers/footers.
+
+### Testing
+- Simplified store mocks by pinning default embedding models and cleaning up legacy FAISS test shims.
+
+### Misc
+- Updated project metadata, copyright headers, and ignore lists.
+- Advanced version markers for intermediate dev builds and release tags (0.5.5 → 0.5.6devN).
+
+---
 ## 0.5.5 — 2025-09-02
+
+### Core
+- Added CSV ingestion configuration knobs (headers, meta columns, include filters).
+- Implemented default document ID handling to overwrite vectors deterministically on re-ingest.
+- Fixed authentication edge cases and expanded accompanying tests.
+- Ensured request metrics are emitted consistently across the API surface.
+
+### Build & Packaging
+- Added an end-to-end Makefile target and improved startup scripts with dependency cleanup steps.
+- Extended release automation with Docker targets and a PyPI publishing flow.
+- Refined dependency management by bundling `faiss-cpu` for CPU builds and `sqlite4` for testing.
+
+### Store
+- Made FAISS-backed collections initialize their index structure on creation.
+- Corrected the txtai store path so search responses always include original text payloads.
 
 ### Commits
 - [buid] Add e2e check target and cleanup Makefile
