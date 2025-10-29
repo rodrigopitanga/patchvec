@@ -1,3 +1,51 @@
+## 0.5.6 — 2025-10-29
+
+### Commits
+- [buid] Add e2e check target and cleanup Makefile
+- [build] Add Makefile target to deploy to local dev server
+- [build] Enable Docker build pipeline
+- [build] Enhance startup scripts, add dependency clean Makefile target
+- [build] Refine (docker) build pipeline to improve GPU/CPU build path handling and image tagging. Container deploy working
+- [conf] Implement initial/decent multilevel logging support
+- [conf] Set example embedding model to Multilingual (leave default and tests with Paraphrase - lighter)
+- [conf][tests] Improve config backend:
+- [core] Add CSV ingestion options: headers (yes|no), meta_cols and include_cols
+- [core] Add default docid behavior so that vectors are seamlessly overriden when same file is ingested even if no docid is provided
+- [core] Add ingestion timestamp to content metadata
+- [core] Change Uvicorn to string startup for better container support
+- [core] Fixed txtai_store to handle indexes correctly and always return search text.
+- [core] Fixing auth and adding tests
+- [core] Normalize entry point config and add binding and auth safeguards for prod envs
+- [core] Standardize request metrics in API and enable service metrics in service pipeline
+- [core][ingest] Gatekeep document purge with has_doc check, count chunk purges
+- [pkg] Add docker targets and make further adjustments do Makefile
+- [pkg] Add pypi publish makefile target
+- [pkg] Adjusting setup.py and Makefile params for PyPi publication
+- [pkg] Fix dependencies: add sqlite4 to testing and explicitly add faiss-cpu to cpu-only target
+- [store] Avoid index overwriting when multiple documents are uploaded into a collection. Closes #1
+- [store] Make sure FAISS indexes and dir structure are initialized upon collection creation.
+- [store][faiss] Add (internal) support to SQL querying/filtering, improve threading locks to avoid database lock
+- [store][faiss] Make  and  thread-safe
+- [store][tests] remove bogus _fake_index check
+- [store][txtai] Save (text) chunks, hydrate from chunks if/when content can't be retrieved from vector DB
+- [test] explicitly set default model for (real) store testing, simplify store mocking
+- [ui] Add patchvec simple openapi/swagger UI
+- [ui] UI improvements, authorize button, enhanced headers, footers, dynamic app name and desc
+- Add new steps to gitlab pipeline and modify Dockerfile CMD to call pave.main explicitly [wip]
+- chore(release): v0.5.4
+- chore(release): v0.5.5
+- chore: add conf for linters/formatters in pave.toml
+- chore: add missing (c) headers plus additional cosmetic fixes
+- chore: bump version
+- chore: bump version to 0.5.5
+- chore: bump version to 0.5.6dev5
+- chore: cosmetic changes (formatting, var names)
+- chore: update .gitignore
+- chore: update project URLs
+- feat: initial public release of PatchVec — multi-tenant, pluggable vector search microservice
+- Fix .gitlab-ci.yml file
+
+---
 ## 0.5.6dev5 — 2025-10-29
 
 ### Commits
