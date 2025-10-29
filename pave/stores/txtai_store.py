@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
-import os, json
+import os, json, operator
+from datetime import datetime
 from typing import Dict, Iterable, List, Any
 from threading import Lock
 from contextlib import contextmanager
@@ -10,7 +11,7 @@ from txtai.embeddings import Embeddings
 from pave.stores.base import BaseStore, Record
 from pave.config import CFG as c
 
-_LOCKS = {}
+_LOCKS : dict[str, Lock] = {}
 def get_lock(key: str) -> Lock:
     if key not in _LOCKS:
         _LOCKS[key] = Lock()
@@ -66,11 +67,20 @@ class TxtaiStore(BaseStore):
                    meta: Dict[str, Dict[str, Any]]) -> None:
         self._save_json(self._meta_path(tenant, collection), meta)
 
-    def _config(self):
-        model = c.get("vector_store.txtai.embed_model",
-                      "sentence-transformers/paraphrase-MiniLM-L3-v2")
+    @staticmethod
+    def _config():
+        model = c.get(
+            "vector_store.txtai.embed_model",
+            "sentence-transformers/paraphrase-MiniLM-L3-v2"
+        )
         backend = c.get("vector_store.txtai.backend", "faiss")
-        return {"path": model, "backend": backend, "content": True}
+        return {
+            "path": model,
+            "backend": backend,
+            "content": True,
+            "store": True,
+            "dynamic": True
+        }
 
     def load_or_init(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
@@ -124,37 +134,38 @@ class TxtaiStore(BaseStore):
         if not ids:
             return 0
 
+        with collection_lock(tenant, collection):
         # remove only this docid's metadata and sidecars
-        for urid in ids:
-            meta.pop(urid, None)
-            p = os.path.join(
-                self._chunks_dir(tenant, collection),
-                self._urid_to_fname(urid)
-            )
-            if os.path.isfile(p):
+            for urid in ids:
+                meta.pop(urid, None)
+                p = os.path.join(
+                    self._chunks_dir(tenant, collection),
+                    self._urid_to_fname(urid)
+                )
+                if os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+            # remove docid from catalog.json
+            del cat[docid]
+
+            self._save_meta(tenant, collection, meta)
+            self._save_catalog(tenant, collection, cat)
+
+            # delete vectors for these chunk ids
+            self.load_or_init(tenant, collection)
+            em = self._emb.get((tenant, collection))
+            if em and ids:
                 try:
-                    os.remove(p)
+                    em.delete(ids)  # txtai embeddings supports deleting by ids
                 except Exception:
+                    # if the installed txtai doesn't expose delete(ids),
+                    # skip silently. index still consistent via sidecars;
+                    # searches hydrate from saved text
                     pass
-        # remove docid from catalog.json
-        del cat[docid]
 
-        self._save_meta(tenant, collection, meta)
-        self._save_catalog(tenant, collection, cat)
-
-        # delete vectors for these chunk ids
-        self.load_or_init(tenant, collection)
-        em = self._emb.get((tenant, collection))
-        if em and ids:
-            try:
-                em.delete(ids)  # txtai embeddings supports deleting by ids
-            except Exception:
-                # if the installed txtai doesn't expose delete(ids),
-                # skip silently. index still consistent via sidecars;
-                # searches hydrate from saved text
-                pass
-
-        self.save(tenant, collection)
+            self.save(tenant, collection)
         return len(ids)
 
     def _chunks_dir(self, tenant: str, collection: str) -> str:
@@ -185,77 +196,190 @@ class TxtaiStore(BaseStore):
         """
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
         dict-records, updates catalog/meta, saves index, and verifies content
-        storage via a quick lookup.
+        storage via a quick lookup. Thread critical.
         """
         self.load_or_init(tenant, collection)
+        catalog = self._load_catalog(tenant, collection)
+        meta_side = self._load_meta(tenant, collection)
         em = self._emb[(tenant, collection)]
+        prepared: list[tuple[str, Any, str]] = []
+        record_ids: list[str] = []
 
-        rlist: list[tuple[str, str, str]] = []  # (id, text, meta_json)
-
-        for r in records:
-            if isinstance(r, dict):
-                rid = r.get("rid") or r.get("id") or r.get("uid")
-                txt = r.get("text") or r.get("content")
-                meta = r.get("meta") or r.get("metadata") or r.get("tags") or {}
-            else:
-                try:
-                    rid, txt, meta = r
-                except Exception:
-                    continue
-            if not rid or txt is None:
-                continue
-
-            rid = str(rid)
-            txt = str(txt)
-            if not rid.startswith(f"{docid}::"):
-                rid = f"{docid}::{rid}"
-            try:
-                meta_json = json.dumps(meta or {}, ensure_ascii=False)
-            except Exception:
-                meta_json = "{}"
-            rlist.append((rid, txt, meta_json))
-
-        if not rlist:
-            return 0
-
-        # thread-critical: embedding + saves must be atomic
         with collection_lock(tenant, collection):
-            em.upsert(rlist)
-            cat = self._load_catalog(tenant, collection)
-            met = self._load_meta(tenant, collection)
 
-            record_ids = [rid for rid, _, _ in rlist]
-            cat[docid] = record_ids
+            for r in records:
+                if isinstance(r, dict):
+                    rid = r.get("rid") or r.get("id") or r.get("uid")
+                    txt = r.get("text") or r.get("content")
+                    md = r.get("meta") or r.get("metadata") or r.get("tags") or {}
+                else:
+                    try:
+                        rid, txt, md = r
+                    except Exception:
+                        continue
 
-            for rid, txt, meta_json in rlist:
+                if not rid or txt is None:
+                    continue
+
+                if not isinstance(md, dict):
+                    if isinstance(md, str):
+                        try:
+                            md = json.loads(md)
+                        except:
+                            md = {}
+                    else:
+                        try:
+                            md = dict(md)
+                        except:
+                            md = {}
+
+                md["docid"] = docid
+                print("debug:: HEY")
                 try:
-                    md = json.loads(meta_json) if meta_json else {}
-                except Exception:
+                    meta_json = json.dumps(md, ensure_ascii=False)
+                    md = json.loads(meta_json)
+                except:
                     md = {}
-                md.setdefault("docid", docid)
-                met[rid] = md
+                    meta_json = ""
+
+                rid = str(rid)
+                txt = str(txt)
+                if not rid.startswith(f"{docid}::"):
+                    rid = f"{docid}::{rid}"
+                    print("debug:: HO")
+
+                meta_side[rid] = md
+                record_ids.append(rid)
+                prepared.append((rid, {"text":txt, **md}, meta_json))
+
                 self._save_chunk_text(tenant, collection, rid, txt)
                 assert txt == (self._load_chunk_text(tenant, collection, rid) or "")
+                print("debug:: LET'S")
 
-            self._save_catalog(tenant, collection, cat)
-            self._save_meta(tenant, collection, met)
+            if not prepared:
+                return 0
+
+            catalog[docid] = record_ids
+            self._save_catalog(tenant, collection, catalog)
+            self._save_meta(tenant, collection, meta_side)
+            em.upsert(prepared)
             self.save(tenant, collection)
 
-        return len(rlist)
+            print(f"debug:: GO> {len(prepared)} upserts")
+            print(f"debug:: PREPARED: {prepared}")
+        return len(prepared)
 
-    def _matches_filters(self, m: Dict[str, Any], filters: Dict[str, Any]) -> bool:
+    @staticmethod
+    def _matches_filters(m: Dict[str, Any],
+                         filters: Dict[str, Any] | None) -> bool:
+        """
+        Evaluates whether metadata `m` satisfies all filter conditions.
+        Supports:
+          - wildcards (*xyz / xyz*)
+          - numeric comparisons (>, <, >=, <=, !=)
+          - datetime comparisons (ISO 8601)
+        Multiple values in the same key act as OR; multiple keys act as AND.
+        """
+        print(f"debug:: POS{filters}")
         if not filters:
             return True
-        for k, want in filters.items():
-            have = m.get(k)
-            if isinstance(want, list):
-                if have not in want:
-                    return False
-            else:
-                if have != want:
-                    return False
+
+        def match(have: Any, cond: str) -> bool:
+            if have is None:
+                return False
+            s = str(cond)
+            hv = str(have)
+            # Wildcards
+            if s == "*":
+                return True
+            if s.startswith("*") and s.endswith("*") and s[1:-1] in hv:
+                return True
+            if s.startswith("*") and hv.endswith(s[1:]):
+                return True
+            if s.endswith("*") and hv.startswith(s[:-1]):
+                return True
+            # Numeric/date ops
+            for op in (">=", "<=", "!=", ">", "<"):
+                if s.startswith(op):
+                    val = s[len(op):].strip()
+                    try:
+                        hvn, vvn = float(have), float(val)
+                        return eval(f"hvn {op} vvn")
+                    except Exception:
+                        try:
+                            hd = datetime.fromisoformat(str(have))
+                            vd = datetime.fromisoformat(val)
+                            return eval(f"hd {op} vd")
+                        except Exception:
+                            return False
+            return hv == s
+
+        for k, vals in filters.items():
+            if not any(match(m.get(k), v) for v in vals):
+                return False
         return True
-    
+
+    @staticmethod
+    def _split_filters(filters: dict[str, Any] | None) -> tuple[dict, dict]:
+        """Split filters into pre (handled by txtai) and post (handled in Python)."""
+        if not filters:
+            return {}, {}
+
+        pre_f, pos_f = {}, {}
+        for key, vals in (filters or {}).items():
+            if not isinstance(vals, list):
+                vals = [vals]
+            exacts, extended = [], []
+            for v in vals:
+                # Anything starting/ending with * or using comparison ops => post
+                if isinstance(v, str) and (
+                    v.startswith("*") or v.endswith("*") or
+                    any(v.startswith(op) for op in (">=", "<=", ">", "<", "!="))
+                ):
+                    extended.append(v)
+                else:
+                    exacts.append(v)
+            if exacts:
+                pre_f[key] = exacts
+            if extended:
+                pos_f[key] = extended
+        print(f"debug:: PRE: {pre_f} POS: {pos_f}")
+        return pre_f, pos_f
+
+    @staticmethod
+    def _build_sql(query: str, k: int, filters: dict[str, Any],
+                   columns: list[str], with_similarity: bool = True) -> str:
+        """
+        Builds a generic txtai >=8 query
+        Eg SELECT id, text, score FROM txtai WHERE similar('foo') AND (t1='x' OR t1='y')
+        """
+        cols = ", ".join(columns or ["id", "docid", "text", "score"])
+        sql = f"SELECT {cols} FROM txtai"
+
+        wheres = []
+        if with_similarity and query:
+            q_safe = query.replace("'", "''")
+            wheres.append(f"similar('{q_safe}')")
+
+        for key, vals in filters.items():
+            ors = []
+            for v in vals:
+                safe_v = str(v).replace("'", "''")
+                ors.append(f"[{key}] = '{safe_v}'")
+            or_safe = " OR ".join(ors)
+            wheres.append(f"({or_safe})")
+
+        if wheres:
+            sql += " WHERE " + " AND ".join(wheres) + " AND id <> '' "
+        else:
+            sql += " WHERE id <> '' "
+
+        if k is not None:
+            sql += f" LIMIT {int(k)}"
+
+        print(f"debug:: QUERY: {query} PREFILTERS: {filters} SQL: {sql}")
+        return sql
+
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         """
@@ -267,7 +391,10 @@ class TxtaiStore(BaseStore):
         em = self._emb[(tenant, collection)]
 
         fetch_k = max(50, kk * 5)
-        raw = em.search(query, fetch_k)
+        pre_f, pos_f = self._split_filters(filters)
+        cols = ["id", "text", "score", "docid"]
+        sql = self._build_sql(query, fetch_k, pre_f, cols)
+        raw = em.search(sql)
 
         # Normalize to (id, score, maybe_text)
         if raw and isinstance(raw[0], dict):
@@ -275,6 +402,7 @@ class TxtaiStore(BaseStore):
                 (r.get("id"), float(r.get("score", 0.0)), r.get("text"))
                 for r in raw
             ]
+            print ("debug:: IS DICT")
         else: # if raw is a tuple:
             triples = [
                 (rid, float(score), None)
@@ -289,14 +417,14 @@ class TxtaiStore(BaseStore):
         for rid, score, txt in triples:
             if not rid:
                 continue
-            if self._matches_filters(meta.get(rid, {}), filters or {}):
+            if self._matches_filters(meta.get(rid, {}), pos_f):
                 kept.append((rid, score, txt))
                 if txt is None:
                     need_lookup_ids.append(rid)
                 if len(kept) >= kk:
                     break
 
-        lookup: Dict[str, str] = {}
+        lookup: dict[str, Any] = {}
         if need_lookup_ids and hasattr(em, "lookup"):
             lookup = em.lookup(need_lookup_ids) or {}
 
@@ -309,9 +437,10 @@ class TxtaiStore(BaseStore):
             out.append({
                 "id": rid,
                 "score": score,
-                "text": txt,
+                "text": txt.get("text") if isinstance (txt, dict) else txt,
                 "tenant": tenant,
                 "collection": collection,
-                "meta": meta.get(rid, {}),
+                "meta": meta.get(rid) or {},
             })
+        print (f"debug:: SEARCH-OUT: {out}")
         return out

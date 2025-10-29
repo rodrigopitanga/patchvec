@@ -20,13 +20,31 @@ class FakeEmbeddings:
     def upsert(self, docs):
         return self.index(docs)
 
-    def search(self, query, k):
+    def search(self, sql, k=5):
+        import re
+        term = None
+        m = re.search(r"similar\('([^']+)'", sql)
+        if m:
+            term = m.group(1).lower()
+        elif "SELECT" not in sql.upper():
+            term = sql.lower()
+
+        if not term:
+            return []
+
+        hits = [
+            {"id": rid, "score": 1.0, "text": txt, "tags": {"docid": "DUMMY"}}
+            for rid, (txt, _) in self._docs.items() if term in str(txt).lower()
+        ]
+        return hits[:10]
+        """
         q = (query or "").lower()
         out = []
         for rid, (text, _) in self._docs.items():
             if q in (text or "").lower():
                 out.append({"id": rid, "score": float(len(q)), "text": text})
         return out[:k]
+        """
 
     def lookup(self, ids):
         return {rid: self._docs.get(rid, ("", ""))[0] for rid in ids}

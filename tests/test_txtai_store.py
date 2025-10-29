@@ -71,14 +71,15 @@ def test_index_adds_docid_prefix(store):
 
 def test_meta_json_and_filters(store):
     recs = [
-        {"id": "x::0", "content": "Olá mundo", "metadata": {"lang": "pt"}},
-        {"id": "x::1", "content": "Hello world", "metadata": {"lang": "en"}},
+        {"id": "docx::0", "content": "Olá mundo", "metadata": {"lang": "pt"}},
+        {"id": "docx::1", "content": "Hello world", "metadata": {"lang": "en"}},
     ]
     store.index_records("ten", "c1", "docx", recs)
 
     # Filters should select only lang=en
     hits = store.search("ten", "c1", "world", k=5, filters={"lang": "en"})
     assert len(hits) == 1
+    print(f"debug:: HITS: {hits}")
     assert hits[0]["meta"]["lang"] == "en"
 
     # Ensure meta was JSON-encoded internally (FakeEmbeddings asserts this)
