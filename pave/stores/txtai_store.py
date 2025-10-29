@@ -9,7 +9,7 @@ from threading import Lock
 from contextlib import contextmanager
 from txtai.embeddings import Embeddings
 from pave.stores.base import BaseStore, Record
-from pave.config import CFG as c
+from pave.config import CFG as c, LOG as log
 
 _LOCKS : dict[str, Lock] = {}
 def get_lock(key: str) -> Lock:
@@ -234,7 +234,6 @@ class TxtaiStore(BaseStore):
                             md = {}
 
                 md["docid"] = docid
-                print("debug:: HEY")
                 try:
                     meta_json = json.dumps(md, ensure_ascii=False)
                     md = json.loads(meta_json)
@@ -246,7 +245,6 @@ class TxtaiStore(BaseStore):
                 txt = str(txt)
                 if not rid.startswith(f"{docid}::"):
                     rid = f"{docid}::{rid}"
-                    print("debug:: HO")
 
                 meta_side[rid] = md
                 record_ids.append(rid)
@@ -254,7 +252,6 @@ class TxtaiStore(BaseStore):
 
                 self._save_chunk_text(tenant, collection, rid, txt)
                 assert txt == (self._load_chunk_text(tenant, collection, rid) or "")
-                print("debug:: LET'S")
 
             if not prepared:
                 return 0
@@ -264,9 +261,7 @@ class TxtaiStore(BaseStore):
             self._save_meta(tenant, collection, meta_side)
             em.upsert(prepared)
             self.save(tenant, collection)
-
-            print(f"debug:: GO> {len(prepared)} upserts")
-            print(f"debug:: PREPARED: {prepared}")
+            log.debug(f"PREPARED {len(prepared)} upserts: {prepared}")
         return len(prepared)
 
     @staticmethod
@@ -280,7 +275,7 @@ class TxtaiStore(BaseStore):
           - datetime comparisons (ISO 8601)
         Multiple values in the same key act as OR; multiple keys act as AND.
         """
-        print(f"debug:: POS{filters}")
+        log.debug(f"POS FILTERS: {filters}")
         if not filters:
             return True
 
@@ -343,7 +338,7 @@ class TxtaiStore(BaseStore):
                 pre_f[key] = exacts
             if extended:
                 pos_f[key] = extended
-        print(f"debug:: PRE: {pre_f} POS: {pos_f}")
+        log.debug(f"after split: PRE {pre_f} POS {pos_f}")
         return pre_f, pos_f
 
     @staticmethod
@@ -377,7 +372,7 @@ class TxtaiStore(BaseStore):
         if k is not None:
             sql += f" LIMIT {int(k)}"
 
-        print(f"debug:: QUERY: {query} PREFILTERS: {filters} SQL: {sql}")
+        log.debug(f"debug:: QUERY: {query} SQL: {sql}")
         return sql
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
@@ -402,7 +397,6 @@ class TxtaiStore(BaseStore):
                 (r.get("id"), float(r.get("score", 0.0)), r.get("text"))
                 for r in raw
             ]
-            print ("debug:: IS DICT")
         else: # if raw is a tuple:
             triples = [
                 (rid, float(score), None)
@@ -442,5 +436,5 @@ class TxtaiStore(BaseStore):
                 "collection": collection,
                 "meta": meta.get(rid) or {},
             })
-        print (f"debug:: SEARCH-OUT: {out}")
+        log.info(f"SEARCH-OUT: {out}")
         return out
