@@ -179,16 +179,17 @@ class TxtaiStore(BaseStore):
         p = os.path.join(self._chunks_dir(tenant, collection),
                          self._urid_to_fname(urid))
         os.makedirs(os.path.dirname(p), exist_ok=True)
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(t or "")
+        data = (t or "").encode("utf-8")
+        with open(p, "wb") as f:
+            f.write(data)
             f.flush()
 
     def _load_chunk_text(self, tenant: str, collection: str, urid: str) -> str | None:
         p = os.path.join(self._chunks_dir(tenant, collection),
                          self._urid_to_fname(urid))
         if os.path.isfile(p):
-            with open(p, "r", encoding="utf-8") as f:
-                return f.read()
+            with open(p, "rb") as f:
+                return f.read().decode("utf-8")
         return None
 
     def index_records(self, tenant: str, collection: str, docid: str,
