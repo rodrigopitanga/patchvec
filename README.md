@@ -83,7 +83,7 @@ Deactivate the virtual environment with `deactivate` when finished.
 
 ### 🌐 REST usage
 
-When the server is running (either via Docker or `pavesrv.sh`), the API listens on `http://localhost:8086`. The following `curl` commands mirror the CLI sequence above—adjust the file path to wherever you stored the corpus (`/app/demo/20k_leagues.txt` in Docker, `~/pv/20k_leagues.txt` for PyPI installs) and reuse the bearer token exported earlier:
+When the server is running (either via Docker or `pavesrv`), the API listens on `http://localhost:8086`. The following `curl` commands mirror the CLI sequence above—adjust the file path to wherever you stored the corpus (`/app/demo/20k_leagues.txt` in Docker, `~/pv/20k_leagues.txt` for PyPI installs) and reuse the bearer token exported earlier:
 
 ```bash
 # create collection
