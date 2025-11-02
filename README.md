@@ -1,87 +1,119 @@
 # 🍰 PatchVec — Lightweight, Pluggable Vector Search Microservice
 
-Upload → chunk → index (with metadata) → search via REST and CLI.
+Patchvec is a compact vector store built for people who want provenance and fast iteration on RAG plumbing. No black boxes, no hidden pipelines: every chunk records document id, page, and byte offsets, and you can swap embeddings or storage backends per collection.
 
----
+## ⚙️ Core capabilities
 
-## 🚀 Quickstart
+- **Docker images** — prebuilt CPU/GPU images published to the GitLab Container Registry.
+- **Tenants and collections** — isolation by tenant with per-collection configuration.
+- **Pluggable embeddings** — choose the embedding adapter per collection; wire in local or hosted models.
+- **REST and CLI** — production use over HTTP, quick experiments with the bundled CLI.
+- **Deterministic provenance** — every hit returns doc id, page, offset, and snippet for traceability.
 
-### 🖥️ CPU-only Dev (default)
+## 🧭 Workflows
+
+### 🐳 Docker workflow (prebuilt images)
+
+Pull the image that fits your hardware from the GitLab Container Registry (CUDA builds publish as `latest`, CPU-only as `latest-cpu`). Replace `<group>` with the namespace you have access to (defaults to `patchvec`):
+
 ```bash
+REGISTRY_GROUP=patchvec
+docker pull registry.gitlab.com/${REGISTRY_GROUP}/patchvec/patchvec:latest
+docker pull registry.gitlab.com/${REGISTRY_GROUP}/patchvec/patchvec:latest-cpu
+```
+
+Run the service by choosing the tag you need and mapping the API port locally:
+
+```bash
+docker run -d --name patchvec \
+  -p 8086:8086 \
+  registry.gitlab.com/${REGISTRY_GROUP}/patchvec/patchvec:latest-cpu
+```
+
+Use the bundled CLI inside the container to create a tenant/collection, ingest a demo document, and query it:
+
+```bash
+docker exec patchvec pavecli create-collection demo books
+docker exec patchvec pavecli upload demo books /app/demo/20k_leagues.txt \
+  --docid=verne-20k --metadata='{"lang":"en"}'
+docker exec patchvec pavecli search demo books "captain nemo" -k 3
+```
+
+Stop the container when you are done:
+
+```bash
+docker rm -f patchvec
+```
+
+### 🐍 PyPI workflow
+
+Install Patchvec from PyPI inside an isolated virtual environment and point it at a local configuration directory:
+
+```bash
+mkdir -p ~/pv && cd ~/pv
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements-cpu.txt
-./pavesrv.sh
-```
+python -m pip install "patchvec[cpu]"   # or "patchvec[gpu]" for CUDA
 
-### 📦 Install from PyPI
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install patchvec[cpu]   # or patchvec[gpu] for CUDA
-```
+# grab the default configs
+curl -LO https://raw.githubusercontent.com/patchvec/patchvec/main/config.yml.example
+curl -LO https://raw.githubusercontent.com/patchvec/patchvec/main/tenants.yml.example
+cp config.yml.example config.yml
+cp tenants.yml.example tenants.yml
 
-### ▶️ Run the Server
-From source:
-```bash
-./pavesrv.sh
-```
-From PyPI:
-```bash
+# sample demo corpus
+curl -LO https://raw.githubusercontent.com/patchvec/patchvec/main/demo/20k_leagues.txt
+
+# point Patchvec at the config directory and set a local admin key
+export PATCHVEC_CONFIG="$HOME/pv/config.yml"
+export PATCHVEC_GLOBAL_KEY=dev-secret
+
+# option A: run the service (stays up until you stop it)
 pavesrv
+
+# option B: operate entirely via the CLI (no server needed)
+PATCHVEC_CONFIG="$HOME/pv/config.yml" pavecli create-collection demo books
+PATCHVEC_CONFIG="$HOME/pv/config.yml" pavecli upload demo books 20k_leagues.txt \
+  --docid=verne-20k --metadata='{"lang":"en"}'
+PATCHVEC_CONFIG="$HOME/pv/config.yml" pavecli search demo books "captain nemo" -k 3
 ```
 
-### ⚙️ Minimal Config
-For production (static auth), set env vars (do not commit secrets):
-```env
-PATCHVEC_AUTH__MODE=static
-PATCHVEC_AUTH__GLOBAL_KEY=sekret-passwod
-```
-(Optional: copy `config.yml.example` to an untracked `config.yml` and tweak as needed)
-(Tip: use an untracked `tenants.yml` and point `auth.tenants_file` to it in `config.yml`.)
+Deactivate the virtual environment with `deactivate` when finished.
 
----
+### 🌐 REST usage
 
-## 🔧 Overriding Server Settings (uvicorn)
-You can override a few server knobs via environment variables:
+When the server is running (either via Docker or `pavesrv.sh`), the API listens on `http://localhost:8086`. The following `curl` commands mirror the CLI sequence above—adjust the file path to wherever you stored the corpus (`/app/demo/20k_leagues.txt` in Docker, `~/pv/20k_leagues.txt` for PyPI installs) and reuse the bearer token exported earlier:
+
 ```bash
-HOST=127.0.0.1 PORT=9000 RELOAD=1 WORKERS=4 LOG_LEVEL=debug pavesrv
-```
-> Note: Full configuration uses the `PATCHVEC_...` env scheme (e.g., `PATCHVEC_SERVER__PORT=9000`).
+# create collection
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+  -X POST http://localhost:8086/collections/demo/books
 
----
+# ingest document
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+  -X POST http://localhost:8086/collections/demo/books/documents \
+  -F "file=@20k_leagues.txt" \
+  -F "docid=verne-20k" \
+  -F 'metadata={"lang":"en"}'
 
-## 🌐 REST API Examples
-
-**Create a collection**
-```bash
-curl -X POST "http://localhost:8086/collections/acme/invoices"
-```
-
-**Upload a TXT/PDF/CSV document**
-```bash
-curl -X POST "http://localhost:8086/collections/acme/invoices/documents"   -F "file=@sample.txt"   -F "docid=DOC-1"   -F 'metadata={"lang":"pt"}'
+# run search
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+  "http://localhost:8086/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
-**Search (GET, no filters)**
-```bash
-curl "http://localhost:8086/collections/acme/invoices/search?q=garantia&k=5"
-```
+Health and metrics endpoints are available at `/health` and `/metrics`.
 
-**Search (POST with filters)**
-```bash
-curl -X POST "http://localhost:8086/collections/acme/invoices/search"   -H "Content-Type: application/json"   -d '{"q": "garantia", "k": 5, "filters": {"docid": "DOC-1"}}'
-```
+Configuration files copied in either workflow can be customised. Runtime options are also accepted via the `PATCHVEC_*` environment variable scheme (`PATCHVEC_SERVER__PORT`, `PATCHVEC_AUTH__MODE`, etc.).
 
-**Health / Metrics**
-```bash
-curl "http://localhost:8086/health"
-curl "http://localhost:8086/metrics"
-```
+### 🛠️ Developer workflow
 
----
+Building from source relies on the Makefile shortcuts (`make install-dev`, `USE_CPU=1 make serve`, `make test`, etc.). The full contributor workflow, target reference, and task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## 🗺️ Roadmap
+
+Short-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one, open an issue titled `claim: <task>`, and ship a patch.
 
 ## 📜 License
+
 GPL-3.0-or-later — (C) 2025 Rodrigo Rodrigues da Silva
