@@ -1,62 +1,81 @@
 # 👾 Contributing to PatchVec
 
-We welcome PRs, issues, and feedback!
+Patchvec accepts code and docs from people who ship patches. Follow the steps below and keep PRs focused.
 
----
+## Environment setup
 
-## 🛠 Dev Setup
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements-test.txt   # includes runtime + test deps
+# clone and enter the repo first
+git clone https://github.com/patchvec/patchvec.git
+cd patchvec
+
+# GPU deps by default; add USE_CPU=1 if you do not have a GPU
+make install-dev
+
+# copy local config overrides if you need to tweak behaviour
+cp config.yml.example config.yml
+cp tenants.yml.example tenants.yml
+
+# optional: run the service right away
+USE_CPU=1 make serve
 ```
 
-## 🧪 Testing
-```bash
-pytest -q
-```
-CI/CD blocks releases if tests fail.
+Run the test suite before pushing (`USE_CPU=1` if you installed CPU wheels):
 
-## ▶️ Dev Server
 ```bash
-# CPU-only deps by default
-make serve
-# or explicitly
-HOST=0.0.0.0 PORT=8080 RELOAD=1 WORKERS=1 LOG_LEVEL=info ./pavesrv.sh
+# USE_CPU=1 if you installed CPU deps
+make test
 ```
+
+Need to inspect behaviour without reloads? After tweaking `config.yml` / `tenants.yml`, run `AUTH_MODE=static PATCHVEC_AUTH__GLOBAL_KEY=<your-secret> DEV=0 make serve` for an almost production-like stack, or call the wrapper script directly: `PATCHVEC_AUTH__GLOBAL_KEY=<your-secret> ./pavesrv.sh`.
+
+## Workflow
+
+1. Fork and clone the repository.
+2. Create a branch named after the task (`feature/tenant-search`, `fix/csv-metadata`, etc.).
+3. Make the change, keep commits scoped, and include tests when possible.
+4. Run `make test` and `make check` if you touched deployment or packaging paths.
+5. Open a pull request referencing the issue you claimed.
+
+Use imperative, lowercase commit messages (`docs: clarify docker quickstart`).
+
+## Issues and task claims
+
+- `ROADMAP.md` lists chores that need owners.
+- To claim a task, open an issue titled `claim: <task>` and describe the approach.
+- Good first issues live under the `good-first-issue` label. Submit a draft PR within a few days of claiming.
+
+## Code style
+
+- Prefer direct, readable Python. Keep imports sorted and avoid wildcard imports.
+- Follow PEP 8 defaults, keep line length ≤ 88 characters, and run `ruff` locally if you have it installed.
+- Do not add framework abstractions unless they solve a concrete problem.
+- Avoid adding dependencies without discussing them in an issue first.
+
+## Pull request checklist
+
+- [ ] Tests pass locally (`make test`, add `USE_CPU=1` if you installed CPU wheels).
+- [ ] Packaged stack still works (`make check` on a clean checkout).
+- [ ] Docs updated when behavior changes.
+- [ ] PR description states what changed and why.
+
+Ship code, not questions. If you need help, post logs and the failing command instead of asking for permission.
+
+## Architecture
+
+- Stores live under `pave/stores/*` (default txtai/FAISS today, Qdrant stub ready).
+- Embedding adapters reside in `pave/embedders/*` (txtai, sentence-transformers, OpenAI, etc.).
+- `pave/service.py` wires the FastAPI application and injects the store into `app.state`.
+- CLI entrypoints are defined in `pave/cli.py`; shell shims `pavecli.sh`/`pavesrv.sh` wrap the same commands for repo contributors.
 
 ## 🧰 Makefile Targets
-- `make install` — install runtime deps (CPU default; `USE_GPU=1` for GPU)
-- `make install-dev` — runtime + test deps
-- `make serve` — start FastAPI app (uvicorn) with autoreload
-- `make test` — run tests
-- `make build` — build sdist/wheel (includes ABOUT.md)
-- `make package` — create .zip and .tar.gz in ./artifacts
-- `make release VERSION=x.y.z` — update versions (setup.py, main.py, Dockerfile, compose, README tags), prepend CHANGELOG with sorted commits since last tag, run tests/build (must pass), tag & push
-- `make clean` / `make clean-dist` — cleanup
 
-## 🚢 Release Notes
-- Version bumps also update Docker-related version strings where applicable.
-- The release target **will not push** if tests/build fail.
-- Ensure `PYPI_API_TOKEN` is set in CI to publish on tag.
-
-## 🔐 Secrets & Config
-- Don’t commit secrets. Use `.env` (ignored) or env vars in CI.
-- For per-tenant keys, use an untracked `tenants.yml` and reference it from `config.yml` (`auth.tenants_file`).
-- Config precedence: code defaults < `config.yml` < `tenants.yml` < `PATCHVEC__*` env.
-
-## 📝 Commit Style
-Keep commit messages short and scoped:
-```
-search: fix filter parsing
-docs: add curl examples
-build: include ABOUT.md in sdist
-arch: refactored StoreFactory
-```
-
-## 🧩 Architecture (brief)
-- Stores: `pave/stores/*` (default txtai/FAISS, qdrant stub)
-- Embedders: `pave/embedders/*` (default/txtai, sbert, openai)
-- Pure-ish orchestration: `pave/service.py`
-- Dependency injection: `build_app()` wires store via `app.state`
+- `make install` — install runtime deps (CPU wheels by default; `USE_GPU=1` for GPU builds).
+- `make install-dev` — runtime + test deps for contributors.
+- `make serve` — start the FastAPI app (uvicorn) with autoreload (`USE_CPU=1` for CPU-only setups).
+- `make test` — run the pytest suite.
+- `make check` — build and smoke-test the container image with the demo corpus.
+- `make build` — build sdist/wheel (includes ABOUT.md).
+- `make package` — create `.zip`/`.tar.gz` artifacts under `./artifacts`.
+- `make release VERSION=x.y.z` — sync version strings, regenerate the changelog, run tests/build, tag & push.
+- `make clean` / `make clean-dist` — remove caches and build outputs.
