@@ -69,6 +69,18 @@ def test_index_adds_docid_prefix(store):
     assert hits[0]["text"] is not None and "verde" in hits[0]["text"].lower()
     assert hits[0]["id"] is not None and "docbike::0" == hits[0]["id"]
 
+def test_chunk_sidecar_preserves_crlf(store):
+    text = "First line\r\nSecond line\r\n"
+    recs = [
+        {"id": "0", "content": text, "metadata": {"lang": "en"}},
+    ]
+
+    n = store.index_records("acme", "crlf", "doccrlf", recs)
+    assert n == 1
+
+    stored = store.impl._load_chunk_text("acme", "crlf", "doccrlf::0")
+    assert stored == text
+
 def test_meta_json_and_filters(store):
     recs = [
         {"id": "docx::0", "content": "Olá mundo", "metadata": {"lang": "pt"}},
