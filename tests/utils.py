@@ -10,18 +10,26 @@ from pave.config import get_cfg
 class FakeEmbeddings:
     """Tiny in-memory index. Keeps interface you use in tests."""
     def __init__(self, config):  # config unused
-        self._docs = {}  # rid -> (text, meta_json)
+        self._docs = {}  # rid -> {"text": str, "meta_json": str, "meta": dict}
+        self.last_sql = None
 
     def index(self, docs):
-        for rid, text, meta_json in docs:
+        for rid, payload, meta_json in docs:
             assert isinstance(meta_json, str)
-            self._docs[rid] = (text, meta_json)
+            if isinstance(payload, dict):
+                text = payload.get("text")
+                meta = {k: v for k, v in payload.items() if k != "text"}
+            else:
+                text = payload
+                meta = {}
+            self._docs[rid] = {"text": text, "meta_json": meta_json, "meta": meta}
 
     def upsert(self, docs):
         return self.index(docs)
 
     def search(self, sql, k=5):
         import re
+        self.last_sql = sql
         term = None
         m = re.search(r"similar\('([^']+)'", sql)
         if m:
@@ -32,10 +40,42 @@ class FakeEmbeddings:
         if not term:
             return []
 
-        hits = [
-            {"id": rid, "score": 1.0, "text": txt, "tags": {"docid": "DUMMY"}}
-            for rid, (txt, _) in self._docs.items() if term in str(txt).lower()
-        ]
+        filter_pairs = re.findall(r"\[([^\]]+)\]\s*=\s*'((?:''|[^'])*)'", sql)
+
+        hits = []
+        for rid, entry in self._docs.items():
+            text = entry.get("text")
+            if text is None:
+                continue
+            if term not in str(text).lower():
+                continue
+
+            metadata = entry.get("meta") or {}
+            include = True
+            for field, raw_val in filter_pairs:
+                stored = metadata.get(field)
+                if stored is None:
+                    include = False
+                    break
+                expected = raw_val
+                if isinstance(stored, (list, tuple, set)):
+                    options = {str(v) for v in stored}
+                    if expected not in options:
+                        include = False
+                        break
+                else:
+                    if str(stored) != expected:
+                        include = False
+                        break
+            if not include:
+                continue
+
+            hits.append({
+                "id": rid,
+                "score": 1.0,
+                "text": text,
+                "docid": metadata.get("docid"),
+            })
         return hits[:10]
         """
         q = (query or "").lower()
@@ -47,7 +87,7 @@ class FakeEmbeddings:
         """
 
     def lookup(self, ids):
-        return {rid: self._docs.get(rid, ("", ""))[0] for rid in ids}
+        return {rid: (self._docs.get(rid) or {}).get("text") for rid in ids}
 
     def delete(self, ids):
         for rid in ids:

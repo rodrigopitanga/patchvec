@@ -1,6 +1,8 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import sys
+import types
 import pytest
 from fastapi.testclient import TestClient
 from pave.config import get_cfg, reload_cfg
