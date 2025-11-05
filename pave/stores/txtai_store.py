@@ -4,7 +4,7 @@
 from __future__ import annotations
 import os, json, operator
 from datetime import datetime
-from typing import Dict, Iterable, List, Any
+from typing import Any, Dict, Iterable, List, Optional
 from threading import Lock
 from contextlib import contextmanager
 from txtai.embeddings import Embeddings
@@ -12,6 +12,14 @@ from pave.stores.base import BaseStore, Record
 from pave.config import CFG as c, LOG as log
 
 _LOCKS : dict[str, Lock] = {}
+_SQL_TRANS = str.maketrans({
+    ";": " ",
+    '"': " ",
+    "`": " ",
+    "\\": " ",
+    "\x00": "",
+})
+
 def get_lock(key: str) -> Lock:
     if key not in _LOCKS:
         _LOCKS[key] = Lock()
@@ -236,10 +244,10 @@ class TxtaiStore(BaseStore):
 
                 md["docid"] = docid
                 try:
-                    meta_json = json.dumps(md, ensure_ascii=False)
-                    md = json.loads(meta_json)
-                except:
-                    md = {}
+                    safe_meta = self._sanit_meta_dict(md)
+                    meta_json = json.dumps(safe_meta, ensure_ascii=False)
+                except Exception:
+                    safe_meta = {}
                     meta_json = ""
 
                 rid = str(rid)
@@ -247,9 +255,11 @@ class TxtaiStore(BaseStore):
                 if not rid.startswith(f"{docid}::"):
                     rid = f"{docid}::{rid}"
 
-                meta_side[rid] = md
+                md_for_index = {k: v for k, v in safe_meta.items() if k != "text"}
+
+                meta_side[rid] = safe_meta
                 record_ids.append(rid)
-                prepared.append((rid, {"text":txt, **md}, meta_json))
+                prepared.append((rid, {"text": txt, **md_for_index}, meta_json))
 
                 self._save_chunk_text(tenant, collection, rid, txt)
                 assert txt == (self._load_chunk_text(tenant, collection, rid) or "")
@@ -280,10 +290,15 @@ class TxtaiStore(BaseStore):
         if not filters:
             return True
 
-        def match(have: Any, cond: str) -> bool:
+        def match(have: Any, cond: Any) -> bool:
             if have is None:
                 return False
-            s = str(cond)
+            if isinstance(have, (list, tuple, set)):
+                return any(match(item, cond) for item in have)
+            if isinstance(cond, str):
+                s = TxtaiStore._sanit_sql(cond)
+            else:
+                s = str(cond)
             hv = str(have)
             # Numeric/date ops
             for op in (">=", "<=", "!=", ">", "<"):
@@ -313,7 +328,7 @@ class TxtaiStore(BaseStore):
             return hv == s
 
         for k, vals in filters.items():
-            if not any(match(m.get(k), v) for v in vals):
+            if not any(match(TxtaiStore._lookup_meta(m, k), v) for v in vals):
                 return False
         return True
 
@@ -325,6 +340,9 @@ class TxtaiStore(BaseStore):
 
         pre_f, pos_f = {}, {}
         for key, vals in (filters or {}).items():
+            safe_key = TxtaiStore._sanit_field(key)
+            if not safe_key:
+                continue
             if not isinstance(vals, list):
                 vals = [vals]
             exacts, extended = [], []
@@ -338,11 +356,67 @@ class TxtaiStore(BaseStore):
                 else:
                     exacts.append(v)
             if exacts:
-                pre_f[key] = exacts
+                pre_f[safe_key] = exacts
             if extended:
-                pos_f[key] = extended
+                pos_f[safe_key] = extended
         log.debug(f"after split: PRE {pre_f} POS {pos_f}")
         return pre_f, pos_f
+
+    @staticmethod
+    def _lookup_meta(meta: Dict[str, Any] | None, key: str) -> Any:
+        if not meta:
+            return None
+        if key in meta:
+            return meta.get(key)
+        for raw_key, value in meta.items():
+            if TxtaiStore._sanit_field(raw_key) == key:
+                return value
+        return None
+
+    @staticmethod
+    def _sanit_meta_value(value: Any) -> Any:
+        if isinstance(value, dict):
+            return TxtaiStore._sanit_meta_dict(value)
+        if isinstance(value, (list, tuple, set)):
+            return [TxtaiStore._sanit_meta_value(v) for v in value]
+        if isinstance(value, (int, float, bool)) or value is None:
+            return value
+        return TxtaiStore._sanit_sql(value)
+
+    @staticmethod
+    def _sanit_meta_dict(meta: Dict[str, Any] | None) -> Dict[str, Any]:
+        safe: Dict[str, Any] = {}
+        if not isinstance(meta, dict):
+            return safe
+        for raw_key, raw_value in meta.items():
+            safe_key = TxtaiStore._sanit_field(raw_key)
+            if not safe_key or safe_key == "text":
+                continue
+            safe[safe_key] = TxtaiStore._sanit_meta_value(raw_value)
+        return safe
+
+    @staticmethod
+    def _sanit_sql(value: Any, *, max_len: Optional[int] = None) -> str:
+        if value is None:
+            return ""
+        text = str(value).translate(_SQL_TRANS)
+        for token in ("--", "/*", "*/"):
+            if token in text:
+                text = text.split(token, 1)[0]
+        text = text.strip()
+        if max_len is not None and max_len > 0 and len(text) > max_len:
+            text = text[:max_len]
+        return text.replace("'", "''")
+
+    @staticmethod
+    def _sanit_field(name: Any) -> str:
+        if not isinstance(name, str):
+            name = str(name)
+        safe = []
+        for ch in name:
+            if ch.isalnum() or ch in {"_", "-"}:
+                safe.append(ch)
+        return "".join(safe)
 
     @staticmethod
     def _build_sql(query: str, k: int, filters: dict[str, Any], columns: list[str],
@@ -356,14 +430,23 @@ class TxtaiStore(BaseStore):
 
         wheres = []
         if with_similarity and query:
-            q_safe = query.replace("'", "''")
+            max_len_cfg = c.get("vector_store.txtai.max_query_chars", 512)
+            try:
+                max_len = int(max_len_cfg)
+            except (TypeError, ValueError):
+                max_len = 512
+            limit = max_len if max_len > 0 else None
+            q_safe = TxtaiStore._sanit_sql(query, max_len=limit)
             wheres.append(f"similar('{q_safe}')")
 
         for key, vals in filters.items():
+            safe_key = TxtaiStore._sanit_field(key)
+            if not safe_key:
+                continue
             ors = []
             for v in vals:
-                safe_v = str(v).replace("'", "''")
-                ors.append(f"[{key}] = '{safe_v}'")
+                safe_v = TxtaiStore._sanit_sql(v)
+                ors.append(f"[{safe_key}] = '{safe_v}'")
             or_safe = " OR ".join(ors)
             wheres.append(f"({or_safe})")
 

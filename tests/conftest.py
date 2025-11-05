@@ -1,6 +1,22 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import sys
+import types
+
+if "txtai.embeddings" not in sys.modules:
+    txtai_stub = types.ModuleType("txtai")
+    embeddings_stub = types.ModuleType("txtai.embeddings")
+
+    class _StubEmbeddings:  # pragma: no cover - stub for optional dependency
+        def __init__(self, *args, **kwargs):
+            pass
+
+    embeddings_stub.Embeddings = _StubEmbeddings
+    txtai_stub.embeddings = embeddings_stub
+    sys.modules.setdefault("txtai", txtai_stub)
+    sys.modules.setdefault("txtai.embeddings", embeddings_stub)
+
 import pytest
 from fastapi.testclient import TestClient
 from pave.config import get_cfg, reload_cfg
