@@ -57,7 +57,7 @@ class FakeEmbeddings:
                 if stored is None:
                     include = False
                     break
-                expected = raw_val
+                expected = raw_val.replace("''", "'")
                 if isinstance(stored, (list, tuple, set)):
                     options = {str(v) for v in stored}
                     if expected not in options:
