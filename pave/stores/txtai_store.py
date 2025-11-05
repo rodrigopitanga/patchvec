@@ -290,11 +290,16 @@ class TxtaiStore(BaseStore):
         if not filters:
             return True
 
-        def match(have: Any, cond: Any) -> bool:
+        def match(have: Any, cond: Any, depth: int = 0) -> bool:
+            # Prevent infinite recursion with nested collections
+            MAX_DEPTH = 10
+            if depth >= MAX_DEPTH:
+                return False
+            
             if have is None:
                 return False
             if isinstance(have, (list, tuple, set)):
-                return any(match(item, cond) for item in have)
+                return any(match(item, cond, depth + 1) for item in have)
             if isinstance(cond, str):
                 s = TxtaiStore._sanit_sql(cond)
             else:
