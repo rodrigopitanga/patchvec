@@ -35,6 +35,9 @@ def collection_lock(tenant: str, collection: str):
         lock.release()
 
 class TxtaiStore(BaseStore):
+    # Maximum depth for recursive collection traversal in filter matching
+    _FILTER_MATCH_MAX_DEPTH = 10
+    
     def __init__(self):
         self._emb: Dict[tuple[str, str], Embeddings] = {}
 
@@ -292,8 +295,8 @@ class TxtaiStore(BaseStore):
 
         def match(have: Any, cond: Any, depth: int = 0) -> bool:
             # Prevent infinite recursion with nested collections
-            MAX_DEPTH = 10
-            if depth >= MAX_DEPTH:
+            if depth >= TxtaiStore._FILTER_MATCH_MAX_DEPTH:
+                log.warning(f"Filter match depth limit ({TxtaiStore._FILTER_MATCH_MAX_DEPTH}) exceeded for value: {type(have)}")
                 return False
             
             if have is None:
