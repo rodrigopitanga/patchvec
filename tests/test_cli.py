@@ -2,8 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import zipfile
+from pathlib import Path
+
 import pytest
 from pave import cli as pvcli
+from pave.config import get_cfg
 from utils import DummyStore, SpyStore
 
 @pytest.fixture
@@ -43,3 +47,23 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
 
     assert any(c[0] == "search" and c[1] == tenant and c[2] == coll \
                and c[3] == "avião" and c[4] == 5 for c in store.calls)
+
+
+def test_cli_dump_datastore_creates_zip(cli_env, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+    data_dir = Path(get_cfg().get("data_dir"))
+    sample = data_dir / "sample.txt"
+    sample.parent.mkdir(parents=True, exist_ok=True)
+    sample.write_text("hello", encoding="utf-8")
+
+    target = tmp_path / "export.zip"
+    pvcli.main_cli(["dump-datastore", "--output", str(target)])
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+    assert Path(out["archive"]) == target
+
+    with zipfile.ZipFile(target) as zf:
+        assert "sample.txt" in zf.namelist()
+        with zf.open("sample.txt") as f:
+            assert f.read().decode("utf-8") == "hello"

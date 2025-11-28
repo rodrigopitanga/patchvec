@@ -3,14 +3,16 @@
 
 from __future__ import annotations
 
-import json, os, logging
+import json, os, logging, shutil
 import uvicorn
 
 from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, \
     Query, Depends, Request, HTTPException
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, Annotated
+from starlette.background import BackgroundTask
 
 from pave.config import get_cfg, get_logger
 from pave.auth import AuthContext, auth_ctx, authorize_tenant, \
@@ -20,6 +22,7 @@ from pave.stores.factory import get_store
 from pave.stores.base import BaseStore
 from pave.service import \
     create_collection as svc_create_collection, \
+    dump_datastore as svc_dump_datastore, \
     delete_collection as svc_delete_collection, \
     ingest_document as svc_ingest_document, \
     do_search as svc_do_search
@@ -116,8 +119,45 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         })
         return PlainTextResponse(txt, media_type="text/plain; version=0.0.4")
 
-    
+
     # ----------------- Core API ------------------
+
+    @app.get("/admin/datastore/dump", response_class=FileResponse)
+    async def dump_datastore_endpoint(
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        if not ctx.is_admin:
+            raise HTTPException(status_code=403, detail="admin access required")
+
+        data_dir = cfg.get("data_dir")
+        if not data_dir:
+            raise HTTPException(status_code=500, detail="data directory is not configured")
+
+        try:
+            archive_path, tmp_dir = await run_in_threadpool(
+                svc_dump_datastore, store, data_dir
+            )
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="data directory not found")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to archive data: {exc}")
+
+        filename = os.path.basename(archive_path)
+
+        def _cleanup(path: str | None) -> None:
+            if not path:
+                return
+            shutil.rmtree(path, ignore_errors=True)
+
+        background = BackgroundTask(_cleanup, tmp_dir)
+        return FileResponse(
+            archive_path,
+            media_type="application/zip",
+            filename=filename,
+            background=background,
+        )
 
     @app.post("/collections/{tenant}/{name}")
     def create_collection(
