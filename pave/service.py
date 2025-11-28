@@ -2,11 +2,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
-import uuid, json, re
-from typing import Dict, Any, Iterable, Tuple, List
+
+import json
+import os
+import re
+import tempfile
+import uuid
+import zipfile
+from contextlib import contextmanager
 from datetime import datetime, timezone as tz
-from pave.preprocess import preprocess
+from pathlib import Path
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+
 from pave.metrics import inc as m_inc
+from pave.preprocess import preprocess
+from pave.stores.base import BaseStore
 
 # Pure-ish service functions operating on a store adapter
 
@@ -90,3 +100,160 @@ def do_search(store, tenant: str, collection: str, q: str, k: int = 5,
     return {
         "matches": top
     }
+
+
+def _write_zip(source_dir: Path, target_path: Path) -> None:
+    """Create a ZIP archive at ``target_path`` with the contents of ``source_dir``."""
+
+    source_dir = source_dir.resolve()
+    target_path = target_path.resolve()
+    if not source_dir.is_dir():
+        raise FileNotFoundError(f"data directory not found: {source_dir}")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(target_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(source_dir):
+            root_path = Path(root)
+            rel_root = root_path.relative_to(source_dir)
+
+            # Preserve empty directories
+            if not files and not dirs:
+                arcname = str(rel_root) + "/" if rel_root != Path('.') else ""
+                if arcname:
+                    zf.writestr(arcname, "")
+                continue
+
+            for filename in files:
+                file_path = root_path / filename
+                rel_name = file_path.relative_to(source_dir)
+                zf.write(file_path, rel_name.as_posix())
+
+
+def _unwrap_store(store: BaseStore | None) -> BaseStore | None:
+    """Follow ``impl`` attributes to reach the concrete store implementation."""
+
+    seen: set[int] = set()
+    current = store
+    while isinstance(current, BaseStore) and hasattr(current, "impl"):
+        impl = getattr(current, "impl")
+        if not isinstance(impl, BaseStore):
+            break
+        ident = id(impl)
+        if ident in seen:
+            break
+        seen.add(ident)
+        current = impl
+    return current
+
+
+def _iter_collection_lock_keys(data_dir: Path) -> Iterable[str]:
+    """Yield lock keys for ``TxtaiStore``-style directory layout."""
+
+    for tenant_dir in data_dir.iterdir():
+        if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
+            continue
+        tenant = tenant_dir.name[2:]
+        if not tenant:
+            continue
+        for coll_dir in tenant_dir.iterdir():
+            if not coll_dir.is_dir() or not coll_dir.name.startswith("c_"):
+                continue
+            collection = coll_dir.name[2:]
+            if not collection:
+                continue
+            yield f"t_{tenant}:c_{collection}"
+
+
+@contextmanager
+def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
+    """Acquire all known collection locks for ``TxtaiStore`` implementations."""
+
+    base_store = _unwrap_store(store)
+    if base_store is None:
+        yield
+        return
+
+    try:
+        from pave.stores.txtai_store import TxtaiStore, get_lock  # type: ignore
+    except Exception:
+        yield
+        return
+
+    if not isinstance(base_store, TxtaiStore):
+        yield
+        return
+
+    keys = sorted(set(_iter_collection_lock_keys(data_dir)))
+    if not keys:
+        yield
+        return
+
+    locks = []
+    for key in keys:
+        lock = get_lock(key)
+        lock.acquire()
+        locks.append(lock)
+
+    try:
+        yield
+    finally:
+        for lock in reversed(locks):
+            lock.release()
+
+
+def dump_datastore(
+    store: BaseStore | None,
+    data_dir: str | os.PathLike[str],
+    output_path: Optional[str | os.PathLike[str]] = None,
+) -> Tuple[str, Optional[str]]:
+    """Create a ZIP archive containing the contents of ``data_dir``.
+
+    Parameters
+    ----------
+    store:
+        Optional vector-store implementation. When provided and it maps to a
+        ``TxtaiStore`` backend all known collection locks are acquired for the
+        duration of the archive creation to avoid concurrent writes during the
+        export.
+    data_dir:
+        Directory whose contents should be compressed.
+    output_path:
+        Optional explicit path for the resulting archive. When omitted a
+        temporary directory is created and the caller is responsible for the
+        lifetime of that directory.
+
+    Returns
+    -------
+    tuple[str, Optional[str]]
+        The first element is the absolute path to the generated archive. The
+        second element is the temporary directory that owns the archive (or
+        ``None`` when ``output_path`` was provided).
+    """
+
+    data_dir_path = Path(data_dir).resolve()
+    if not data_dir_path.is_dir():
+        raise FileNotFoundError(f"data directory not found: {data_dir_path}")
+
+    if output_path is not None:
+        archive_path = Path(output_path).resolve()
+        with _lock_indexes(store, data_dir_path):
+            _write_zip(data_dir_path, archive_path)
+        return str(archive_path), None
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="patchvec_export_"))
+    timestamp = datetime.now(tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive_path = tmp_dir / f"patchvec-data-{timestamp}.zip"
+    with _lock_indexes(store, data_dir_path):
+        _write_zip(data_dir_path, archive_path)
+    return str(archive_path), str(tmp_dir)
+
+
+def create_data_archive(
+    store: BaseStore | None,
+    data_dir: str | os.PathLike[str],
+    output_path: Optional[str | os.PathLike[str]] = None,
+) -> Tuple[str, Optional[str]]:
+    """Backward-compatible wrapper for :func:`dump_datastore`."""
+
+    return dump_datastore(store, data_dir, output_path)

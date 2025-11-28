@@ -4,11 +4,37 @@
 import sys
 import types
 import pytest
+
+_txtai_available = True
+try:
+    import txtai.embeddings  # type: ignore  # noqa: F401
+except ModuleNotFoundError:
+    _txtai_available = False
+    embeddings_mod = types.ModuleType("txtai.embeddings")
+
+    class _MissingEmbeddings:  # pragma: no cover - test fallback
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError(
+                "txtai is required for TxtaiStore. Install txtai or monkeypatch Embeddings for tests."
+            )
+
+    embeddings_mod.Embeddings = _MissingEmbeddings  # type: ignore[attr-defined]
+    txtai_mod = types.ModuleType("txtai")
+    txtai_mod.embeddings = embeddings_mod  # type: ignore[attr-defined]
+    sys.modules.setdefault("txtai", txtai_mod)
+    sys.modules.setdefault("txtai.embeddings", embeddings_mod)
+
+from utils import DummyStore, SpyStore, FakeEmbeddings
+
+if not _txtai_available:
+    emb_mod = sys.modules.get("txtai.embeddings")
+    if emb_mod is not None:
+        emb_mod.Embeddings = FakeEmbeddings  # type: ignore[attr-defined]
+
 from fastapi.testclient import TestClient
 from pave.config import get_cfg, reload_cfg
 from pave.main import build_app, VERSION
 from pave.ui import attach_ui
-from utils import DummyStore, SpyStore
 
 @pytest.fixture(scope="session")
 def temp_data_dir(tmp_path_factory):
@@ -27,6 +53,9 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir):
     cfg.set("vector_store.txtai.embed_model",
             "sentence-transformers/paraphrase-MiniLM-L3-v2")
     cfg.set("common_enabled", False)
+    if not _txtai_available:
+        import pave.stores.txtai_store as store_mod
+        monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
     yield
 
 @pytest.fixture()

@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 import argparse, json, uuid, pathlib
+from datetime import datetime, timezone
 from pave.stores.factory import get_store
 from pave.service import (
     create_collection as svc_create_collection,
+    dump_datastore as svc_dump_datastore,
     delete_collection as svc_delete_collection,
     ingest_document as svc_ingest_document,
     do_search as svc_do_search,
@@ -50,6 +52,21 @@ def cmd_delete(args):
     out = svc_delete_collection(store, args.tenant, args.collection)
     print(json.dumps(out, ensure_ascii=False))
 
+def cmd_dump_datastore(args):
+    cfg = get_cfg()
+    data_dir = cfg.get("data_dir")
+    if not data_dir:
+        raise SystemExit("data directory is not configured")
+
+    output = args.output or f"patchvec-data-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.zip"
+    archive_path, _ = svc_dump_datastore(store, data_dir, output)
+    out = {
+        "ok": True,
+        "archive": archive_path,
+        "source": str(data_dir),
+    }
+    print(json.dumps(out, ensure_ascii=False))
+
 def main_cli(argv=None):
     p = argparse.ArgumentParser(prog="pavecli")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -89,6 +106,10 @@ def main_cli(argv=None):
     p_delete.add_argument("tenant")
     p_delete.add_argument("collection")
     p_delete.set_defaults(func=cmd_delete)
+
+    p_dump = sub.add_parser("dump-datastore")
+    p_dump.add_argument("--output", help="Destination ZIP file path")
+    p_dump.set_defaults(func=cmd_dump_datastore)
 
     args = p.parse_args(argv)
     return args.func(args)
