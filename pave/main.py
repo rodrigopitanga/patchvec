@@ -22,7 +22,8 @@ from pave.stores.factory import get_store
 from pave.stores.base import BaseStore
 from pave.service import \
     create_collection as svc_create_collection, \
-    dump_datastore as svc_dump_datastore, \
+    create_data_archive as svc_create_data_archive, \
+    restore_data_archive as svc_restore_data_archive, \
     delete_collection as svc_delete_collection, \
     ingest_document as svc_ingest_document, \
     do_search as svc_do_search
@@ -122,8 +123,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     # ----------------- Core API ------------------
 
-    @app.get("/admin/datastore/dump", response_class=FileResponse)
-    async def dump_datastore_endpoint(
+    @app.get("/admin/archive", response_class=FileResponse)
+    async def create_archive(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
@@ -137,7 +138,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
         try:
             archive_path, tmp_dir = await run_in_threadpool(
-                svc_dump_datastore, store, data_dir
+                svc_create_data_archive, store, data_dir
             )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="data directory not found")
@@ -158,6 +159,31 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             filename=filename,
             background=background,
         )
+
+    @app.put("/admin/archive")
+    async def restore_archive(
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+        file: UploadFile = File(...),
+    ):
+        inc("requests_total")
+        if not ctx.is_admin:
+            raise HTTPException(status_code=403, detail="admin access required")
+
+        data_dir = cfg.get("data_dir")
+        if not data_dir:
+            raise HTTPException(status_code=500, detail="data directory is not configured")
+
+        content = await file.read()
+        try:
+            out = await run_in_threadpool(
+                svc_restore_data_archive, store, data_dir, content
+            )
+            return out
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"failed to restore data: {exc}")
 
     @app.post("/collections/{tenant}/{name}")
     def create_collection(

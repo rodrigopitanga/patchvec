@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from pave.stores.factory import get_store
 from pave.service import (
     create_collection as svc_create_collection,
-    dump_datastore as svc_dump_datastore,
+    create_data_archive as svc_dump_archive,
+    restore_data_archive as svc_restore_archive,
     delete_collection as svc_delete_collection,
     ingest_document as svc_ingest_document,
     do_search as svc_do_search,
@@ -52,19 +53,29 @@ def cmd_delete(args):
     out = svc_delete_collection(store, args.tenant, args.collection)
     print(json.dumps(out, ensure_ascii=False))
 
-def cmd_dump_datastore(args):
+def cmd_dump_archive(args):
     cfg = get_cfg()
     data_dir = cfg.get("data_dir")
     if not data_dir:
         raise SystemExit("data directory is not configured")
 
     output = args.output or f"patchvec-data-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.zip"
-    archive_path, _ = svc_dump_datastore(store, data_dir, output)
+    archive_path, _ = svc_dump_archive(store, data_dir, output)
     out = {
         "ok": True,
         "archive": archive_path,
         "source": str(data_dir),
     }
+    print(json.dumps(out, ensure_ascii=False))
+
+def cmd_restore_archive(args):
+    cfg = get_cfg()
+    data_dir = cfg.get("data_dir")
+    if not data_dir:
+        raise SystemExit("data directory is not configured")
+
+    content = _read(args.file)
+    out = svc_restore_archive(store, data_dir, content)
     print(json.dumps(out, ensure_ascii=False))
 
 def main_cli(argv=None):
@@ -107,9 +118,13 @@ def main_cli(argv=None):
     p_delete.add_argument("collection")
     p_delete.set_defaults(func=cmd_delete)
 
-    p_dump = sub.add_parser("dump-datastore")
+    p_dump = sub.add_parser("dump-archive")
     p_dump.add_argument("--output", help="Destination ZIP file path")
-    p_dump.set_defaults(func=cmd_dump_datastore)
+    p_dump.set_defaults(func=cmd_dump_archive)
+
+    p_restore = sub.add_parser("restore-archive")
+    p_restore.add_argument("file")
+    p_restore.set_defaults(func=cmd_restore_archive)
 
     args = p.parse_args(argv)
     return args.func(args)

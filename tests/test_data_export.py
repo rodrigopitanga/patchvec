@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from pave.stores import txtai_store
-from pave.service import dump_datastore
+from pave.service import create_data_archive
 
 
 def test_dump_endpoint_returns_zip(client, temp_data_dir):
@@ -15,7 +15,7 @@ def test_dump_endpoint_returns_zip(client, temp_data_dir):
     sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_text("hello endpoint", encoding="utf-8")
 
-    response = client.get("/admin/datastore/dump")
+    response = client.get("/admin/archive")
 
     assert response.status_code == 200
     assert response.headers.get("content-type", "").startswith("application/zip")
@@ -57,7 +57,7 @@ def test_create_data_archive_acquires_txtai_locks(monkeypatch, temp_data_dir):
     monkeypatch.setattr(txtai_store, "get_lock", fake_get_lock)
 
     store = txtai_store.TxtaiStore()
-    archive_path, tmp_dir = dump_datastore(store, temp_data_dir)
+    archive_path, tmp_dir = create_data_archive(store, temp_data_dir)
     try:
         assert ("acquire", "t_acme:c_invoices") in events
         assert ("release", "t_acme:c_invoices") in events
@@ -65,3 +65,27 @@ def test_create_data_archive_acquires_txtai_locks(monkeypatch, temp_data_dir):
     finally:
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+def test_restore_endpoint_replaces_data_dir(client, temp_data_dir):
+    sample = Path(temp_data_dir) / "tenant" / "collection" / "doc.txt"
+    sample.parent.mkdir(parents=True, exist_ok=True)
+    sample.write_text("restore me", encoding="utf-8")
+
+    response = client.get("/admin/archive")
+    assert response.status_code == 200
+
+    shutil.rmtree(temp_data_dir)
+    Path(temp_data_dir).mkdir(parents=True, exist_ok=True)
+    other = Path(temp_data_dir) / "other.txt"
+    other.write_text("doomed", encoding="utf-8")
+
+    put = client.put(
+        "/admin/archive",
+        files={"file": ("dump.zip", response.content, "application/zip")},
+    )
+
+    assert put.status_code == 200
+    assert put.json()["ok"] is True
+    assert sample.exists()
+    assert sample.read_text(encoding="utf-8") == "restore me"
+    assert not other.exists()

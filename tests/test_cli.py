@@ -49,7 +49,7 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
                and c[3] == "avião" and c[4] == 5 for c in store.calls)
 
 
-def test_cli_dump_datastore_creates_zip(cli_env, tmp_path, capsys):
+def test_cli_dump_archive_creates_zip(cli_env, tmp_path, capsys):
     pvcli, _, _ = cli_env
     data_dir = Path(get_cfg().get("data_dir"))
     sample = data_dir / "sample.txt"
@@ -57,7 +57,7 @@ def test_cli_dump_datastore_creates_zip(cli_env, tmp_path, capsys):
     sample.write_text("hello", encoding="utf-8")
 
     target = tmp_path / "export.zip"
-    pvcli.main_cli(["dump-datastore", "--output", str(target)])
+    pvcli.main_cli(["dump-archive", "--output", str(target)])
 
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is True

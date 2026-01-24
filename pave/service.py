@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import tempfile
 import uuid
 import zipfile
@@ -130,6 +131,18 @@ def _write_zip(source_dir: Path, target_path: Path) -> None:
                 zf.write(file_path, rel_name.as_posix())
 
 
+def _validate_zip_members(zf: zipfile.ZipFile) -> None:
+    for member in zf.infolist():
+        name = member.filename
+        if not name:
+            continue
+        rel_path = Path(name)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            raise ValueError(f"invalid archive member: {name}")
+        if name.startswith(("/", "\\")):
+            raise ValueError(f"invalid archive member: {name}")
+
+
 def _unwrap_store(store: BaseStore | None) -> BaseStore | None:
     """Follow ``impl`` attributes to reach the concrete store implementation."""
 
@@ -202,10 +215,9 @@ def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
             lock.release()
 
 
-def dump_datastore(
-    store: BaseStore | None,
-    data_dir: str | os.PathLike[str],
-    output_path: Optional[str | os.PathLike[str]] = None,
+def create_data_archive(
+        store: BaseStore | None, data_dir: str | os.PathLike[str],
+        output_path: Optional[str | os.PathLike[str]] = None,
 ) -> Tuple[str, Optional[str]]:
     """Create a ZIP archive containing the contents of ``data_dir``.
 
@@ -249,11 +261,33 @@ def dump_datastore(
     return str(archive_path), str(tmp_dir)
 
 
-def create_data_archive(
-    store: BaseStore | None,
-    data_dir: str | os.PathLike[str],
-    output_path: Optional[str | os.PathLike[str]] = None,
-) -> Tuple[str, Optional[str]]:
-    """Backward-compatible wrapper for :func:`dump_datastore`."""
+def restore_data_archive(
+        store: BaseStore | None, data_dir: str | os.PathLike[str],
+        archive_bytes: bytes
+) -> Dict[str, Any]:
+    data_dir_path = Path(data_dir).resolve()
+    data_dir_path.mkdir(parents=True, exist_ok=True)
 
-    return dump_datastore(store, data_dir, output_path)
+    with tempfile.TemporaryDirectory(prefix="patchvec_import_") as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        archive_path = tmp_path / "patchvec-data.zip"
+        extract_dir = tmp_path / "extracted"
+        archive_path.write_bytes(archive_bytes)
+        extract_dir.mkdir()
+
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            _validate_zip_members(zf)
+            zf.extractall(extract_dir)
+
+        with _lock_indexes(store, data_dir_path):
+            for entry in data_dir_path.iterdir():
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+
+            for entry in extract_dir.iterdir():
+                shutil.move(str(entry), data_dir_path / entry.name)
+
+    return {"ok": True, "data_dir": str(data_dir_path)}
+
