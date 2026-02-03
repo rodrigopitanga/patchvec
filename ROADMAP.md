@@ -4,42 +4,43 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 
 ---
 
-## Business-Aligned Priority Evaluation
+## Priority Evaluation
 
-> PatchVec is the knowledge base for all Planno products. BNCC.click is the
-> first consumer — a teacher-facing GA tool that maps lessons to BNCC skill
-> codes via semantic search. The core product metric is **time saved by the
-> teacher to reach the correct BNCC codes**. Every PatchVec TODO is evaluated
-> below against that metric and the consolidated Planno/Flowlexi strategy.
+> PatchVec is a general-purpose vector search microservice. The priorities
+> below are driven by production readiness for its first downstream consumer
+> — an application that maps natural-language queries in Portuguese to
+> structured skill codes via semantic search. The core product metric is
+> **time saved to reach the correct results**. Every TODO is evaluated
+> against that metric and general production readiness.
 
-### P0 — Blocks BNCC.click GA launch
+### P0 — Blocks first consumer GA launch
 
 | # | Task | Why it blocks | Source |
 |---|------|---------------|--------|
-| 1 | **Multilingual embedding model** — switch the default from `paraphrase-MiniLM-L3-v2` (English-centric) to a multilingual model and validate Portuguese retrieval quality | BNCC.click operates entirely in Portuguese. Teachers describe lessons in natural language; the current English-optimized model degrades recall on PT-BR queries. Fidelity ("nao inventa codigo") is the implicit value prop — wrong codes destroy trust. | `txtai_store.py:80-84`, product guideline §5 |
-| 2 | **`match_reason` field on every search hit** — return a short explanation of why a BNCC skill matched | Product requirement: "explicar por que aquela habilidade se aplica". Without this, the teacher gets codes but no justification, which undermines confidence and forces manual cross-checking (defeating the time-saving metric). | ROADMAP v0.5.7, product guideline §3 |
-| 3 | **Latency histograms (p50/p95/p99)** on `/metrics` for search and ingest | The single success metric is time saved. Without latency instrumentation there is no way to measure, regress-test, or optimize the core value proposition. | ROADMAP v0.5.7, business guideline §7 |
-| 4 | **Negation filter performance** — push `!`-prefixed filters into SQL pre-filter instead of post-filter | BNCC.click fires 3 parallel searches per request, two of which use `!Disciplina` negation. Today these go through Python post-filtering (`_split_filters` sends `!` to `pos_f`), which forces a large overfetch and multiplies tail latency. | `txtai_store.py:350-354`, bncc.click code |
-| 5 | **Structured request logging with trace_id** — accept and propagate an external `trace_id` / `request_id` through search responses and logs | BNCC.click already generates `trace_id` per request and logs it to Sheets. PatchVec silently drops it. Without correlation, production debugging across the bncc.click -> PatchVec boundary is blind. | ROADMAP v0.5.8, bncc.click code |
+| 1 | **Multilingual embedding model** — switch the default from `paraphrase-MiniLM-L3-v2` (English-centric) to a multilingual model and validate Portuguese retrieval quality | The first consumer operates entirely in Portuguese. Users describe queries in natural language; the current English-optimized model degrades recall on PT-BR queries. Wrong results destroy trust. | `txtai_store.py:80-84` |
+| 2 | **`match_reason` field on every search hit** — return a short explanation of why a result matched | Users need to see *why* a result matched, not just *that* it matched. Without this, confidence drops and manual cross-checking defeats the time-saving metric. | ROADMAP v0.5.7 |
+| 3 | **Latency histograms (p50/p95/p99)** on `/metrics` for search and ingest | The success metric is time saved. Without latency instrumentation there is no way to measure, regress-test, or optimize the core value proposition. | ROADMAP v0.5.7 |
+| 4 | **Negation filter performance** — push `!`-prefixed filters into SQL pre-filter instead of post-filter | The primary consumer fires 3 parallel searches per request, two of which use `!`-negation. Today these go through Python post-filtering (`_split_filters` sends `!` to `pos_f`), which forces a large overfetch and multiplies tail latency. | `txtai_store.py:350-354` |
+| 5 | **Structured request logging with trace_id** — accept and propagate an external `trace_id` / `request_id` through search responses and logs | Consumers already generate `trace_id` per request. PatchVec silently drops it. Without correlation, production debugging across service boundaries is blind. | ROADMAP v0.5.8 |
 
-### P1 — Critical for first paid pilots (Planno.click B2B)
-
-| # | Task | Why it matters | Source |
-|---|------|----------------|--------|
-| 6 | **Delete document by ID** (REST + CLI) | BNCC data will be updated (MEC revisions, corrections). Without single-doc deletion, the only option is full collection rebuild — unacceptable operationally. | ROADMAP v0.5.7 |
-| 7 | **Hybrid reranking (vector + BM25)** | Teachers search with exact BNCC code fragments ("EF05MA01") mixed with natural language. Pure vector similarity misses exact token matches. Hybrid ranking is the difference between "found it first try" and "had to scroll". | ROADMAP v0.5.9, product guideline §5 |
-| 8 | **Per-tenant rate limiting** | BNCC.click is GA and public. Without rate limiting, a single abusive client can saturate the shared PatchVec instance and degrade service for all teachers. | ROADMAP v0.5.8 |
-| 9 | **Internal metadata store (SQLite)** with migrations | Current storage is JSON files (`catalog.json`, `meta.json`) written atomically per collection. Under concurrent teacher load this becomes a bottleneck and corruption risk. SQLite gives ACID guarantees the file approach lacks. | ROADMAP v0.5.8 |
-| 10 | **Per-collection embedding configuration** | BNCC collection needs a PT-BR-optimized model; future Planno.click collections (lesson plans, assessments) may need different models. Today the model is global. | ROADMAP v0.6 |
-
-### P2 — Enables Planno.school (enterprise light) and moat
+### P1 — Critical for first B2B pilots
 
 | # | Task | Why it matters | Source |
 |---|------|----------------|--------|
-| 11 | **`meta.priority` scoring boosts** | Planno.school will cross-reference student performance with curriculum coverage. Priority boosts let the system surface high-impact skills first. | ROADMAP v0.5.9 |
-| 12 | **List tenants and collections API** | Operational visibility for multi-school deployments. Coordination teams need to know what's indexed. | ROADMAP v0.6 |
-| 13 | **Collection-level structured log export** | The moat is "what the system learns without asking" — which skills are searched, which are missing, which combinations appear. This data must be extractable per-collection for analysis. | ROADMAP v0.5.8, business guideline §9 |
-| 14 | **Document versioning and rebuild tooling** | When BNCC data is corrected, schools need audit trails. Versioning supports the "dados auditaveis, rastreaveis, reutilizaveis" promise. | ROADMAP v0.8 |
+| 6 | **Delete document by ID** (REST + CLI) | Source data will be updated (revisions, corrections). Without single-doc deletion, the only option is full collection rebuild — unacceptable operationally. | ROADMAP v0.5.7 |
+| 7 | **Hybrid reranking (vector + BM25)** | Users search with exact code fragments mixed with natural language. Pure vector similarity misses exact token matches. Hybrid ranking is the difference between "found it first try" and "had to scroll". | ROADMAP v0.5.9 |
+| 8 | **Per-tenant rate limiting** | When the consumer app is public, a single abusive client can saturate the shared PatchVec instance and degrade service for all users. | ROADMAP v0.5.8 |
+| 9 | **Internal metadata store (SQLite)** with migrations | Current storage is JSON files (`catalog.json`, `meta.json`) written atomically per collection. Under concurrent load this becomes a bottleneck and corruption risk. SQLite gives ACID guarantees the file approach lacks. | ROADMAP v0.5.8 |
+| 10 | **Per-collection embedding configuration** | Different collections may need different models (e.g., a PT-BR-optimized model for one, a general-purpose model for another). Today the model is global. | ROADMAP v0.6 |
+
+### P2 — Enables enterprise use cases and competitive moat
+
+| # | Task | Why it matters | Source |
+|---|------|----------------|--------|
+| 11 | **`meta.priority` scoring boosts** | Enterprise consumers may need to cross-reference multiple data dimensions. Priority boosts let the system surface high-impact results first. | ROADMAP v0.5.9 |
+| 12 | **List tenants and collections API** | Operational visibility for multi-tenant deployments. Operators need to know what's indexed. | ROADMAP v0.6 |
+| 13 | **Collection-level structured log export** | The moat is what the system learns passively — which terms are searched, which results are missing, which combinations appear. This data must be extractable per-collection for analysis. | ROADMAP v0.5.8 |
+| 14 | **Document versioning and rebuild tooling** | When source data is corrected, consumers need audit trails. Versioning supports traceable, auditable data. | ROADMAP v0.8 |
 
 ### P3 — Scale and long-term
 
@@ -57,9 +58,9 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 ### What is solid
 
 - **Multi-tenant isolation** (`t_{tenant}/c_{collection}` layout) is clean and
-  well-tested. BNCC.click already consumes it correctly.
+  well-tested. Production consumers already use it correctly.
 - **Filter system** is expressive (wildcards, comparisons, datetime, negation,
-  OR/AND). The bncc.click early code exercises most filter features.
+  OR/AND). Real consumer code exercises most filter features.
 - **SQL injection prevention** (`_sanit_sql`, `_sanit_field`, `_sanit_meta_dict`)
   is thorough and has dedicated tests.
 - **Pluggable architecture** (BaseStore/BaseEmbedder ABCs, factory pattern) makes
@@ -109,21 +110,19 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 
 ## Market Practices (extracted from real-time decisioning benchmarks)
 
-> PatchVec serves BNCC.click the same way a geo-bidding engine serves ad
-> campaigns: both are real-time decisioning systems that must return the right
-> answer fast under concurrent load. The patterns below are table-stakes in
-> that domain and map directly to Planno's needs.
+> PatchVec serves downstream consumers the same way a geo-bidding engine
+> serves ad campaigns: both are real-time decisioning systems that must
+> return the right answer fast under concurrent load. The patterns below
+> are table-stakes in that domain.
 
 ### 1. Return `latency_ms` in every search response
 
-The XPTO geo-bidding spec mandates `latency_ms` in every response body.
+Real-time decisioning APIs mandate `latency_ms` in every response body.
 PatchVec currently returns `{matches: [...]}` with no timing information.
 
-**Why it matters for Planno:** The single product metric is "time saved by
-the teacher". BNCC.click already logs `trace_id` to Google Sheets. If
-PatchVec also returns `latency_ms`, BNCC.click can log it alongside every
-request, giving Planno concrete data to prove value to schools ("200ms vs
-the 3 minutes you used to spend").
+**Why it matters:** The core metric for consumers is time saved. If
+PatchVec returns `latency_ms`, consumers can log it alongside every
+request, giving operators concrete data to prove and monitor value.
 
 **Gap:** `service.py:do_search()` does not measure wall time. `main.py`
 search routes do not inject timing. Neither `SearchBody` response nor any
@@ -134,26 +133,26 @@ response dict.
 
 ### 2. Define an explicit latency SLO and enforce it in CI
 
-The geo-bidding challenge requires p99 <50ms at 1k req/s. PatchVec has no
+Production decisioning APIs require p99 latency SLOs. PatchVec has no
 SLO, no benchmark suite, no regression gate.
 
-**Why it matters for Planno:** Without a latency contract between PatchVec
-and BNCC.click, there is no way to detect regressions before they hit
-teachers. Without benchmarks, there is no number to put in sales material.
+**Why it matters:** Without a latency contract between PatchVec and its
+consumers, there is no way to detect regressions before they hit end users.
+Without benchmarks, there is no baseline to optimize against.
 
 **Gap:** No benchmark script exists. No CI step validates latency.
 `metrics.py` tracks counters but not histograms.
 
 **Action:** Ship a `benchmarks/` directory with a repeatable load test
-(e.g., `locust` or plain `httpx` + `asyncio`) that indexes a sample BNCC
-CSV, fires concurrent searches, and asserts p99 < threshold. Integrate into
-CI as a gating check.
+(e.g., `locust` or plain `httpx` + `asyncio`) that indexes a sample
+dataset, fires concurrent searches, and asserts p99 < threshold. Integrate
+into CI as a gating check.
 
 ### 3. Hot-reload data and configuration without restart
 
-The geo-bidding spec requires hot-reloading campaign targeting without
-downtime. PatchVec's equivalent: updating BNCC data (MEC revisions) or
-swapping embedding models without restarting the server.
+Production APIs require hot-reloading configuration without downtime.
+PatchVec's equivalent: updating indexed data or swapping embedding models
+without restarting the server.
 
 **Current state:** Document purge + re-index works live (via `purge_doc` +
 `ingest_document`). But:
@@ -168,19 +167,18 @@ design model hot-swap via a `/admin/reload` endpoint.
 
 ### 4. Pre-computation beats post-filtering
 
-The geo-bidding "bonus" is spatial indexing (R-tree, grid cells) — pre-
-computing indexes so you don't brute-force every request. PatchVec's
-equivalent: pushing filters into txtai's SQL query instead of fetching
-overfetch × 5 and filtering in Python.
+The equivalent of spatial indexing for geo queries: pushing filters into
+txtai's SQL query instead of fetching overfetch x 5 and filtering in
+Python.
 
 **Current state:** `_split_filters()` (`txtai_store.py:336`) sends `!`-prefixed
 values, wildcards, and comparison operators to `pos_f` (Python post-filter).
-BNCC.click uses `!Disciplina` negation in 2 of 3 parallel queries, meaning
-those queries overfetch and filter in Python.
+Consumers using `!`-negation in parallel queries overfetch and filter in
+Python.
 
-**Why it matters:** Each BNCC.click request = 3 parallel PatchVec searches.
-If 2 of 3 use post-filtering, tail latency multiplies. At 100 concurrent
-teachers, this becomes the bottleneck.
+**Why it matters:** If consumers fire multiple parallel searches and most
+use post-filtering, tail latency multiplies. At scale, this becomes the
+bottleneck.
 
 **Action:** For negation (`!value`), generate `[field] <> 'value'` in SQL
 instead of routing to post-filter. This is txtai-compatible SQL and avoids
@@ -189,18 +187,17 @@ where SQL support is uncertain.
 
 ### 5. Graceful degradation under overload
 
-The geo-bidding challenge rewards systems that degrade gracefully (e.g.,
-shed low-priority work, return partial results) rather than failing
-entirely under load.
+Production APIs must degrade gracefully (e.g., shed low-priority work,
+return partial results) rather than failing entirely under load.
 
 **Current state:** PatchVec has no backpressure mechanism. Under high load:
 - uvicorn's threadpool fills up silently.
 - JSON file I/O (`_load_meta`, `_save_meta`) becomes a bottleneck.
 - No circuit breaker, no request shedding, no timeout on search.
 
-**Why it matters for Planno:** BNCC.click is GA and public. A viral moment
-(teacher shares on social media) could spike load. Without degradation
-strategy, all teachers get 500s instead of some getting slower responses.
+**Why it matters:** Public-facing consumers may experience traffic spikes.
+Without degradation strategy, all users get 500s instead of some getting
+slower responses.
 
 **Action for v0.5.8:** Add a configurable search timeout (default 5s). If
 exceeded, return partial results with a `"truncated": true` flag. Add a
@@ -208,39 +205,39 @@ exceeded, return partial results with a `"truncated": true` flag. Add a
 
 ### 6. Benchmark suite as a first-class artifact
 
-The geo-bidding challenge requires benchmarks in the README as a
-deliverable — not optional documentation, but proof of performance claims.
+Performance benchmarks are not optional documentation — they are proof of
+performance claims and regression gates.
 
-**Why it matters for Planno:** When selling to schools ("reduces
-coordination overhead"), you need measurable evidence. When optimizing
-PatchVec, you need a regression baseline. When choosing between embedding
-models, you need comparable latency/recall numbers.
+**Why it matters:** When optimizing PatchVec, you need a regression
+baseline. When choosing between embedding models, you need comparable
+latency/recall numbers. When consumers evaluate PatchVec against
+alternatives, benchmarks are the first thing they look for.
 
 **Gap:** No `benchmarks/` directory. No load test. No recall evaluation
-against a ground-truth BNCC mapping.
+against a ground-truth dataset.
 
 **Action:** Create `benchmarks/search_latency.py` (load test) and
-`benchmarks/recall_bncc.py` (quality evaluation against hand-labeled PT-BR
+`benchmarks/recall_eval.py` (quality evaluation against hand-labeled
 queries). Document baseline numbers in README.
 
 ### 7. Request/response traceability as contract
 
-The geo-bidding spec includes `request_id` in both request and response.
-This is the minimum contract for any system that participates in a
-distributed call chain.
+Distributed systems require `request_id` in both request and response.
+This is the minimum contract for any service that participates in a call
+chain.
 
-**Current state:** BNCC.click generates `trace_id` per request and logs it
-to Sheets. PatchVec ignores it — `SearchBody` has no `request_id` field,
-`do_search()` doesn't accept one, responses don't echo it.
+**Current state:** Consumers generate `trace_id` per request. PatchVec
+ignores it — `SearchBody` has no `request_id` field, `do_search()` doesn't
+accept one, responses don't echo it.
 
 **Action:** Add optional `request_id` to `SearchBody`. Echo it in response.
 Include it in structured log entries. This closes the observability gap
-between BNCC.click and PatchVec.
+between consumers and PatchVec.
 
 ### 8. Concurrency safety as explicit contract (not assumed)
 
-The geo-bidding challenge lists "handles concurrent requests correctly" as a
-must-have, not a nice-to-have.
+Production APIs must handle concurrent requests correctly as a must-have,
+not a nice-to-have.
 
 **Current state:** PatchVec has `_LOCKS` dict (`txtai_store.py:14`) which is
 itself not thread-safe. Two concurrent `load_or_init` calls for the same
@@ -252,8 +249,8 @@ all paths from HTTP handler to store for thread-safety.
 
 ### Summary: What the market expects from a real-time decisioning API
 
-| Practice | XPTO (geo-bidding) | PatchVec (BNCC search) | Status |
-|----------|-------------------|----------------------|--------|
+| Practice | Geo-bidding benchmark | PatchVec | Status |
+|----------|----------------------|----------|--------|
 | Latency in response body | `latency_ms` mandatory | Not returned | **Missing** |
 | Latency SLO + benchmarks | p99 <50ms, benchmarks in README | No SLO, no benchmarks | **Missing** |
 | Hot-reload without downtime | Campaign hot-reload | Data update works; model swap requires restart | **Partial** |
@@ -261,17 +258,17 @@ all paths from HTTP handler to store for thread-safety.
 | Graceful degradation | Bonus: shed under overload | No backpressure, no timeout | **Missing** |
 | Request ID propagation | `request_id` in req + resp | Not propagated | **Missing** |
 | Concurrency safety | Must-have | Lock dict race condition | **Partial** |
-| Budget / quota governance | Campaign budget decrement | No rate limiting or quotas | **Missing** |
+| Budget / quota governance | Budget decrement | No rate limiting or quotas | **Missing** |
 
 Five of eight practices are completely missing. Three are partial. None are
 fully implemented. All are standard expectations for production decisioning
-APIs, and all map directly to Planno's business requirements.
+APIs.
 
 ---
 
-## Revised Roadmap (business-aligned)
+## Revised Roadmap
 
-### v0.5.7 — BNCC.click GA Readiness
+### v0.5.7 — Production Readiness
 - Switch default embedding model to multilingual (e.g., `paraphrase-multilingual-MiniLM-L12-v2`).
 - Return a `match_reason` field alongside every search hit.
 - Return `latency_ms` in every search response (market practice §1).
@@ -284,11 +281,11 @@ APIs, and all map directly to Planno's business requirements.
 - Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).
 - Ship initial `benchmarks/` directory with search latency load test (market practice §6).
 
-### v0.5.8 — Infrastructure for Pilots
+### v0.5.8 — Infrastructure & Resilience
 - Ship internal metadata/content store (SQLite) with migrations.
 - Serve `/metrics` and `/collections` from the internal store.
 - Emit structured logs with `request_id`, tenant, and latency; rolling retention per tenant/collection.
-- Per-tenant and per-operation API rate limits (market practice §8 — budget/quota governance).
+- Per-tenant and per-operation API rate limits (market practice §8 — quota governance).
 - Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market practice §5).
 - Support renaming collections through the API and CLI.
 
@@ -307,7 +304,7 @@ APIs, and all map directly to Planno's business requirements.
 - Typed response models (internal `SearchResult` dataclass).
 
 ### 0.7 — SDK & Orchestrator Integration
-- Python SDK client package (`patchvec`).
+- Python SDK client package (`pave`).
 - LangChain `VectorStore` + `Retriever` adapter (covers LangGraph + CrewAI).
 - Default tenant/collection selectors in Swagger UI.
 - Collection-level structured log export for analytics.
@@ -330,8 +327,9 @@ APIs, and all map directly to Planno's business requirements.
 
 ## Pluggability: PatchVec as a General-Purpose Vector Search Microservice
 
-> Secondary priority — after BNCC.click GA. But architectural decisions made
-> now (v0.5.7–0.6) determine whether this path is cheap or a rewrite.
+> Secondary priority — after the first consumer reaches GA. But
+> architectural decisions made now (v0.5.7–0.6) determine whether this
+> path is cheap or a rewrite.
 
 ### The landscape (as of early 2026)
 
@@ -368,7 +366,7 @@ layers are:
 | OpenAPI schema | **Solid** | Swagger UI with filtered views (search/ingest). |
 | Multi-tenancy | **Solid** | `tenant/collection` namespacing — a real differentiator. |
 | File preprocessing | **Unique** | CSV/PDF/TXT built-in. Competitors require external preprocessing. |
-| Python SDK (client) | **Missing** | No `patchvec` package for HTTP consumption. |
+| Python SDK (client) | **Missing** | No `pave` package for HTTP consumption. |
 | LangChain adapter | **Missing** | No `VectorStore` subclass. |
 | LlamaIndex adapter | **Missing** | No `VectorStore` implementation. |
 | MCP server | **Missing** | No tool exposure for AI agents. |
@@ -387,18 +385,18 @@ layers are:
 
 ### What PatchVec needs (in priority order)
 
-#### 1. Python SDK — `patchvec` client package (~150 lines)
+#### 1. Python SDK — `pave` client package (~150 lines)
 
 A thin HTTP wrapper that maps PatchVec's REST API to Python method calls.
 This is the foundation everything else wraps.
 
 ```python
-from patchvec import PatchVecClient
+from pave import PaveClient
 
-client = PatchVecClient("http://localhost:8086", api_key="...")
-client.create_collection("tenant", "bncc_ef")
-client.ingest("tenant", "bncc_ef", file_path="bncc_ef.csv")
-results = client.search("tenant", "bncc_ef", "frações equivalentes", k=5)
+client = PaveClient("http://localhost:8086", api_key="...")
+client.create_collection("tenant", "my_collection")
+client.ingest("tenant", "my_collection", file_path="data.csv")
+results = client.search("tenant", "my_collection", "example query", k=5)
 ```
 
 **Why:** Every vector DB ships a client SDK. Without one, PatchVec
@@ -424,10 +422,10 @@ This single adapter covers:
 - **CrewAI** agents and tools (delegates to LangChain VectorStore)
 
 ```python
-from patchvec.integrations.langchain import PatchVecVectorStore
+from pave.integrations.langchain import PaveVectorStore
 
-store = PatchVecVectorStore(
-    client=client, tenant="planno", collection="bncc_ef"
+store = PaveVectorStore(
+    client=client, tenant="my_tenant", collection="my_collection"
 )
 retriever = store.as_retriever(search_kwargs={"k": 5})
 ```
@@ -461,10 +459,9 @@ Expose PatchVec operations as MCP tools:
 
 **Why:** MCP is the standard protocol for AI agent ↔ tool communication.
 Qdrant, Pinecone, MindsDB already ship MCP servers. Without one, PatchVec
-is invisible to the fastest-growing integration channel. For Planno
-specifically: a Planno MCP server backed by PatchVec would let any
-MCP-compatible AI assistant search BNCC data directly — opening a
-distribution channel beyond BNCC.click's web UI.
+is invisible to the fastest-growing integration channel. An MCP server
+backed by PatchVec lets any MCP-compatible AI assistant search indexed
+data directly.
 
 **Effort:** ~300 lines. MCP Python SDK is well-documented.
 
@@ -529,16 +526,16 @@ layer (v0.7+) is cheap or expensive:
    (e.g., `SearchResult(id, score, text, meta)`) would be cleaner. This is
    a v0.6 candidate.
 
-### Integration roadmap (post BNCC.click GA)
+### Integration roadmap
 
 | Version | Deliverable | Depends on |
 |---------|------------|------------|
-| v0.7 | Python SDK (`patchvec` client package) | Stable REST API (v0.6) |
+| v0.7 | Python SDK (`pave` client package) | Stable REST API (v0.6) |
 | v0.7 | LangChain `VectorStore` adapter | SDK + doc delete (P1-6) |
 | v0.8 | MCP server | SDK + list collections (P2-12) |
 | v0.8 | LlamaIndex adapter | SDK |
 | v0.9 | Typed response models (`SearchResult` dataclass) | API freeze candidate |
-| 1.0 | Published integrations on PyPI (`patchvec-langchain`, `patchvec-mcp`) | API freeze |
+| 1.0 | Published integrations on PyPI (`pave-langchain`, `pave-mcp`) | API freeze |
 
 ### What this means for the revised version milestones
 
