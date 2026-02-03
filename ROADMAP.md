@@ -107,24 +107,189 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 
 ---
 
+## Market Practices (extracted from real-time decisioning benchmarks)
+
+> PatchVec serves BNCC.click the same way a geo-bidding engine serves ad
+> campaigns: both are real-time decisioning systems that must return the right
+> answer fast under concurrent load. The patterns below are table-stakes in
+> that domain and map directly to Planno's needs.
+
+### 1. Return `latency_ms` in every search response
+
+The XPTO geo-bidding spec mandates `latency_ms` in every response body.
+PatchVec currently returns `{matches: [...]}` with no timing information.
+
+**Why it matters for Planno:** The single product metric is "time saved by
+the teacher". BNCC.click already logs `trace_id` to Google Sheets. If
+PatchVec also returns `latency_ms`, BNCC.click can log it alongside every
+request, giving Planno concrete data to prove value to schools ("200ms vs
+the 3 minutes you used to spend").
+
+**Gap:** `service.py:do_search()` does not measure wall time. `main.py`
+search routes do not inject timing. Neither `SearchBody` response nor any
+response schema includes `latency_ms`.
+
+**Effort:** Low. Wrap `do_search` in `time.perf_counter()`, add field to
+response dict.
+
+### 2. Define an explicit latency SLO and enforce it in CI
+
+The geo-bidding challenge requires p99 <50ms at 1k req/s. PatchVec has no
+SLO, no benchmark suite, no regression gate.
+
+**Why it matters for Planno:** Without a latency contract between PatchVec
+and BNCC.click, there is no way to detect regressions before they hit
+teachers. Without benchmarks, there is no number to put in sales material.
+
+**Gap:** No benchmark script exists. No CI step validates latency.
+`metrics.py` tracks counters but not histograms.
+
+**Action:** Ship a `benchmarks/` directory with a repeatable load test
+(e.g., `locust` or plain `httpx` + `asyncio`) that indexes a sample BNCC
+CSV, fires concurrent searches, and asserts p99 < threshold. Integrate into
+CI as a gating check.
+
+### 3. Hot-reload data and configuration without restart
+
+The geo-bidding spec requires hot-reloading campaign targeting without
+downtime. PatchVec's equivalent: updating BNCC data (MEC revisions) or
+swapping embedding models without restarting the server.
+
+**Current state:** Document purge + re-index works live (via `purge_doc` +
+`ingest_document`). But:
+- Embedding model is loaded once at startup (`TxtaiStore._config()` reads
+  config at init time, `load_or_init` caches per-collection).
+- `preprocess.py` reads `TXT_CHUNK_SIZE` / `TXT_CHUNK_OVERLAP` at import.
+- Config changes require process restart.
+
+**Action for v0.5.7:** Document the live-data-update path (purge + ingest)
+as an explicit operational procedure. For v0.6 (per-collection embeddings),
+design model hot-swap via a `/admin/reload` endpoint.
+
+### 4. Pre-computation beats post-filtering
+
+The geo-bidding "bonus" is spatial indexing (R-tree, grid cells) — pre-
+computing indexes so you don't brute-force every request. PatchVec's
+equivalent: pushing filters into txtai's SQL query instead of fetching
+overfetch × 5 and filtering in Python.
+
+**Current state:** `_split_filters()` (`txtai_store.py:336`) sends `!`-prefixed
+values, wildcards, and comparison operators to `pos_f` (Python post-filter).
+BNCC.click uses `!Disciplina` negation in 2 of 3 parallel queries, meaning
+those queries overfetch and filter in Python.
+
+**Why it matters:** Each BNCC.click request = 3 parallel PatchVec searches.
+If 2 of 3 use post-filtering, tail latency multiplies. At 100 concurrent
+teachers, this becomes the bottleneck.
+
+**Action:** For negation (`!value`), generate `[field] <> 'value'` in SQL
+instead of routing to post-filter. This is txtai-compatible SQL and avoids
+the overfetch penalty. Keep wildcards and comparison ops in post-filter
+where SQL support is uncertain.
+
+### 5. Graceful degradation under overload
+
+The geo-bidding challenge rewards systems that degrade gracefully (e.g.,
+shed low-priority work, return partial results) rather than failing
+entirely under load.
+
+**Current state:** PatchVec has no backpressure mechanism. Under high load:
+- uvicorn's threadpool fills up silently.
+- JSON file I/O (`_load_meta`, `_save_meta`) becomes a bottleneck.
+- No circuit breaker, no request shedding, no timeout on search.
+
+**Why it matters for Planno:** BNCC.click is GA and public. A viral moment
+(teacher shares on social media) could spike load. Without degradation
+strategy, all teachers get 500s instead of some getting slower responses.
+
+**Action for v0.5.8:** Add a configurable search timeout (default 5s). If
+exceeded, return partial results with a `"truncated": true` flag. Add a
+`max_concurrent_searches` config with 503 Fast-Fail when exceeded.
+
+### 6. Benchmark suite as a first-class artifact
+
+The geo-bidding challenge requires benchmarks in the README as a
+deliverable — not optional documentation, but proof of performance claims.
+
+**Why it matters for Planno:** When selling to schools ("reduces
+coordination overhead"), you need measurable evidence. When optimizing
+PatchVec, you need a regression baseline. When choosing between embedding
+models, you need comparable latency/recall numbers.
+
+**Gap:** No `benchmarks/` directory. No load test. No recall evaluation
+against a ground-truth BNCC mapping.
+
+**Action:** Create `benchmarks/search_latency.py` (load test) and
+`benchmarks/recall_bncc.py` (quality evaluation against hand-labeled PT-BR
+queries). Document baseline numbers in README.
+
+### 7. Request/response traceability as contract
+
+The geo-bidding spec includes `request_id` in both request and response.
+This is the minimum contract for any system that participates in a
+distributed call chain.
+
+**Current state:** BNCC.click generates `trace_id` per request and logs it
+to Sheets. PatchVec ignores it — `SearchBody` has no `request_id` field,
+`do_search()` doesn't accept one, responses don't echo it.
+
+**Action:** Add optional `request_id` to `SearchBody`. Echo it in response.
+Include it in structured log entries. This closes the observability gap
+between BNCC.click and PatchVec.
+
+### 8. Concurrency safety as explicit contract (not assumed)
+
+The geo-bidding challenge lists "handles concurrent requests correctly" as a
+must-have, not a nice-to-have.
+
+**Current state:** PatchVec has `_LOCKS` dict (`txtai_store.py:14`) which is
+itself not thread-safe. Two concurrent `load_or_init` calls for the same
+collection can race on `_emb` dict. The `collection_lock()` pattern is
+correct for index writes, but the lock registry has a gap.
+
+**Action:** Guard `_LOCKS` with a module-level `threading.Lock()`. Audit
+all paths from HTTP handler to store for thread-safety.
+
+### Summary: What the market expects from a real-time decisioning API
+
+| Practice | XPTO (geo-bidding) | PatchVec (BNCC search) | Status |
+|----------|-------------------|----------------------|--------|
+| Latency in response body | `latency_ms` mandatory | Not returned | **Missing** |
+| Latency SLO + benchmarks | p99 <50ms, benchmarks in README | No SLO, no benchmarks | **Missing** |
+| Hot-reload without downtime | Campaign hot-reload | Data update works; model swap requires restart | **Partial** |
+| Pre-computation / indexing | Spatial indexing bonus | Negation goes to post-filter | **Partial** |
+| Graceful degradation | Bonus: shed under overload | No backpressure, no timeout | **Missing** |
+| Request ID propagation | `request_id` in req + resp | Not propagated | **Missing** |
+| Concurrency safety | Must-have | Lock dict race condition | **Partial** |
+| Budget / quota governance | Campaign budget decrement | No rate limiting or quotas | **Missing** |
+
+Five of eight practices are completely missing. Three are partial. None are
+fully implemented. All are standard expectations for production decisioning
+APIs, and all map directly to Planno's business requirements.
+
+---
+
 ## Revised Roadmap (business-aligned)
 
 ### v0.5.7 — BNCC.click GA Readiness
 - Switch default embedding model to multilingual (e.g., `paraphrase-multilingual-MiniLM-L12-v2`).
 - Return a `match_reason` field alongside every search hit.
-- Push `!`-prefixed negation filters into SQL pre-filter for performance.
-- Accept and propagate `trace_id` / `request_id` through search requests and logs.
+- Return `latency_ms` in every search response (market practice §1).
+- Push `!`-prefixed negation filters into SQL pre-filter (`<>`) for performance (market practice §4).
+- Accept and propagate `request_id` / `trace_id` through search requests, responses, and logs (market practice §7).
 - Expose latency histograms (p50/p95/p99) via `/metrics` for search and ingest.
 - Provide REST/CLI endpoints to delete a document by id.
 - Replace `eval()` in filter matching with `operator` module.
 - Replace `assert` in `index_records` with a proper runtime check.
-- Fix `_LOCKS` dict race condition with a global guard lock.
+- Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).
+- Ship initial `benchmarks/` directory with search latency load test (market practice §6).
 
 ### v0.5.8 — Infrastructure for Pilots
 - Ship internal metadata/content store (SQLite) with migrations.
 - Serve `/metrics` and `/collections` from the internal store.
 - Emit structured logs with `request_id`, tenant, and latency; rolling retention per tenant/collection.
-- Per-tenant and per-operation API rate limits.
+- Per-tenant and per-operation API rate limits (market practice §8 — budget/quota governance).
+- Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market practice §5).
 - Support renaming collections through the API and CLI.
 
 ### v0.5.9 — Ranking Quality
