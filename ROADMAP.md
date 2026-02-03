@@ -297,19 +297,24 @@ APIs, and all map directly to Planno's business requirements.
 - Honor `meta.priority` boosts during scoring.
 - Multilingual relevance evaluation fixtures (PT-BR test corpus).
 
-### 0.6 — Per-Collection Embeddings
+### 0.6 — Per-Collection Embeddings & Schema Freeze
 - Configure embedding model per collection via `config.yml`.
 - Per-collection hot caches with isolation.
 - List tenants and collections via API (CLI parity).
 - Resolve embedder factory integration with TxtaiStore.
 - Remove or gate `qdrant-client` dependency behind extras.
+- Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`).
+- Typed response models (internal `SearchResult` dataclass).
 
-### 0.7 — Observability & Tooling
+### 0.7 — SDK & Orchestrator Integration
+- Python SDK client package (`patchvec`).
+- LangChain `VectorStore` + `Retriever` adapter (covers LangGraph + CrewAI).
 - Default tenant/collection selectors in Swagger UI.
 - Collection-level structured log export for analytics.
-- Index export tooling.
 
-### 0.8 — Reliability & Governance
+### 0.8 — MCP, LlamaIndex & Governance
+- MCP server (expose search/ingest/list as MCP tools).
+- LlamaIndex `VectorStore` adapter.
 - Document versioning, rebuild tooling.
 - Persistent metrics in the UI.
 - JWT auth, per-tenant quotas, transactional rollback.
@@ -320,3 +325,232 @@ APIs, and all map directly to Planno's business requirements.
 
 ### 1.0 — API Freeze
 - Lock routes, publish final OpenAPI spec, ship SDK client.
+
+---
+
+## Pluggability: PatchVec as a General-Purpose Vector Search Microservice
+
+> Secondary priority — after BNCC.click GA. But architectural decisions made
+> now (v0.5.7–0.6) determine whether this path is cheap or a rewrite.
+
+### The landscape (as of early 2026)
+
+There is **no standard vector store API**. Qdrant, Pinecone, Weaviate,
+ChromaDB, Milvus — each has a proprietary REST API. The de facto unifying
+layers are:
+
+1. **LangChain `VectorStore`** — the dominant abstraction. Implementing it
+   covers LangChain, LangGraph, AND CrewAI (which delegates to LangChain's
+   VectorStore internally). Two abstract methods: `add_texts()`,
+   `from_texts()`. Plus `similarity_search()`, `similarity_search_with_score()`,
+   `delete()` for full functionality.
+
+2. **LlamaIndex `VectorStore`** — second framework. Different interface but
+   similar surface: `add()`, `delete()`, `query()`. Supports dense search
+   and metadata filtering.
+
+3. **MCP (Model Context Protocol)** — NOT dead. Adopted by OpenAI (March
+   2025), Google DeepMind, and hundreds of tool providers. 2026 is the
+   enterprise adoption year. Qdrant, Pinecone, and MindsDB already ship MCP
+   servers for vector search. MCP lets any compatible AI agent (Claude,
+   ChatGPT, custom) search the vector store directly — no SDK needed on the
+   agent side.
+
+4. **OpenAI Vector Store API** — proprietary to OpenAI's platform
+   (Assistants/Retrieval). NOT a standard others implement. Implementing
+   compatibility would be cargo-culting with no adoption benefit.
+
+### What PatchVec has today
+
+| Surface | Status | Notes |
+|---------|--------|-------|
+| REST API (FastAPI) | **Solid** | OpenAPI spec auto-generated. Well-structured routes. |
+| OpenAPI schema | **Solid** | Swagger UI with filtered views (search/ingest). |
+| Multi-tenancy | **Solid** | `tenant/collection` namespacing — a real differentiator. |
+| File preprocessing | **Unique** | CSV/PDF/TXT built-in. Competitors require external preprocessing. |
+| Python SDK (client) | **Missing** | No `patchvec` package for HTTP consumption. |
+| LangChain adapter | **Missing** | No `VectorStore` subclass. |
+| LlamaIndex adapter | **Missing** | No `VectorStore` implementation. |
+| MCP server | **Missing** | No tool exposure for AI agents. |
+| gRPC | **Missing** | REST-only. |
+
+### What PatchVec does NOT need
+
+- **OpenAI-compatible API** — There is no "OpenAI vector store standard"
+  that third parties implement. OpenAI's Vector Store API is platform-locked.
+  Skip.
+
+- **gRPC (short term)** — REST is sufficient for the current latency targets.
+  gRPC matters at >10k req/s with sub-5ms budgets. Not the current reality.
+
+- **GraphQL** — No vector store uses it. No framework expects it. Skip.
+
+### What PatchVec needs (in priority order)
+
+#### 1. Python SDK — `patchvec` client package (~150 lines)
+
+A thin HTTP wrapper that maps PatchVec's REST API to Python method calls.
+This is the foundation everything else wraps.
+
+```python
+from patchvec import PatchVecClient
+
+client = PatchVecClient("http://localhost:8086", api_key="...")
+client.create_collection("tenant", "bncc_ef")
+client.ingest("tenant", "bncc_ef", file_path="bncc_ef.csv")
+results = client.search("tenant", "bncc_ef", "frações equivalentes", k=5)
+```
+
+**Why:** Every vector DB ships a client SDK. Without one, PatchVec
+integration requires raw `httpx`/`requests` calls, which nobody does in
+2026. This is table-stakes.
+
+**Effort:** Low. ~150 lines wrapping the existing REST endpoints.
+
+**When:** v0.7 (after API stabilizes in 0.6).
+
+#### 2. LangChain `VectorStore` adapter (~200 lines)
+
+Implement `langchain_core.vectorstores.VectorStore`:
+- `add_texts(texts, metadatas)` → calls `POST /collections/{t}/{c}/documents`
+- `similarity_search(query, k, filter)` → calls `POST /collections/{t}/{c}/search`
+- `similarity_search_with_score(query, k)` → same, returns scores
+- `delete(ids)` → calls document delete endpoint (needs P1-6 first)
+- `from_texts(texts, embedding)` → creates collection + ingests
+
+This single adapter covers:
+- **LangChain** chains and agents
+- **LangGraph** stateful agent graphs
+- **CrewAI** agents and tools (delegates to LangChain VectorStore)
+
+```python
+from patchvec.integrations.langchain import PatchVecVectorStore
+
+store = PatchVecVectorStore(
+    client=client, tenant="planno", collection="bncc_ef"
+)
+retriever = store.as_retriever(search_kwargs={"k": 5})
+```
+
+**Why:** LangChain is the dominant orchestrator. A single adapter covers
+three major frameworks.
+
+**Effort:** ~200 lines. Depends on Python SDK.
+
+**When:** v0.7 (immediately after SDK).
+
+#### 3. MCP server (~300 lines)
+
+Expose PatchVec operations as MCP tools:
+- `search_collection(tenant, collection, query, k, filters)` → search
+- `ingest_document(tenant, collection, file_path)` → upload
+- `list_collections(tenant)` → list (needs P2-12 first)
+
+```json
+{
+  "name": "search_collection",
+  "description": "Search a PatchVec collection using semantic similarity",
+  "parameters": {
+    "tenant": "string",
+    "collection": "string",
+    "query": "string",
+    "k": "integer"
+  }
+}
+```
+
+**Why:** MCP is the standard protocol for AI agent ↔ tool communication.
+Qdrant, Pinecone, MindsDB already ship MCP servers. Without one, PatchVec
+is invisible to the fastest-growing integration channel. For Planno
+specifically: a Planno MCP server backed by PatchVec would let any
+MCP-compatible AI assistant search BNCC data directly — opening a
+distribution channel beyond BNCC.click's web UI.
+
+**Effort:** ~300 lines. MCP Python SDK is well-documented.
+
+**When:** v0.8 (after API freeze candidates are stable).
+
+#### 4. LlamaIndex adapter (~200 lines)
+
+Similar to LangChain but implements LlamaIndex's `VectorStore` protocol:
+- `add(nodes)` → ingest
+- `delete(ref_doc_id)` → delete
+- `query(query_bundle)` → search with metadata filters
+
+**Why:** Second-largest orchestrator framework. Smaller ROI than LangChain
+but completes the coverage.
+
+**When:** v0.8 or v0.9.
+
+### PatchVec's positioning in the vector DB landscape
+
+PatchVec is not Qdrant or Pinecone. It does not compete on billion-vector
+scale or sub-millisecond latency. Its niche is:
+
+**"The SQLite of vector search"** — embed it, no cluster, no cloud, good
+enough for most workloads under 10M vectors.
+
+| | PatchVec | ChromaDB | Qdrant | Pinecone |
+|---|---------|----------|--------|----------|
+| Deployment | Single-process, file-based | Single-process, file-based | Docker/K8s or managed | Managed only |
+| Multi-tenancy | Built-in (`tenant/collection`) | No | Namespaces | Namespaces |
+| File preprocessing | CSV/PDF/TXT built-in | No | No | No |
+| Embedding choice | Pluggable (3 backends) | BYO embeddings | BYO embeddings | BYO embeddings |
+| Filtering | Expressive (wildcards, negation, datetime, comparisons) | Basic metadata | Rich (Qdrant-native) | Basic metadata |
+| License | GPL-3.0 | Apache-2.0 | Apache-2.0 | Proprietary |
+
+The **built-in preprocessing** and **multi-tenancy** are real
+differentiators. ChromaDB, the closest lightweight competitor, has neither.
+
+### Architectural decisions that affect pluggability NOW
+
+These are decisions in v0.5.7–0.6 that determine whether the integration
+layer (v0.7+) is cheap or expensive:
+
+1. **Stabilize the search response schema** — If `do_search()` returns
+   `{matches: [{id, score, text, meta}]}` today and changes later, every
+   adapter breaks. Freeze the response shape in v0.5.7. Add new fields
+   (`latency_ms`, `match_reason`, `request_id`) now, so the schema is
+   stable by v0.6.
+
+2. **Document delete by ID** (P1-6) — LangChain's `delete()` method
+   requires this. Without it, the LangChain adapter ships incomplete.
+
+3. **Per-collection embedding config** (0.6) — LangChain's `from_texts()`
+   passes an `embedding` parameter. PatchVec must be able to accept
+   external embeddings OR let the caller specify which model to use.
+   Currently the model is global and internal to TxtaiStore.
+
+4. **List collections** (P2-12) — Both LangChain and MCP need enumeration.
+   Without it, users must know collection names ahead of time.
+
+5. **`BaseStore.search()` return type** — Currently returns
+   `List[Dict[str, Any]]`. For SDK/adapter consumption, a typed dataclass
+   (e.g., `SearchResult(id, score, text, meta)`) would be cleaner. This is
+   a v0.6 candidate.
+
+### Integration roadmap (post BNCC.click GA)
+
+| Version | Deliverable | Depends on |
+|---------|------------|------------|
+| v0.7 | Python SDK (`patchvec` client package) | Stable REST API (v0.6) |
+| v0.7 | LangChain `VectorStore` adapter | SDK + doc delete (P1-6) |
+| v0.8 | MCP server | SDK + list collections (P2-12) |
+| v0.8 | LlamaIndex adapter | SDK |
+| v0.9 | Typed response models (`SearchResult` dataclass) | API freeze candidate |
+| 1.0 | Published integrations on PyPI (`patchvec-langchain`, `patchvec-mcp`) | API freeze |
+
+### What this means for the revised version milestones
+
+**v0.6** gains:
+- Freeze search response schema (add `latency_ms`, `match_reason`, `request_id`).
+- List collections API (enables MCP and LangChain enumeration).
+- Typed return models as internal preparation.
+
+**v0.7** gains:
+- Python SDK client package.
+- LangChain VectorStore adapter.
+
+**v0.8** gains:
+- MCP server.
+- LlamaIndex adapter.
