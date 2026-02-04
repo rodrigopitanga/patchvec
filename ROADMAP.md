@@ -8,8 +8,8 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 
 > PatchVec is a general-purpose vector search microservice. The priorities
 > below are driven by production readiness for its first downstream consumer
-> — an application that maps natural-language queries in Portuguese to
-> structured skill codes via semantic search. The core product metric is
+> — an application that maps natural-language queries to structured codes
+> via semantic search in a non-English language. The core product metric is
 > **time saved to reach the correct results**. Every TODO is evaluated
 > against that metric and general production readiness.
 
@@ -17,7 +17,7 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 
 | # | Task | Why it blocks | Source |
 |---|------|---------------|--------|
-| 1 | **Multilingual embedding model** — switch the default from `paraphrase-MiniLM-L3-v2` (English-centric) to a multilingual model and validate Portuguese retrieval quality | The first consumer operates entirely in Portuguese. Users describe queries in natural language; the current English-optimized model degrades recall on PT-BR queries. Wrong results destroy trust. | `txtai_store.py:80-84` |
+| 1 | **Multilingual embedding model** — switch the default from `paraphrase-MiniLM-L3-v2` (English-centric) to a multilingual model and validate non-English retrieval quality | The default model is English-optimized. Any consumer operating in another language (Portuguese, Italian, Greek, etc.) gets degraded recall. Wrong results destroy trust. | `txtai_store.py:80-84` |
 | 2 | **`match_reason` field on every search hit** — return a short explanation of why a result matched | Users need to see *why* a result matched, not just *that* it matched. Without this, confidence drops and manual cross-checking defeats the time-saving metric. | ROADMAP v0.5.7 |
 | 3 | **Latency histograms (p50/p95/p99)** on `/metrics` for search and ingest | The success metric is time saved. Without latency instrumentation there is no way to measure, regress-test, or optimize the core value proposition. | ROADMAP v0.5.7 |
 | 4 | **Negation filter performance** — push `!`-prefixed filters into SQL pre-filter instead of post-filter | The primary consumer fires 3 parallel searches per request, two of which use `!`-negation. Today these go through Python post-filtering (`_split_filters` sends `!` to `pos_f`), which forces a large overfetch and multiplies tail latency. | `txtai_store.py:350-354` |
@@ -31,7 +31,7 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 | 7 | **Hybrid reranking (vector + BM25)** | Users search with exact code fragments mixed with natural language. Pure vector similarity misses exact token matches. Hybrid ranking is the difference between "found it first try" and "had to scroll". | ROADMAP v0.5.9 |
 | 8 | **Per-tenant rate limiting** | When the consumer app is public, a single abusive client can saturate the shared PatchVec instance and degrade service for all users. | ROADMAP v0.5.8 |
 | 9 | **Internal metadata store (SQLite)** with migrations | Current storage is JSON files (`catalog.json`, `meta.json`) written atomically per collection. Under concurrent load this becomes a bottleneck and corruption risk. SQLite gives ACID guarantees the file approach lacks. | ROADMAP v0.5.8 |
-| 10 | **Per-collection embedding configuration** | Different collections may need different models (e.g., a PT-BR-optimized model for one, a general-purpose model for another). Today the model is global. | ROADMAP v0.6 |
+| 10 | **Per-collection embedding configuration** | Different collections may need different models (e.g., a language-specific model for one, a general-purpose model for another). Today the model is global. | ROADMAP v0.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -292,7 +292,7 @@ APIs.
 ### v0.5.9 — Ranking Quality
 - Add hybrid reranking (vector similarity + BM25/token matching).
 - Honor `meta.priority` boosts during scoring.
-- Multilingual relevance evaluation fixtures (PT-BR test corpus).
+- Multilingual relevance evaluation fixtures (non-English test corpus).
 
 ### 0.6 — Per-Collection Embeddings & Schema Freeze
 - Configure embedding model per collection via `config.yml`.
