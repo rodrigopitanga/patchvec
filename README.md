@@ -48,7 +48,9 @@ docker rm -f patchvec
 
 ### 🐍 PyPI workflow
 
-Install Patchvec from PyPI inside an isolated virtual environment and point it at a local configuration directory:
+Install Patchvec from PyPI inside an isolated virtual environment and point it at a local configuration directory.
+
+**Requires Python 3.10–3.14.**
 
 ```bash
 mkdir -p ~/pv && cd ~/pv #or wherever

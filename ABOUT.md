@@ -15,7 +15,7 @@ Upload → chunk → index (with metadata) → search via REST and CLI.
 - Default backends are local (vendor-neutral "default"); embedders & stores are pluggable
 
 ## Requirements
-- Python 3.10+
+- Python 3.10–3.14
 
 ## Install
 ```bash

@@ -1,6 +1,7 @@
-# requirements.cpu.txt
+# requirements-cpu.txt — CPU-only installation (source installs)
+# Usage: pip install -r requirements-cpu.txt
 --index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://pypi.org/simple
-torch>=2.8.0
+torch>=2.10.0
 faiss-cpu
 -r requirements-base.txt
