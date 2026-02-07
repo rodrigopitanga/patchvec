@@ -355,12 +355,15 @@ class TxtaiStore(BaseStore):
                 vals = [vals]
             exacts, extended = [], []
             for v in vals:
-                # Anything starting/ending with * or using comparison ops => post
+                # Wildcards and comparison ops => post-filter (Python)
                 if isinstance(v, str) and (
-                    v.startswith("*") or v.endswith("*") or v.startswith("!") or
+                    v.startswith("*") or v.endswith("*") or
                     any(v.startswith(op) for op in (">=", "<=", ">", "<", "!="))
                 ):
                     extended.append(v)
+                # Simple negation !value => pre-filter (SQL <>)
+                elif isinstance(v, str) and v.startswith("!") and len(v) > 1:
+                    exacts.append(v)
                 else:
                     exacts.append(v)
             if exacts:
@@ -453,8 +456,13 @@ class TxtaiStore(BaseStore):
                 continue
             ors = []
             for v in vals:
-                safe_v = TxtaiStore._sanit_sql(v)
-                ors.append(f"[{safe_key}] = '{safe_v}'")
+                # Handle negation: !value => [field] <> 'value'
+                if isinstance(v, str) and v.startswith("!") and len(v) > 1:
+                    safe_v = TxtaiStore._sanit_sql(v[1:])
+                    ors.append(f"[{safe_key}] <> '{safe_v}'")
+                else:
+                    safe_v = TxtaiStore._sanit_sql(v)
+                    ors.append(f"[{safe_key}] = '{safe_v}'")
             or_safe = " OR ".join(ors)
             wheres.append(f"({or_safe})")
 

@@ -8,10 +8,11 @@ import pytest
 from pave.stores.txtai_store import TxtaiStore
 from pave.config import get_cfg
 
-@pytest.fixture(scope="module", autouse=True)
-def store():
+@pytest.fixture()
+def store(request):
     s = TxtaiStore()
-    tenant, coll = "t1", "c1"
+    # Use unique collection per test to avoid conflicts
+    tenant, coll = "t1", f"c_{request.node.name}"
     s.load_or_init(tenant, coll)
 
     # insert minimal dataset
@@ -109,4 +110,50 @@ def test_no_filters_returns_all(store):
     s, tenant, coll = store
     res = s.search(tenant, coll, "foo", 10, filters=None)
     assert len(res) >= 4
+
+
+def test_negation_prefilter(store):
+    """Negation !value should be pushed to SQL pre-filter for performance."""
+    s, tenant, coll = store
+    # Exclude name=zulu, should return r1, r2, r3
+    f = {"name": ["!zulu"]}
+    res = s.search(tenant, coll, "foo", 10, filters=f)
+    ids = _ids(res)
+    assert "r4" not in ids
+    assert "r1" in ids or "r2" in ids  # at least some non-zulu results
+
+
+def test_negation_in_split_filters(store):
+    """Verify !value goes to pre-filter, not post-filter."""
+    s, _, _ = store
+    f = {"name": ["!excluded", "exact"], "size": ["!50"]}
+    pre, post = s._split_filters(f)
+    # Both negation and exact values should be in pre-filter
+    assert "name" in pre
+    assert "!excluded" in pre["name"]
+    assert "exact" in pre["name"]
+    assert "size" in pre
+    assert "!50" in pre["size"]
+    # Post-filter should be empty for these
+    assert "name" not in post
+    assert "size" not in post
+
+
+def test_negation_sql_generation(store):
+    """Verify SQL generates <> for negation values."""
+    s, _, _ = store
+    sql = s._build_sql("test", 10, {"name": ["!excluded"]}, ["id", "text"])
+    assert "[name] <> 'excluded'" in sql
+    assert "[name] = '!excluded'" not in sql
+
+
+def test_negation_combined_with_exact(store):
+    """Negation combined with exact match in OR."""
+    s, tenant, coll = store
+    # name=foobar OR name!=zulu -> should match r1 (foobar) plus others not zulu
+    f = {"name": ["foobar", "!zulu"]}
+    res = s.search(tenant, coll, "foo", 10, filters=f)
+    ids = _ids(res)
+    assert "r1" in ids  # foobar matches
+    assert "r4" not in ids  # zulu excluded
 
