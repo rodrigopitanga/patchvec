@@ -82,7 +82,7 @@ class TxtaiStore(BaseStore):
     def _config():
         model = c.get(
             "vector_store.txtai.embed_model",
-            "sentence-transformers/paraphrase-MiniLM-L3-v2"
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
         )
         backend = c.get("vector_store.txtai.backend", "faiss")
         return {

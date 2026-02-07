@@ -51,7 +51,7 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir):
     cfg.set("vector_store.type", "default")
     cfg.set("vector_store.txtai.backend", "faiss")
     cfg.set("vector_store.txtai.embed_model",
-            "sentence-transformers/paraphrase-MiniLM-L3-v2")
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     cfg.set("common_enabled", False)
     if not _txtai_available:
         import pave.stores.txtai_store as store_mod

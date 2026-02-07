@@ -157,3 +157,42 @@ def test_negation_combined_with_exact(store):
     assert "r1" in ids  # foobar matches
     assert "r4" not in ids  # zulu excluded
 
+
+@pytest.fixture()
+def multilingual_store(request):
+    """Store with multilingual content for testing non-English retrieval."""
+    s = TxtaiStore()
+    tenant, coll = "t1", f"ml_{request.node.name}"
+    s.load_or_init(tenant, coll)
+
+    records = [
+        ("pt1", "O gato preto dormiu no sofá", {"lang": "pt"}),
+        ("pt2", "A casa amarela tem um jardim bonito", {"lang": "pt"}),
+        ("it1", "Il gatto nero dorme sul divano", {"lang": "it"}),
+        ("de1", "Die schwarze Katze schläft auf dem Sofa", {"lang": "de"}),
+        ("en1", "The black cat sleeps on the sofa", {"lang": "en"}),
+    ]
+    s.index_records(tenant, coll, "multilang", records)
+    s.load_or_init(tenant, coll)
+    yield s, tenant, coll
+
+
+def test_multilingual_portuguese_query(multilingual_store):
+    """Search in Portuguese should retrieve Portuguese and semantically similar results."""
+    s, tenant, coll = multilingual_store
+    res = s.search(tenant, coll, "gato preto", 5)
+    ids = _ids(res)
+    # Portuguese query should find Portuguese cat text first
+    assert "pt1" in ids
+
+
+def test_multilingual_cross_language(multilingual_store):
+    """Multilingual model should retrieve semantically similar texts across languages."""
+    s, tenant, coll = multilingual_store
+    # English query about black cat should find all cat-related texts
+    res = s.search(tenant, coll, "black cat sleeping", 5)
+    ids = _ids(res)
+    # Should retrieve the cat/sofa texts in multiple languages
+    assert "en1" in ids
+    # At least one non-English cat text should appear
+    assert any(rid in ids for rid in ["pt1", "it1", "de1"])
