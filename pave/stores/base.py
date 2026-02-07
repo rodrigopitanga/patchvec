@@ -30,4 +30,12 @@ class BaseStore(ABC):
 
     @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]: ...
+               filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+        """
+        Search for similar documents.
+
+        Returns a list of dicts, each containing:
+          - id, score, text, tenant, collection, meta
+          - match_reason: human-readable explanation of why the result matched
+        """
+        ...

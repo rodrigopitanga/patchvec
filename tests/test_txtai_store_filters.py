@@ -196,3 +196,42 @@ def test_multilingual_cross_language(multilingual_store):
     assert "en1" in ids
     # At least one non-English cat text should appear
     assert any(rid in ids for rid in ["pt1", "it1", "de1"])
+
+
+def test_match_reason_semantic_only(store):
+    """Search without filters should show semantic similarity in match_reason."""
+    s, tenant, coll = store
+    res = s.search(tenant, coll, "foo bar", 5)
+    assert len(res) > 0
+    for r in res:
+        assert "match_reason" in r
+        assert "semantic similarity" in r["match_reason"]
+        # Should include percentage
+        assert "%" in r["match_reason"]
+
+
+def test_match_reason_with_filters(store):
+    """Search with filters should show both similarity and filter info."""
+    s, tenant, coll = store
+    f = {"name": ["foobar"]}
+    res = s.search(tenant, coll, "alpha", 5, filters=f)
+    assert len(res) > 0
+    r = res[0]
+    assert "match_reason" in r
+    assert "semantic similarity" in r["match_reason"]
+    assert "filters:" in r["match_reason"]
+    assert "name=foobar" in r["match_reason"]
+
+
+def test_match_reason_multiple_filters(store):
+    """Match reason should show all filter fields that matched."""
+    s, tenant, coll = store
+    # Use two string filters that can both be pre-filtered
+    f = {"name": ["fooqux"], "docid": ["filterdoc"]}
+    res = s.search(tenant, coll, "beta", 5, filters=f)
+    ids = _ids(res)
+    assert "r2" in ids
+    r2 = next(r for r in res if r["id"].endswith("r2"))
+    reason = r2["match_reason"]
+    assert "name=fooqux" in reason
+    assert "docid=filterdoc" in reason

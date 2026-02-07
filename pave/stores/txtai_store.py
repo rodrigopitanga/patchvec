@@ -540,6 +540,33 @@ class TxtaiStore(BaseStore):
                 "tenant": tenant,
                 "collection": collection,
                 "meta": meta.get(rid) or {},
+                "match_reason": self._build_match_reason(
+                    query, score, filters, meta.get(rid)
+                ),
             })
         log.info(f"SEARCH-OUT: {out}")
         return out
+
+    def _build_match_reason(self, query: str, score: float,
+                            filters: Dict[str, Any] | None,
+                            meta: Dict[str, Any] | None) -> str:
+        """Build a human-readable explanation of why a result matched."""
+        parts = []
+
+        # Similarity component
+        pct = int(score * 100)
+        if query:
+            parts.append(f"semantic similarity {pct}%")
+
+        # Filter matches - show which filter conditions were satisfied
+        if filters:
+            filter_parts = []
+            for key, vals in filters.items():
+                meta_val = self._lookup_meta(meta, key)
+                if meta_val is not None:
+                    # Show the actual value that matched
+                    filter_parts.append(f"{key}={meta_val}")
+            if filter_parts:
+                parts.append("filters: " + ", ".join(filter_parts))
+
+        return "; ".join(parts) if parts else "matched"
