@@ -10,6 +10,7 @@ from pave.config import get_cfg
 REC0 = ("doc::0", "texto A", "{}")
 REC1 = ("doc::1", "texto B", "{}")
 
+@pytest.mark.skip(reason="Intentional race condition can cause SQLite segfault on Python 3.14+")
 def test_concurrent_upsert_without_lock_eventually_fails(cfg):
     store = TxtaiStore()
     tenant, coll = "tenantX", "collRace"

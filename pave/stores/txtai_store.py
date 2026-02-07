@@ -11,7 +11,8 @@ from txtai.embeddings import Embeddings
 from pave.stores.base import BaseStore, Record
 from pave.config import CFG as c, LOG as log
 
-_LOCKS : dict[str, Lock] = {}
+_LOCKS: dict[str, Lock] = {}
+_LOCKS_GUARD = Lock()  # Protects _LOCKS dictionary creation
 _SQL_TRANS = str.maketrans({
     ";": " ",
     '"': " ",
@@ -21,8 +22,11 @@ _SQL_TRANS = str.maketrans({
 })
 
 def get_lock(key: str) -> Lock:
+    """Get or create a lock for a given key, thread-safe."""
     if key not in _LOCKS:
-        _LOCKS[key] = Lock()
+        with _LOCKS_GUARD:
+            if key not in _LOCKS:  # double-check after acquiring guard
+                _LOCKS[key] = Lock()
     return _LOCKS[key]
 
 @contextmanager
