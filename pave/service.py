@@ -15,9 +15,13 @@ from datetime import datetime, timezone as tz
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
-from pave.metrics import inc as m_inc, timed as m_timed
+import time as _time
+from pave.config import get_logger
+from pave.metrics import inc as m_inc, timed as m_timed, record_latency as m_record_latency
 from pave.preprocess import preprocess
 from pave.stores.base import BaseStore
+
+_log = get_logger()
 
 # Pure-ish service functions operating on a store adapter
 
@@ -84,25 +88,36 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
 
 def do_search(store, tenant: str, collection: str, q: str, k: int = 5,
               filters: Dict[str, Any] | None = None, include_common: bool = False,
-              common_tenant: str | None = None, common_collection: str | None = None
+              common_tenant: str | None = None, common_collection: str | None = None,
+              request_id: str | None = None
               ) -> Dict[str, Any]:
-    with m_timed("search"):
-        m_inc("search_total", 1.0)
-        if include_common and common_tenant and common_collection:
-            matches: List[Dict[str, Any]] = []
-            matches.extend(store.search(
-                tenant, collection, q, max(10, k * 2), filters=filters))
-            matches.extend(store.search(
-                common_tenant, common_collection, q, max(10, k * 2), filters=filters))
-            from heapq import nlargest
-            top = nlargest(k, matches, key=lambda x: x["score"])
-            m_inc("matches_total", float(len(top) or 0))
-            return {"matches": top}
-        top = store.search(tenant, collection, q, k, filters=filters)
+    start = _time.perf_counter()
+    m_inc("search_total", 1.0)
+    if include_common and common_tenant and common_collection:
+        matches: List[Dict[str, Any]] = []
+        matches.extend(store.search(
+            tenant, collection, q, max(10, k * 2), filters=filters))
+        matches.extend(store.search(
+            common_tenant, common_collection, q, max(10, k * 2), filters=filters))
+        from heapq import nlargest
+        top = nlargest(k, matches, key=lambda x: x["score"])
         m_inc("matches_total", float(len(top) or 0))
-        return {
-            "matches": top
-        }
+        latency_ms = round((_time.perf_counter() - start) * 1000, 2)
+        m_record_latency("search", latency_ms)
+        _log.info("search tenant=%s collection=%s k=%d hits=%d latency_ms=%.2f request_id=%s",
+                  tenant, collection, k, len(top), latency_ms, request_id)
+        return {"matches": top, "latency_ms": latency_ms, "request_id": request_id}
+    top = store.search(tenant, collection, q, k, filters=filters)
+    m_inc("matches_total", float(len(top) or 0))
+    latency_ms = round((_time.perf_counter() - start) * 1000, 2)
+    m_record_latency("search", latency_ms)
+    _log.info("search tenant=%s collection=%s k=%d hits=%d latency_ms=%.2f request_id=%s",
+              tenant, collection, k, len(top), latency_ms, request_id)
+    return {
+        "matches": top,
+        "latency_ms": latency_ms,
+        "request_id": request_id
+    }
 
 
 def _write_zip(source_dir: Path, target_path: Path) -> None:

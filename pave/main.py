@@ -36,6 +36,7 @@ class SearchBody(BaseModel):
     q: str
     k: int = 5
     filters: Optional[Dict[str, Any]] = None
+    request_id: Optional[str] = None
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
@@ -272,15 +273,17 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         tenant: str,
         name: str,
         body: SearchBody,
+        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(authorize_tenant),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
+        request_id = body.request_id or x_request_id
         include_common = bool(cfg.common_enabled)
         result = svc_do_search(
             store, tenant, name, body.q, body.k, filters=body.filters,
             include_common=include_common, common_tenant=cfg.common_tenant,
-            common_collection=cfg.common_collection
+            common_collection=cfg.common_collection, request_id=request_id
         )
         return JSONResponse(result)
 
@@ -291,6 +294,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         name: str,
         q: str = Query(...),
         k: int = Query(5, ge=1),
+        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(authorize_tenant),
         store: BaseStore = Depends(current_store),
     ):
@@ -299,7 +303,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         result = svc_do_search(
             store, tenant, name, q, k, filters=None,
             include_common=include_common, common_tenant=cfg.common_tenant,
-            common_collection=cfg.common_collection
+            common_collection=cfg.common_collection, request_id=x_request_id
         )
         return JSONResponse(result)
 
@@ -307,15 +311,17 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post("/search")
     def search_common_post(
         body: SearchBody,
+        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
+        request_id = body.request_id or x_request_id
         if not cfg.common_enabled:
-            return JSONResponse({"matches": []})
+            return JSONResponse({"matches": [], "request_id": request_id})
         result = svc_do_search(
             store, cfg.common_tenant, cfg.common_collection, body.q, body.k,
-            filters=body.filters
+            filters=body.filters, request_id=request_id
         )
         return JSONResponse(result)
 
@@ -323,14 +329,16 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     def search_common_get(
         q: str = Query(...),
         k: int = Query(5, ge=1),
-        ctx: AuthContext = Depends(auth_ctx), 
+        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
+        ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
         if not cfg.common_enabled:
-            return JSONResponse({"matches": []})
+            return JSONResponse({"matches": [], "request_id": x_request_id})
         result = svc_do_search(
-            store, cfg.common_tenant, cfg.common_collection, q, k, filters=None
+            store, cfg.common_tenant, cfg.common_collection, q, k, filters=None,
+            request_id=x_request_id
         )
         return JSONResponse(result)
 
