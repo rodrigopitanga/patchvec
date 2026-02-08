@@ -1,13 +1,16 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
-import time, threading
+import json, os, time, threading
 from collections import deque
 from contextlib import contextmanager
 from typing import Dict, Any, List
 
 _started = time.time()
 _lock = threading.Lock()
+_data_dir: str | None = None
+_METRICS_FILE = "metrics.json"
+
 _counters: Dict[str, float] = {
     "requests_total": 0.0,
     "collections_created_total": 0.0,
@@ -28,15 +31,82 @@ _latencies: Dict[str, deque] = {
     "ingest": deque(maxlen=_LATENCY_WINDOW),
 }
 
+def _metrics_path() -> str | None:
+    if not _data_dir:
+        return None
+    return os.path.join(_data_dir, _METRICS_FILE)
+
+def set_data_dir(path: str) -> None:
+    """Set the data directory for metrics persistence and load existing metrics."""
+    global _data_dir
+    _data_dir = path
+    load()
+
+def load() -> None:
+    """Load metrics from disk if available."""
+    global _counters, _last_error, _latencies
+    path = _metrics_path()
+    if not path or not os.path.isfile(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        with _lock:
+            for k, v in data.get("counters", {}).items():
+                if k in _counters:
+                    _counters[k] = float(v)
+            _last_error = data.get("last_error")
+            for op, samples in data.get("latencies", {}).items():
+                if op not in _latencies:
+                    _latencies[op] = deque(maxlen=_LATENCY_WINDOW)
+                else:
+                    _latencies[op].clear()
+                for s in samples[-_LATENCY_WINDOW:]:
+                    _latencies[op].append(float(s))
+    except Exception:
+        pass  # ignore load errors, start fresh
+
+def save() -> None:
+    """Persist metrics to disk."""
+    path = _metrics_path()
+    if not path:
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with _lock:
+            data = {
+                "counters": dict(_counters),
+                "last_error": _last_error,
+                "latencies": {op: list(samples) for op, samples in _latencies.items()},
+            }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception:
+        pass  # ignore save errors
+
+def reset() -> Dict[str, Any]:
+    """Reset all metrics to initial state and persist."""
+    global _counters, _last_error, _latencies, _started
+    with _lock:
+        _counters = {k: 0.0 for k in _counters}
+        _last_error = None
+        for op in _latencies:
+            _latencies[op].clear()
+        _started = time.time()
+    save()
+    return {"ok": True, "reset_at": time.time()}
+
 def inc(name: str, value: float = 1.0):
     with _lock:
         _counters[name] = _counters.get(name, 0.0) + value
+    save()
 
 def set_error(msg: str):
     global _last_error
     with _lock:
         _last_error = msg
         _counters["errors_total"] = _counters.get("errors_total", 0.0) + 1.0
+    save()
 
 def record_latency(op: str, duration_ms: float):
     """Record a latency sample for an operation type (search, ingest)."""
@@ -44,6 +114,7 @@ def record_latency(op: str, duration_ms: float):
         if op not in _latencies:
             _latencies[op] = deque(maxlen=_LATENCY_WINDOW)
         _latencies[op].append(duration_ms)
+    save()
 
 @contextmanager
 def timed(op: str):

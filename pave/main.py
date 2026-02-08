@@ -17,7 +17,8 @@ from starlette.background import BackgroundTask
 from pave.config import get_cfg, get_logger
 from pave.auth import AuthContext, auth_ctx, authorize_tenant, \
     enforce_policy, resolve_bind
-from pave.metrics import inc, set_error, snapshot, to_prometheus
+from pave.metrics import inc, set_error, snapshot, to_prometheus, \
+    reset as metrics_reset, set_data_dir as metrics_set_data_dir
 from pave.stores.factory import get_store
 from pave.stores.base import BaseStore
 from pave.service import \
@@ -45,6 +46,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.store = get_store(cfg)
     app.state.cfg = cfg
     app.state.version = VERSION
+
+    # Initialize metrics persistence
+    data_dir = cfg.get("data_dir")
+    if data_dir:
+        metrics_set_data_dir(data_dir)
 
     def current_store(request: Request) -> BaseStore:
         return request.app.state.store
@@ -184,6 +190,15 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"failed to restore data: {exc}")
+
+    @app.delete("/admin/metrics")
+    def delete_metrics(
+        ctx: AuthContext = Depends(auth_ctx),
+    ):
+        inc("requests_total")
+        if not ctx.is_admin:
+            raise HTTPException(status_code=403, detail="admin access required")
+        return metrics_reset()
 
     @app.post("/collections/{tenant}/{name}")
     def create_collection(

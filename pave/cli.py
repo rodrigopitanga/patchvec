@@ -14,6 +14,7 @@ from pave.service import (
     do_search as svc_do_search,
 )
 from pave.config import get_cfg, reload_cfg
+from pave import metrics
 
 store = get_store(get_cfg())
 
@@ -78,6 +79,14 @@ def cmd_restore_archive(args):
     out = svc_restore_archive(store, data_dir, content)
     print(json.dumps(out, ensure_ascii=False))
 
+def cmd_reset_metrics(args):
+    cfg = get_cfg()
+    data_dir = cfg.get("data_dir")
+    if data_dir:
+        metrics.set_data_dir(data_dir)
+    out = metrics.reset()
+    print(json.dumps(out, ensure_ascii=False))
+
 def main_cli(argv=None):
     p = argparse.ArgumentParser(prog="pavecli")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -125,6 +134,9 @@ def main_cli(argv=None):
     p_restore = sub.add_parser("restore-archive")
     p_restore.add_argument("file")
     p_restore.set_defaults(func=cmd_restore_archive)
+
+    p_reset_metrics = sub.add_parser("reset-metrics")
+    p_reset_metrics.set_defaults(func=cmd_reset_metrics)
 
     args = p.parse_args(argv)
     return args.func(args)
