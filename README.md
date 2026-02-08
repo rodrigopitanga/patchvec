@@ -112,6 +112,33 @@ Health and metrics endpoints are available at `/health` and `/metrics`.
 
 Configuration files copied in either workflow can be customised. Runtime options are also accepted via the `PATCHVEC_*` environment variable scheme (`PATCHVEC_SERVER__PORT`, `PATCHVEC_AUTH__MODE`, etc.), which precedes conf files.
 
+### 🔁 Live data updates
+
+Patchvec supports live data refresh without restarting the server. Re-upload the same `docid` to *replace* vector content (filename doesn't matter - metadata will change though), or explicitly delete the document and then ingest it again.
+
+CLI (re-upload to replace):
+
+```bash
+pavecli upload demo books demo/20k_leagues.txt --docid=verne-20k
+cp demo/20k_leagues.txt demo/20k_leagues_mod.txt
+echo "THE END" >> demo/20k_leagues_mod.txt
+pavecli upload demo books 20k_leagues.txt --docid=verne-20k
+```
+
+REST (delete then ingest):
+
+```bash
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+  -X DELETE http://localhost:8086/collections/demo/books/documents/verne-20k
+
+# make changes
+
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+  -X POST http://localhost:8086/collections/demo/books/documents \
+  -F "file=@demo/20k_leagues.txt" \
+  -F 'docid=verne-20k'
+```
+
 ### 🛠️ Developer workflow
 
 Building from source relies on the `Makefile` shortcuts (`make install-dev`, `USE_CPU=1 make serve`, `make test`, etc.). The full contributor workflow, target reference, and task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -32,6 +32,20 @@ def test_cli_upload_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
                and c[3] == "DOC1" for c in store.calls)
     assert ("save", tenant, coll) in store.calls
 
+def test_cli_reupload_same_docid_triggers_purge(cli_env, tmp_path):
+    pvcli, store, _ = cli_env
+    tenant, coll = "acme", "reupcli"
+    sample = tmp_path / "reup.txt"
+    sample.write_text("alpha bravo", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["upload", tenant, coll, str(sample), "--docid", "DOC-REUP"])
+
+    sample.write_text("delta echo", encoding="utf-8")
+    pvcli.main_cli(["upload", tenant, coll, str(sample), "--docid", "DOC-REUP"])
+
+    assert ("purge_doc", tenant, coll, "DOC-REUP") in store.calls
+
 def test_cli_search_returns_matches(cli_env, tmp_path):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "invoices"

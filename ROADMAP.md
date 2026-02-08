@@ -164,7 +164,7 @@ without restarting the server.
 - `preprocess.py` reads `TXT_CHUNK_SIZE` / `TXT_CHUNK_OVERLAP` at import.
 - Config changes require process restart.
 
-**Action for v0.5.7:** Document the live-data-update path (purge + ingest)
+**Action for v0.5.7:** ~~Document the live-data-update path (purge + ingest)~~
 as an explicit operational procedure. For v0.6 (per-collection embeddings),
 design model hot-swap via a `/admin/reload` endpoint.
 
@@ -279,10 +279,13 @@ APIs.
 - ~~Accept and propagate `request_id` / `trace_id` through search requests, responses, and logs (market practice §7).~~
 - ~~Expose latency histograms (p50/p95/p99) via `/metrics` for search and ingest.~~
 - ~~Provide REST/CLI endpoints to delete a document by id.~~
+- ~~Document the live-data-update path (purge + ingest).~~
 - ~~Replace `eval()` in filter matching with `operator` module.~~
 - ~~Replace `assert` in `index_records` with a proper runtime check.~~
 - ~~Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).~~
 - ~~Ship initial `benchmarks/` directory with search latency load test (market practice §6).~~
+- ~~Push legacy typing synthax to Python 3.10~~
+- ~~Update copyright notices, polish logging infrastructure~~
 
 ### v0.5.8 — Infrastructure & Resilience
 - Ship internal metadata/content store (SQLite) with migrations.
