@@ -1,4 +1,4 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 def test_delete_document_success(client):

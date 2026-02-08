@@ -1,3 +1,6 @@
+<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
 # 🍰 PatchVec — Lightweight, Pluggable Vector Search Microservice
 
 Patchvec is a compact vector store built for people who want provenance and fast iteration on RAG plumbing. No black boxes, no hidden pipelines: every chunk records document id, page, and byte offsets, and you can swap embeddings or storage backends per collection.
@@ -119,4 +122,4 @@ Short & mid-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one, ope
 
 ## 📜 License
 
-GPL-3.0-or-later — (C) 2025 Rodrigo Rodrigues da Silva
+GPL-3.0-or-later — (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>

@@ -1,3 +1,6 @@
+<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
 # Roadmap
 
 Immediate chores worth tackling now. Claim a task by opening an issue titled `claim: <task>` and link your branch or PR when ready.

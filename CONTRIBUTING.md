@@ -1,3 +1,6 @@
+<!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
 # 👾 Contributing to PatchVec
 
 Patchvec accepts code and docs from people who ship patches. Follow the steps below and keep PRs focused.

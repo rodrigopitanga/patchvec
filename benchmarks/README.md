@@ -1,3 +1,6 @@
+<!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
 # Benchmarks
 
 Performance benchmarks for PatchVec.
