@@ -4,7 +4,8 @@
 from __future__ import annotations
 import io, csv, mimetypes
 from .config import CFG
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from collections.abc import Iterable, Iterator
+from typing import Any
 from pypdf import PdfReader
 
 TXT_CHUNK_SIZE = int(CFG.get("preprocess.txt_chunk_size", 1000))
@@ -33,10 +34,10 @@ def _csv_parse_col_spec(spec: str) -> tuple[list[str], list[int]]:
             names.append(tok)
     return names, idxs
 
-def _csv_stringify_row(row: Dict[str, Any], keys: List[str]) -> str:
+def _csv_stringify_row(row: dict[str, Any], keys: list[str]) -> str:
     return "\n".join(f"{k}: {'' if row.get(k) is None else row.get(k)}" for k in keys)
 
-def _preprocess_csv(filename: str, content: bytes, csv_options: Dict[str, Any]) -> Iterator[Tuple[str, str, Dict[str, Any]]]:
+def _preprocess_csv(filename: str, content: bytes, csv_options: dict[str, Any]) -> Iterator[tuple[str, str, dict[str, Any]]]:
     has_header = (csv_options.get("has_header") or "auto").lower()  # auto|yes|no
     meta_spec = csv_options.get("meta_cols") or ""
     inc_spec  = csv_options.get("include_cols") or ""
@@ -62,7 +63,7 @@ def _preprocess_csv(filename: str, content: bytes, csv_options: Dict[str, Any]) 
     if first is None:
         return
 
-    header_row: Optional[List[str]] = None
+    header_row: list[str | None] = None
     if has_header == "yes":
         header_row = [str(h).strip() for h in first]
     elif has_header == "no":
@@ -87,7 +88,7 @@ def _preprocess_csv(filename: str, content: bytes, csv_options: Dict[str, Any]) 
     if (meta_names or inc_names) and header_row is None:
         raise ValueError("CSV has no header but column names were provided. Use 1-based indices or supply a header.")
 
-    def resolve(names: list[str], idxs: list[int]) -> List[str]:
+    def resolve(names: list[str], idxs: list[int]) -> list[str]:
         out: list[str] = []
         for nm in names:
             if nm not in name_to_idx:
@@ -125,8 +126,8 @@ def _preprocess_csv(filename: str, content: bytes, csv_options: Dict[str, Any]) 
         extra["has_header"] = bool(header_row is not None)
         yield (f"row_{rowno-1}", text_part, extra)
 
-def preprocess(filename: str, content: bytes, csv_options: Dict[str, Any] \
-               | None = None) -> Iterator[Tuple[str, str, Dict[str, Any]]]:
+def preprocess(filename: str, content: bytes, csv_options: dict[str, Any] \
+               | None = None) -> Iterator[tuple[str, str, dict[str, Any]]]:
     """
     Yields (local_id, text, extra_meta):
     - PDF: one chunk per page

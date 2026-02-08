@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Iterable, Dict, Any, List
+from collections.abc import Iterable
+from typing import Any
 
 
-Record = tuple[str, str, Dict[str, Any]]  # (rid, text, meta)
+Record = tuple[str, str, dict[str, Any]]  # (rid, text, meta)
 
 class BaseStore(ABC):
     @abstractmethod
@@ -30,7 +31,7 @@ class BaseStore(ABC):
 
     @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+               filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """
         Search for similar documents.
 

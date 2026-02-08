@@ -4,7 +4,8 @@
 from __future__ import annotations
 import os, json, operator
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional
+from collections.abc import Iterable
+from typing import Any
 from threading import Lock
 from contextlib import contextmanager
 from txtai.embeddings import Embeddings
@@ -43,7 +44,7 @@ class TxtaiStore(BaseStore):
     _FILTER_MATCH_MAX_DEPTH = 10
 
     def __init__(self):
-        self._emb: Dict[tuple[str, str], Embeddings] = {}
+        self._emb: dict[tuple[str, str], Embeddings] = {}
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(c.get("data_dir"), f"t_{tenant}", f"c_{collection}")
@@ -68,18 +69,18 @@ class TxtaiStore(BaseStore):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
 
-    def _load_catalog(self, tenant: str, collection: str) -> Dict[str, List[str]]:
+    def _load_catalog(self, tenant: str, collection: str) -> dict[str, list[str]]:
         return self._load_json(self._catalog_path(tenant, collection))
 
     def _save_catalog(self, tenant: str, collection: str,
-                      cat: Dict[str, List[str]]) -> None:
+                      cat: dict[str, list[str]]) -> None:
         self._save_json(self._catalog_path(tenant, collection), cat)
 
-    def _load_meta(self, tenant: str, collection: str) -> Dict[str, Dict[str, Any]]:
+    def _load_meta(self, tenant: str, collection: str) -> dict[str, dict[str, Any]]:
         return self._load_json(self._meta_path(tenant, collection))
 
     def _save_meta(self, tenant: str, collection: str,
-                   meta: Dict[str, Dict[str, Any]]) -> None:
+                   meta: dict[str, dict[str, Any]]) -> None:
         self._save_json(self._meta_path(tenant, collection), meta)
 
     @staticmethod
@@ -285,8 +286,8 @@ class TxtaiStore(BaseStore):
         return len(prepared)
 
     @staticmethod
-    def _matches_filters(m: Dict[str, Any],
-                         filters: Dict[str, Any] | None) -> bool:
+    def _matches_filters(m: dict[str, Any],
+                         filters: dict[str, Any] | None) -> bool:
         """
         Evaluates whether metadata `m` satisfies all filter conditions.
         Supports:
@@ -382,7 +383,7 @@ class TxtaiStore(BaseStore):
         return pre_f, pos_f
 
     @staticmethod
-    def _lookup_meta(meta: Dict[str, Any] | None, key: str) -> Any:
+    def _lookup_meta(meta: dict[str, Any] | None, key: str) -> Any:
         if not meta:
             return None
         if key in meta:
@@ -403,8 +404,8 @@ class TxtaiStore(BaseStore):
         return TxtaiStore._sanit_sql(value)
 
     @staticmethod
-    def _sanit_meta_dict(meta: Dict[str, Any] | None) -> Dict[str, Any]:
-        safe: Dict[str, Any] = {}
+    def _sanit_meta_dict(meta: dict[str, Any] | None) -> dict[str, Any]:
+        safe: dict[str, Any] = {}
         if not isinstance(meta, dict):
             return safe
         for raw_key, raw_value in meta.items():
@@ -415,7 +416,7 @@ class TxtaiStore(BaseStore):
         return safe
 
     @staticmethod
-    def _sanit_sql(value: Any, *, max_len: Optional[int] = None) -> str:
+    def _sanit_sql(value: Any, *, max_len: int | None = None) -> str:
         if value is None:
             return ""
         text = str(value).translate(_SQL_TRANS)
@@ -489,7 +490,7 @@ class TxtaiStore(BaseStore):
         return sql
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+               filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """
         Queries txtai for top-k, keeps overfetch inside the store, preserves text
         from em.search when present, and falls back to lookup if missing.
@@ -535,7 +536,7 @@ class TxtaiStore(BaseStore):
         if need_lookup_ids and hasattr(em, "lookup"):
             lookup = em.lookup(need_lookup_ids) or {}
 
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for rid, score, txt in kept:
             if txt is None:
                 txt = lookup.get(rid)
@@ -556,8 +557,8 @@ class TxtaiStore(BaseStore):
         return out
 
     def _build_match_reason(self, query: str, score: float,
-                            filters: Dict[str, Any] | None,
-                            meta: Dict[str, Any] | None) -> str:
+                            filters: dict[str, Any] | None,
+                            meta: dict[str, Any] | None) -> str:
         """Build a human-readable explanation of why a result matched."""
         parts = []
 

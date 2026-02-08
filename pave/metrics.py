@@ -4,14 +4,14 @@ from __future__ import annotations
 import json, os, time, threading
 from collections import deque
 from contextlib import contextmanager
-from typing import Dict, Any, List
+from typing import Any
 
 _started = time.time()
 _lock = threading.Lock()
 _data_dir: str | None = None
 _METRICS_FILE = "metrics.json"
 
-_counters: Dict[str, float] = {
+_counters: dict[str, float] = {
     "requests_total": 0.0,
     "collections_created_total": 0.0,
     "collections_deleted_total": 0.0,
@@ -27,7 +27,7 @@ _last_error: str | None = None
 
 # Latency tracking: keep last N samples per operation type
 _LATENCY_WINDOW = 1000
-_latencies: Dict[str, deque] = {
+_latencies: dict[str, deque] = {
     "search": deque(maxlen=_LATENCY_WINDOW),
     "ingest": deque(maxlen=_LATENCY_WINDOW),
 }
@@ -85,7 +85,7 @@ def save() -> None:
     except Exception:
         pass  # ignore save errors
 
-def reset() -> Dict[str, Any]:
+def reset() -> dict[str, Any]:
     """Reset all metrics to initial state and persist."""
     global _counters, _last_error, _latencies, _started
     with _lock:
@@ -127,7 +127,7 @@ def timed(op: str):
         duration_ms = (time.perf_counter() - start) * 1000
         record_latency(op, duration_ms)
 
-def _percentile(data: List[float], p: float) -> float:
+def _percentile(data: list[float], p: float) -> float:
     """Compute the p-th percentile of a sorted list."""
     if not data:
         return 0.0
@@ -136,7 +136,7 @@ def _percentile(data: List[float], p: float) -> float:
     c = f + 1 if f + 1 < len(data) else f
     return data[f] + (k - f) * (data[c] - data[f])
 
-def latency_percentiles(op: str) -> Dict[str, float]:
+def latency_percentiles(op: str) -> dict[str, float]:
     """Return p50, p95, p99 for an operation type."""
     with _lock:
         samples = list(_latencies.get(op, []))
@@ -150,7 +150,7 @@ def latency_percentiles(op: str) -> Dict[str, float]:
         "count": len(samples),
     }
 
-def snapshot(extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def snapshot(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     with _lock:
         data = dict(_counters)
         data.update({
@@ -168,7 +168,7 @@ def snapshot(extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
         data.update(extra)
     return data
 
-def to_prometheus(extra: Dict[str, Any] | None = None, build: Dict[str, str] | None = None) -> str:
+def to_prometheus(extra: dict[str, Any] | None = None, build: dict[str, str] | None = None) -> str:
     s = []
     snap = snapshot(extra)
     for k, v in snap.items():

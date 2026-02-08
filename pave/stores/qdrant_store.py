@@ -1,7 +1,8 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
-from typing import Iterable, Dict, Any, List
+from collections.abc import Iterable
+from typing import Any
 from .base import BaseStore, Record
 
 class QdrantStore(BaseStore):
@@ -22,5 +23,5 @@ class QdrantStore(BaseStore):
     def index_records(self, tenant: str, collection: str, docid: str, records: Iterable[Record]) -> int:
         raise NotImplementedError("to be implemented")
 
-    def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+    def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         raise NotImplementedError("to be implemented")

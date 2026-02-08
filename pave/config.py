@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os, re, threading, logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 try:  # pragma: no cover - optional dependency guard
     from dotenv import load_dotenv
@@ -51,7 +51,7 @@ _DEFAULTS = {
 _ENV_PATTERN = re.compile(r"\$\{([^}:|]+)(?:\|([^}]*))?\}")
 
 # ---------------- utils ----------------
-def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     out = dict(a)
     for k, v in (b or {}).items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):
@@ -89,8 +89,8 @@ def _resolve_env_in_obj(obj: Any) -> Any:
         return [_resolve_env_in_obj(v) for v in obj]
     return _subst_env(obj)
 
-def _env_to_dict(prefix: str = _ENV_PREFIX) -> Dict[str, Any]:
-    envmap: Dict[str, Any] = {}
+def _env_to_dict(prefix: str = _ENV_PREFIX) -> dict[str, Any]:
+    envmap: dict[str, Any] = {}
     for k, v in os.environ.items():
         if not k.startswith(prefix):
             continue
@@ -101,7 +101,7 @@ def _env_to_dict(prefix: str = _ENV_PREFIX) -> Dict[str, Any]:
         cur[path[-1]] = _coerce(v)
     return envmap
 
-def _load_yaml(path: str | Path) -> Dict[str, Any]:
+def _load_yaml(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     if p.is_file():
         with p.open("r", encoding="utf-8") as f:
@@ -116,17 +116,17 @@ class Config:
     """
     def __init__(
             self,
-            data: Dict[str, Any] | None = None,
+            data: dict[str, Any] | None = None,
             path: str | Path | None = None):
         self._lock = threading.RLock()
         if data is None:
             data = self._load_dict(path or _DEFAULT_CONFIG_PATH)
-        self._cfg: Dict[str, Any] = dict(data)
+        self._cfg: dict[str, Any] = dict(data)
         self._data = self._cfg  # back-compat alias for old tests
 
     # --- main loader, now a static/class member ---
     @staticmethod
-    def _load_dict(path: str | Path) -> Dict[str, Any]:
+    def _load_dict(path: str | Path) -> dict[str, Any]:
         file_cfg = _resolve_env_in_obj(_load_yaml(path))
         tenants_file = file_cfg.get("auth", {}).get("tenants_file") \
             if isinstance(file_cfg.get("auth"), dict) else None
@@ -137,7 +137,7 @@ class Config:
         return _deep_merge(_deep_merge(_DEFAULTS, file_cfg), env_cfg)
 
     # -------- path ops --------
-    def _get_from(self, store: Dict[str, Any], path: str):
+    def _get_from(self, store: dict[str, Any], path: str):
         cur: Any = store
         for part in path.split("."):
             if not isinstance(cur, dict) or part not in cur:
@@ -145,7 +145,7 @@ class Config:
             cur = cur[part]
         return cur
 
-    def _set_into(self, store: Dict[str, Any], path: str, value: Any) -> None:
+    def _set_into(self, store: dict[str, Any], path: str, value: Any) -> None:
         cur = store
         parts = path.split(".")
         for p in parts[:-1]:
@@ -168,16 +168,16 @@ class Config:
         with self._lock:
             self._set_into(self._cfg, path, value)
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         with self._lock:
             # shallow copy is enough for read-only views in tests/health
             return _deep_merge({}, self._cfg)
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return self.as_dict()
 
     # replace all config in place (keeps object identity for back-compat)
-    def replace(self, data: Dict[str, Any] | None = None,
+    def replace(self, data: dict[str, Any] | None = None,
                 path: str | Path | None = None) -> None:
         fresh = Config(data=data, path=path)
         with self._lock:

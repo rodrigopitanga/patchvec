@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
-from typing import Any, Dict, List
+from typing import Any
 from txtai.embeddings import Embeddings
 from ..config import CFG
 
@@ -31,7 +31,7 @@ class TxtaiEmbedder:
         path = section.get("path") or CFG.get("embedder.model") or CFG.get("embed_model")
 
         # Build the embeddings config for txtai
-        cfg: Dict[str, Any] = dict(section)
+        cfg: dict[str, Any] = dict(section)
         if "path" not in cfg and path:
             cfg["path"] = path
         # If method omitted, txtai will infer based on path; that’s fine.
@@ -53,6 +53,6 @@ class TxtaiEmbedder:
     def dim(self) -> int | None:
         return self._dim
 
-    def encode(self, texts: List[str]) -> List[List[float]]:
+    def encode(self, texts: list[str]) -> list[list[float]]:
         # txtai expects list[str], returns list[list[float]]
         return self._emb.embed(texts)

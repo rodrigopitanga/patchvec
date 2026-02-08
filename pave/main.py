@@ -11,7 +11,7 @@ from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, \
 from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
-from typing import Optional, Dict, Any, Annotated
+from typing import Any
 from starlette.background import BackgroundTask
 
 from pave.config import get_cfg, get_logger
@@ -36,8 +36,8 @@ VERSION = "0.5.6"
 class SearchBody(BaseModel):
     q: str
     k: int = 5
-    filters: Optional[Dict[str, Any]] = None
-    request_id: Optional[str] = None
+    filters: dict[str, Any] | None = None
+    request_id: str | None = None
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
@@ -60,8 +60,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     # -------------------- Health --------------------
 
-    def _readiness_check() -> Dict[str, Any]:
-        details: Dict[str, Any] = {
+    def _readiness_check() -> dict[str, Any]:
+        details: dict[str, Any] = {
             "data_dir": cfg.get("data_dir"),
             "vector_store": cfg.get("vector_store.type"),
             "writable": False,
@@ -227,13 +227,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         tenant: str,
         collection: str,
         file: UploadFile = File(...),
-        docid: Optional[str] = Form(None),
-        metadata: Optional[str] = Form(None),
+        docid: str | None = Form(None),
+        metadata: str | None = Form(None),
         # CSV controls as optional query params
         # (kept out of form to not clash with file upload)
-        csv_has_header: Optional[str] = Query(None, pattern="^(auto|yes|no)$"),
-        csv_meta_cols: Optional[str] = Query(None),
-        csv_include_cols: Optional[str] = Query(None),
+        csv_has_header: str | None = Query(None, pattern="^(auto|yes|no)$"),
+        csv_meta_cols: str | None = Query(None),
+        csv_include_cols: str | None = Query(None),
         ctx: AuthContext = Depends(authorize_tenant),
         store: BaseStore = Depends(current_store),
     ):
@@ -288,7 +288,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         tenant: str,
         name: str,
         body: SearchBody,
-        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
+        x_request_id: str | None = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(authorize_tenant),
         store: BaseStore = Depends(current_store),
     ):
@@ -309,7 +309,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         name: str,
         q: str = Query(...),
         k: int = Query(5, ge=1),
-        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
+        x_request_id: str | None = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(authorize_tenant),
         store: BaseStore = Depends(current_store),
     ):
@@ -326,7 +326,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post("/search")
     def search_common_post(
         body: SearchBody,
-        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
+        x_request_id: str | None = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
@@ -344,7 +344,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     def search_common_get(
         q: str = Query(...),
         k: int = Query(5, ge=1),
-        x_request_id: Optional[str] = Header(None, alias="X-Request-ID"),
+        x_request_id: str | None = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):

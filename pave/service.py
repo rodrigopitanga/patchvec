@@ -13,7 +13,8 @@ import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone as tz
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from collections.abc import Iterable, Iterator
+from typing import Any
 
 import time as _time
 from pave.config import get_logger
@@ -25,7 +26,7 @@ _log = get_logger()
 
 # Pure-ish service functions operating on a store adapter
 
-def create_collection(store, tenant: str, name: str) -> Dict[str, Any]:
+def create_collection(store, tenant: str, name: str) -> dict[str, Any]:
     store.load_or_init(tenant, name)
     store.save(tenant, name)
     m_inc("collections_created_total", 1.0)
@@ -35,7 +36,7 @@ def create_collection(store, tenant: str, name: str) -> Dict[str, Any]:
         "collection": name
     }
 
-def delete_collection(store, tenant: str, name: str) -> Dict[str, Any]:
+def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
     store.delete_collection(tenant, name)
     m_inc("collections_deleted_total", 1.0)
     return {
@@ -44,7 +45,7 @@ def delete_collection(store, tenant: str, name: str) -> Dict[str, Any]:
         "deleted": name
     }
 
-def delete_document(store, tenant: str, collection: str, docid: str) -> Dict[str, Any]:
+def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str, Any]:
     if not store.has_doc(tenant, collection, docid):
         return {
             "ok": False,
@@ -77,8 +78,8 @@ def _default_docid(filename: str) -> str:
     return "PVDOC_"+str(uuid.uuid4())
 
 def ingest_document(store, tenant: str, collection: str, filename: str, content: bytes,
-                    docid: str | None, metadata: Dict[str, Any] | None,
-                    csv_options: Dict[str, Any] | None = None) -> Dict[str, Any]:
+                    docid: str | None, metadata: dict[str, Any] | None,
+                    csv_options: dict[str, Any] | None = None) -> dict[str, Any]:
     with m_timed("ingest"):
         baseid = docid or _default_docid(filename)
         if baseid and store.has_doc(tenant, collection, baseid):
@@ -107,14 +108,14 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
         }
 
 def do_search(store, tenant: str, collection: str, q: str, k: int = 5,
-              filters: Dict[str, Any] | None = None, include_common: bool = False,
+              filters: dict[str, Any] | None = None, include_common: bool = False,
               common_tenant: str | None = None, common_collection: str | None = None,
               request_id: str | None = None
-              ) -> Dict[str, Any]:
+              ) -> dict[str, Any]:
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     if include_common and common_tenant and common_collection:
-        matches: List[Dict[str, Any]] = []
+        matches: list[dict[str, Any]] = []
         matches.extend(store.search(
             tenant, collection, q, max(10, k * 2), filters=filters))
         matches.extend(store.search(
@@ -254,8 +255,8 @@ def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
 
 def create_data_archive(
         store: BaseStore | None, data_dir: str | os.PathLike[str],
-        output_path: Optional[str | os.PathLike[str]] = None,
-) -> Tuple[str, Optional[str]]:
+        output_path: str | os.PathLike[str | None] = None,
+) -> tuple[str, str | None]:
     """Create a ZIP archive containing the contents of ``data_dir``.
 
     Parameters
@@ -274,7 +275,7 @@ def create_data_archive(
 
     Returns
     -------
-    tuple[str, Optional[str]]
+    tuple[str, str | None]
         The first element is the absolute path to the generated archive. The
         second element is the temporary directory that owns the archive (or
         ``None`` when ``output_path`` was provided).
@@ -301,7 +302,7 @@ def create_data_archive(
 def restore_data_archive(
         store: BaseStore | None, data_dir: str | os.PathLike[str],
         archive_bytes: bytes
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     data_dir_path = Path(data_dir).resolve()
     data_dir_path.mkdir(parents=True, exist_ok=True)
 

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Optional, Dict, Tuple
+# typing imports removed
 from fastapi import HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from . import config as cfg
@@ -14,7 +14,7 @@ bearer = HTTPBearer(auto_error=False)
 
 @dataclass
 class AuthContext:
-    tenant: Optional[str]
+    tenant: str | None
     is_admin: bool
 
 def _raise_401():
@@ -50,7 +50,7 @@ def auth_ctx(credentials: HTTPAuthorizationCredentials | None = Security(bearer)
             return AuthContext(tenant=None, is_admin=True)
 
         # per-tenant keys
-        api_keys: Dict[str, str] = cfg.CFG.get("auth.api_keys", {}) or {}
+        api_keys: dict[str, str] = cfg.CFG.get("auth.api_keys", {}) or {}
         for t, expected in api_keys.items():
             if token == str(expected):
                 return AuthContext(tenant=t, is_admin=False)
@@ -101,7 +101,7 @@ def enforce_policy(cfg) -> None:
                 "auth.mode=static requires global_key or api_keys"
             )
 
-def resolve_bind(cfg) -> Tuple[str, int]:
+def resolve_bind(cfg) -> tuple[str, int]:
     # return host/port after policy enforcement
     host = str(cfg.get("server.host", "127.0.0.1"))
     port = int(cfg.get("server.port", 8086))
