@@ -279,7 +279,7 @@ APIs.
 - ~~Replace `eval()` in filter matching with `operator` module.~~
 - ~~Replace `assert` in `index_records` with a proper runtime check.~~
 - ~~Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).~~
-- Ship initial `benchmarks/` directory with search latency load test (market practice §6).
+- ~~Ship initial `benchmarks/` directory with search latency load test (market practice §6).~~
 
 ### v0.5.8 — Infrastructure & Resilience
 - Ship internal metadata/content store (SQLite) with migrations.
