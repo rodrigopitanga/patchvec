@@ -211,54 +211,83 @@ def reload_cfg(path: str | None = None) -> Config:
 CFG = _CFG_SINGLETON
 
 # --- singleton logger ---
+class _ColorFormatter(logging.Formatter):
+    """Formatter with ANSI colors for terminal output."""
+    COLORS = {
+        logging.DEBUG:    "\033[36m",   # cyan
+        logging.INFO:     "\033[32m",   # green
+        logging.WARNING:  "\033[33m",   # yellow
+        logging.ERROR:    "\033[31m",   # red
+        logging.CRITICAL: "\033[35m",   # magenta
+    }
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+    def __init__(self, fmt: str, datefmt: str, use_color: bool = True):
+        super().__init__(fmt, datefmt)
+        self.use_color = use_color
+
+    def format(self, record: logging.LogRecord) -> str:
+        if self.use_color:
+            color = self.COLORS.get(record.levelno, "")
+            # Highlight pave logs with bold
+            if record.name.startswith("pave"):
+                record.name = f"{self.BOLD}pave{self.RESET}{color}"
+            record.levelname = f"{color}{record.levelname}{self.RESET}"
+            record.msg = f"{color}{record.msg}{self.RESET}"
+        return super().format(record)
+
+
 def _init_logger() -> logging.Logger:
     """
     Initializes hierarchical logging levels:
-      - pave (base)
+      - pave (base) → bold + colored
       - watch namespaces (base -1 → more verbose)
       - quiet namespaces (base +1 → less verbose)
       - all others (base +2)
     """
+    import sys
     cfg = get_cfg()
-    base_level = getattr(logging, cfg.get("loglevel", "WARN").upper(), logging.INFO)
+    base_level = getattr(logging, cfg.get("loglevel", "INFO").upper(), logging.INFO)
 
-    def shift(level, delta):
+    def shift(level: int, delta: int) -> int:
         """Moves numeric loglevel by ±10 per step."""
         return min(logging.CRITICAL, max(logging.DEBUG, level + 10 * delta))
 
+    # Configure root logger - set high level to quiet unknown libs
     root = logging.getLogger()
-    root.setLevel(shift(base_level, +2))  # default = quietest
-
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        "%H:%M:%S"
-    ))
+    root.setLevel(shift(base_level, +2))  # Unknown libs are quietest
     root.handlers.clear()
+
+    # Create console handler with colors - allow all through, filter at logger level
+    use_color = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(logging.DEBUG)  # Handler allows all, loggers filter
+    handler.setFormatter(_ColorFormatter(
+        "%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+        "%H:%M:%S",
+        use_color=use_color
+    ))
     root.addHandler(handler)
 
-    # main project
-    if cfg.get("dev",0):
-         logging.getLogger("pave").setLevel(logging.DEBUG)
-    else:
-         logging.getLogger("pave").setLevel(base_level)
+    # pave logger - our main logger, always at configured level
+    pave_log = logging.getLogger("pave")
+    pave_log.setLevel(logging.DEBUG if cfg.get("dev", 0) else base_level)
 
-    #namespaces fixed to loglevel.DEBUG
-    debug = cfg.get("log.debug", [])
-    for ns in debug:
+    # Namespaces fixed to DEBUG
+    for ns in cfg.get("log.debug", []):
         logging.getLogger(ns).setLevel(logging.DEBUG)
 
-    # namespaces that should be more verbose
-    watch = cfg.get("log.watch", ["txtai"])
-    for ns in watch:
+    # Namespaces that should be more verbose (e.g., txtai)
+    for ns in cfg.get("log.watch", []):
         logging.getLogger(ns).setLevel(shift(base_level, -1))
 
-    # namespaces that should be quieter
-    quiet = cfg.get("log.quiet", ["fastapi", "uvicorn", "sqlalchemy", "urllib"])
-    for ns in quiet:
+    # Namespaces that should be quieter
+    for ns in cfg.get("log.quiet", ["uvicorn", "uvicorn.access", "uvicorn.error",
+                                     "fastapi", "sqlalchemy", "urllib3", "httpx"]):
         logging.getLogger(ns).setLevel(shift(base_level, +1))
 
-    return logging.getLogger("pave")
+    return pave_log
 
 _LOGGER_SINGLETON = _init_logger()
 
