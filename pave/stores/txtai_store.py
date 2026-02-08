@@ -269,7 +269,9 @@ class TxtaiStore(BaseStore):
                 prepared.append((rid, {"text": txt, **md_for_index}, meta_json))
 
                 self._save_chunk_text(tenant, collection, rid, txt)
-                assert txt == (self._load_chunk_text(tenant, collection, rid) or "")
+                loaded = self._load_chunk_text(tenant, collection, rid) or ""
+                if txt != loaded:
+                    log.warning(f"Chunk text round-trip mismatch for {rid}: saved {len(txt)} chars, loaded {len(loaded)} chars")
 
             if not prepared:
                 return 0

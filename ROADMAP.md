@@ -277,7 +277,7 @@ APIs.
 - ~~Expose latency histograms (p50/p95/p99) via `/metrics` for search and ingest.~~
 - ~~Provide REST/CLI endpoints to delete a document by id.~~
 - ~~Replace `eval()` in filter matching with `operator` module.~~
-- Replace `assert` in `index_records` with a proper runtime check.
+- ~~Replace `assert` in `index_records` with a proper runtime check.~~
 - ~~Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).~~
 - Ship initial `benchmarks/` directory with search latency load test (market practice §6).
 
