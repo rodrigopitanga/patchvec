@@ -44,6 +44,26 @@ def delete_collection(store, tenant: str, name: str) -> Dict[str, Any]:
         "deleted": name
     }
 
+def delete_document(store, tenant: str, collection: str, docid: str) -> Dict[str, Any]:
+    if not store.has_doc(tenant, collection, docid):
+        return {
+            "ok": False,
+            "error": "document not found",
+            "tenant": tenant,
+            "collection": collection,
+            "docid": docid
+        }
+    purged = store.purge_doc(tenant, collection, docid)
+    m_inc("purge_total", float(purged))
+    m_inc("documents_deleted_total", 1.0)
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "collection": collection,
+        "docid": docid,
+        "chunks_deleted": purged
+    }
+
 def _default_docid(filename: str) -> str:
     # Uppercase
     base = filename.upper()

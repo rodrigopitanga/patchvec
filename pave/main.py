@@ -26,6 +26,7 @@ from pave.service import \
     create_data_archive as svc_create_data_archive, \
     restore_data_archive as svc_restore_data_archive, \
     delete_collection as svc_delete_collection, \
+    delete_document as svc_delete_document, \
     ingest_document as svc_ingest_document, \
     do_search as svc_do_search
 
@@ -266,6 +267,20 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         except ValueError as ve:
             # e.g., names provided but no header
             raise HTTPException(status_code=400, detail=str(ve))
+
+    @app.delete("/collections/{tenant}/{collection}/documents/{docid}")
+    def delete_document_route(
+        tenant: str,
+        collection: str,
+        docid: str,
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_delete_document(store, tenant, collection, docid)
+        if not result.get("ok"):
+            raise HTTPException(status_code=404, detail=result.get("error", "document not found"))
+        return result
 
     # POST search (supports filters)
     @app.post("/collections/{tenant}/{name}/search")

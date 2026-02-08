@@ -27,7 +27,7 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 
 | # | Task | Why it matters | Source |
 |---|------|----------------|--------|
-| 6 | **Delete document by ID** (REST + CLI) | Source data will be updated (revisions, corrections). Without single-doc deletion, the only option is full collection rebuild — unacceptable operationally. | ROADMAP v0.5.7 |
+| 6 | ~~**Delete document by ID** (REST + CLI)~~ | ~~Source data will be updated (revisions, corrections). Without single-doc deletion, the only option is full collection rebuild — unacceptable operationally.~~ | ~~ROADMAP v0.5.7~~ |
 | 7 | **Hybrid reranking (vector + BM25)** | Users search with exact code fragments mixed with natural language. Pure vector similarity misses exact token matches. Hybrid ranking is the difference between "found it first try" and "had to scroll". | ROADMAP v0.5.9 |
 | 8 | **Per-tenant rate limiting** | When the consumer app is public, a single abusive client can saturate the shared PatchVec instance and degrade service for all users. | ROADMAP v0.5.8 |
 | 9 | **Internal metadata store (SQLite)** with migrations | Current storage is JSON files (`catalog.json`, `meta.json`) written atomically per collection. Under concurrent load this becomes a bottleneck and corruption risk. SQLite gives ACID guarantees the file approach lacks. | ROADMAP v0.5.8 |
@@ -275,7 +275,7 @@ APIs.
 - ~~Push `!`-prefixed negation filters into SQL pre-filter (`<>`) for performance (market practice §4).~~
 - ~~Accept and propagate `request_id` / `trace_id` through search requests, responses, and logs (market practice §7).~~
 - ~~Expose latency histograms (p50/p95/p99) via `/metrics` for search and ingest.~~
-- Provide REST/CLI endpoints to delete a document by id.
+- ~~Provide REST/CLI endpoints to delete a document by id.~~
 - Replace `eval()` in filter matching with `operator` module.
 - Replace `assert` in `index_records` with a proper runtime check.
 - ~~Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).~~

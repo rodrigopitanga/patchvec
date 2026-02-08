@@ -16,6 +16,7 @@ _counters: Dict[str, float] = {
     "collections_created_total": 0.0,
     "collections_deleted_total": 0.0,
     "documents_indexed_total": 0.0,
+    "documents_deleted_total": 0.0,
     "chunks_indexed_total": 0.0,
     "purge_total": 0.0,
     "search_total": 0.0,

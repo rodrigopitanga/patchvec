@@ -10,6 +10,7 @@ from pave.service import (
     create_data_archive as svc_dump_archive,
     restore_data_archive as svc_restore_archive,
     delete_collection as svc_delete_collection,
+    delete_document as svc_delete_document,
     ingest_document as svc_ingest_document,
     do_search as svc_do_search,
 )
@@ -52,6 +53,10 @@ def cmd_search(args):
 
 def cmd_delete(args):
     out = svc_delete_collection(store, args.tenant, args.collection)
+    print(json.dumps(out, ensure_ascii=False))
+
+def cmd_delete_document(args):
+    out = svc_delete_document(store, args.tenant, args.collection, args.docid)
     print(json.dumps(out, ensure_ascii=False))
 
 def cmd_dump_archive(args):
@@ -126,6 +131,12 @@ def main_cli(argv=None):
     p_delete.add_argument("tenant")
     p_delete.add_argument("collection")
     p_delete.set_defaults(func=cmd_delete)
+
+    p_delete_doc = sub.add_parser("delete-document")
+    p_delete_doc.add_argument("tenant")
+    p_delete_doc.add_argument("collection")
+    p_delete_doc.add_argument("docid")
+    p_delete_doc.set_defaults(func=cmd_delete_document)
 
     p_dump = sub.add_parser("dump-archive")
     p_dump.add_argument("--output", help="Destination ZIP file path")
