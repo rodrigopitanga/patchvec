@@ -313,17 +313,19 @@ class TxtaiStore(BaseStore):
                 s = str(cond)
             hv = str(have)
             # Numeric/date ops
-            for op in (">=", "<=", "!=", ">", "<"):
-                if s.startswith(op):
-                    val = s[len(op):].strip()
+            _OPS = {">=": operator.ge, "<=": operator.le, "!=": operator.ne,
+                    ">": operator.gt, "<": operator.lt}
+            for op_str, op_fn in _OPS.items():
+                if s.startswith(op_str):
+                    val = s[len(op_str):].strip()
                     try:
                         hvn, vvn = float(have), float(val)
-                        return eval(f"hvn {op} vvn")
+                        return op_fn(hvn, vvn)
                     except Exception:
                         try:
                             hd = datetime.fromisoformat(str(have))
                             vd = datetime.fromisoformat(val)
-                            return eval(f"hd {op} vd")
+                            return op_fn(hd, vd)
                         except Exception:
                             return False
             # Wildcards
