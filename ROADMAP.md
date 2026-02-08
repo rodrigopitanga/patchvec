@@ -269,16 +269,16 @@ APIs.
 ## Revised Roadmap
 
 ### v0.5.7 — Production Readiness
-- Switch default embedding model to multilingual (e.g., `paraphrase-multilingual-MiniLM-L12-v2`).
-- Return a `match_reason` field alongside every search hit.
-- Return `latency_ms` in every search response (market practice §1).
-- Push `!`-prefixed negation filters into SQL pre-filter (`<>`) for performance (market practice §4).
-- Accept and propagate `request_id` / `trace_id` through search requests, responses, and logs (market practice §7).
-- Expose latency histograms (p50/p95/p99) via `/metrics` for search and ingest.
+- ~~Switch default embedding model to multilingual (e.g., `paraphrase-multilingual-MiniLM-L12-v2`).~~
+- ~~Return a `match_reason` field alongside every search hit.~~
+- ~~Return `latency_ms` in every search response (market practice §1).~~
+- ~~Push `!`-prefixed negation filters into SQL pre-filter (`<>`) for performance (market practice §4).~~
+- ~~Accept and propagate `request_id` / `trace_id` through search requests, responses, and logs (market practice §7).~~
+- ~~Expose latency histograms (p50/p95/p99) via `/metrics` for search and ingest.~~
 - Provide REST/CLI endpoints to delete a document by id.
 - Replace `eval()` in filter matching with `operator` module.
 - Replace `assert` in `index_records` with a proper runtime check.
-- Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).
+- ~~Fix `_LOCKS` dict race condition with a global guard lock (market practice §8).~~
 - Ship initial `benchmarks/` directory with search latency load test (market practice §6).
 
 ### v0.5.8 — Infrastructure & Resilience
