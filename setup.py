@@ -27,7 +27,7 @@ setup(
     python_requires=">=3.10,<3.15",
     packages=find_packages(include=["pave", "pave.*"]),  # internal package
     include_package_data=True,
-    package_data={"pave": ["assets/*"]},
+    package_data={"pave.assets": ["*.png","*.html"]},
     install_requires=[
         "fastapi>=0.115.0",
         "uvicorn[standard]>=0.30.6",
@@ -72,7 +72,6 @@ setup(
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
-        "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
         "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
