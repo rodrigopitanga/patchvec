@@ -496,45 +496,47 @@ class TxtaiStore(BaseStore):
         from em.search when present, and falls back to lookup if missing.
         """
         kk = max(1, int(k))
-        self.load_or_init(tenant, collection)
-        em = self._emb[(tenant, collection)]
 
         fetch_k = max(50, kk * 5)
         pre_f, pos_f = self._split_filters(filters)
         cols = ["id", "text", "score", "docid"]
         sql = self._build_sql(query, fetch_k, pre_f, cols)
-        raw = em.search(sql)
 
-        # Normalize to (id, score, maybe_text)
-        if raw and isinstance(raw[0], dict):
-            triples = [
-                (r.get("id"), float(r.get("score", 0.0)), r.get("text"))
-                for r in raw
-            ]
-        else: # if raw is a tuple:
-            triples = [
-                (rid, float(score), None)
-                for rid, score in (raw or [])
-            ]
+        with collection_lock(tenant, collection):
+            self.load_or_init(tenant, collection)
+            em = self._emb[(tenant, collection)]
+            raw = em.search(sql)
 
-        meta = self._load_meta(tenant, collection)
+            # Normalize to (id, score, maybe_text)
+            if raw and isinstance(raw[0], dict):
+                triples = [
+                    (r.get("id"), float(r.get("score", 0.0)), r.get("text"))
+                    for r in raw
+                ]
+            else: # if raw is a tuple:
+                triples = [
+                    (rid, float(score), None)
+                    for rid, score in (raw or [])
+                ]
 
-        kept: list[tuple[str, float, Any]] = []
-        need_lookup_ids: list[str] = []
+            meta = self._load_meta(tenant, collection)
 
-        for rid, score, txt in triples:
-            if not rid:
-                continue
-            if self._matches_filters(meta.get(rid, {}), pos_f):
-                kept.append((rid, score, txt))
-                if txt is None:
-                    need_lookup_ids.append(rid)
-                if len(kept) >= kk:
-                    break
+            kept: list[tuple[str, float, Any]] = []
+            need_lookup_ids: list[str] = []
 
-        lookup: dict[str, Any] = {}
-        if need_lookup_ids and hasattr(em, "lookup"):
-            lookup = em.lookup(need_lookup_ids) or {}
+            for rid, score, txt in triples:
+                if not rid:
+                    continue
+                if self._matches_filters(meta.get(rid, {}), pos_f):
+                    kept.append((rid, score, txt))
+                    if txt is None:
+                        need_lookup_ids.append(rid)
+                    if len(kept) >= kk:
+                        break
+
+            lookup: dict[str, Any] = {}
+            if need_lookup_ids and hasattr(em, "lookup"):
+                lookup = em.lookup(need_lookup_ids) or {}
 
         out: list[dict[str, Any]] = []
         for rid, score, txt in kept:
