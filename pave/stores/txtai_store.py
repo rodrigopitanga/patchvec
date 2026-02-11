@@ -131,12 +131,13 @@ class TxtaiStore(BaseStore):
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         import shutil
-        key = (tenant, collection)
-        if key in self._emb:
-            del self._emb[key]
-        p = self._base_path(tenant, collection)
-        if os.path.isdir(p):
-            shutil.rmtree(p)
+        with collection_lock(tenant, collection):
+            key = (tenant, collection)
+            if key in self._emb:
+                del self._emb[key]
+            p = self._base_path(tenant, collection)
+            if os.path.isdir(p):
+                shutil.rmtree(p)
 
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
         cat = self._load_catalog(tenant, collection)
@@ -144,14 +145,14 @@ class TxtaiStore(BaseStore):
         return bool(ids)
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
-        cat = self._load_catalog(tenant, collection)
-        meta = self._load_meta(tenant, collection)
-        ids = cat.get(docid, [])
-        if not ids:
-            return 0
-
         with collection_lock(tenant, collection):
-        # remove only this docid's metadata and sidecars
+            cat = self._load_catalog(tenant, collection)
+            meta = self._load_meta(tenant, collection)
+            ids = cat.get(docid, [])
+            if not ids:
+                return 0
+
+            # remove only this docid's metadata and sidecars
             for urid in ids:
                 meta.pop(urid, None)
                 p = os.path.join(
@@ -182,7 +183,7 @@ class TxtaiStore(BaseStore):
                     pass
 
             self.save(tenant, collection)
-        return len(ids)
+            return len(ids)
 
     def _chunks_dir(self, tenant: str, collection: str) -> str:
         return os.path.join(self._base_path(tenant, collection), "chunks")
@@ -215,14 +216,13 @@ class TxtaiStore(BaseStore):
         dict-records, updates catalog/meta, saves index, and verifies content
         storage via a quick lookup. Thread critical.
         """
-        self.load_or_init(tenant, collection)
-        catalog = self._load_catalog(tenant, collection)
-        meta_side = self._load_meta(tenant, collection)
-        em = self._emb[(tenant, collection)]
-        prepared: list[tuple[str, Any, str]] = []
-        record_ids: list[str] = []
-
         with collection_lock(tenant, collection):
+            self.load_or_init(tenant, collection)
+            catalog = self._load_catalog(tenant, collection)
+            meta_side = self._load_meta(tenant, collection)
+            em = self._emb[(tenant, collection)]
+            prepared: list[tuple[str, Any, str]] = []
+            record_ids: list[str] = []
 
             for r in records:
                 if isinstance(r, dict):
@@ -283,7 +283,7 @@ class TxtaiStore(BaseStore):
             em.upsert(prepared)
             self.save(tenant, collection)
             log.debug(f"PREPARED {len(prepared)} upserts: {prepared}")
-        return len(prepared)
+            return len(prepared)
 
     @staticmethod
     def _matches_filters(m: dict[str, Any],
