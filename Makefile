@@ -80,6 +80,9 @@ help:
 	@echo "  dist-clean      Remove dist/build/caches/artifacts"
 	@echo "  data-clean      Remove local data/indexes"
 	@echo "  clean           Full clean (except deps)"
+	@echo "  benchmark       Run all benchmarks (latency + stress)"
+	@echo "  benchmark-latency  Search latency benchmark"
+	@echo "  benchmark-stress   Concurrent stress test"
 	@echo "  check           Run end-to-end demo inside Docker container"
 	@echo "  release         Bump/tag/push; updates CHANGELOG; optional Docker publish"
 	@echo "  publish-test    Upload to TestPyPI (builds first)"
@@ -429,6 +432,26 @@ check: install
 	fi; \
 	grep -q '"matches":\[\{' .check_search.json || { echo "Empty search results"; exit 1; }; \
 	echo "✅ make check passed."
+
+# -------- benchmarks --------
+BENCH_URL       ?= http://localhost:8086
+BENCH_QUERIES   ?= 100
+BENCH_CONCUR    ?= 10
+STRESS_DURATION ?= 30
+STRESS_CONCUR   ?= 15
+
+.PHONY: benchmark-latency
+benchmark-latency:
+	PYTHONPATH=. $(PYTHON) benchmarks/search_latency.py \
+	  --url $(BENCH_URL) --queries $(BENCH_QUERIES) --concurrency $(BENCH_CONCUR)
+
+.PHONY: benchmark-stress
+benchmark-stress:
+	PYTHONPATH=. $(PYTHON) benchmarks/stress.py \
+	  --url $(BENCH_URL) --duration $(STRESS_DURATION) --concurrency $(STRESS_CONCUR)
+
+.PHONY: benchmark
+benchmark: benchmark-latency benchmark-stress
 
 .PHONY: publish-test publish
 

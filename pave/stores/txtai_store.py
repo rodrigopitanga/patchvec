@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
-import os, json, operator
+import os, json, operator, tempfile
 from datetime import datetime
 from collections.abc import Iterable
 from typing import Any
@@ -65,9 +65,21 @@ class TxtaiStore(BaseStore):
         return {}
 
     def _save_json(self, path: str, data):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
+        d = os.path.dirname(path)
+        os.makedirs(d, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def _load_catalog(self, tenant: str, collection: str) -> dict[str, list[str]]:
         return self._load_json(self._catalog_path(tenant, collection))
