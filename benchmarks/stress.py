@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
 Stress test for PatchVec.
@@ -8,17 +8,15 @@ Usage:
     python benchmarks/stress.py [--url URL] [--duration SECS] [--concurrency C]
 
 Fires random concurrent operations (collection create/delete, document
-ingest/delete, search, archive download/restore) and reports per-operation
-latency percentiles plus error rates.
+ingest/delete, search, health checks, archive download/restore) and reports
+per-operation latency percentiles plus error rates.
 """
 
 import argparse
 import asyncio
-import io
 import random
 import string
 import time
-import zipfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -313,6 +311,58 @@ async def op_archive_download(client: httpx.AsyncClient, world: World, stats: St
         stats.record(OpResult("archive_download", lat, False, str(e)))
 
 
+async def op_health(client: httpx.AsyncClient, world: World, stats: Stats):
+    """GET /health — triggers .writetest write+delete and metrics inc."""
+    t0 = time.perf_counter()
+    try:
+        r = await client.get("/health")
+        lat = (time.perf_counter() - t0) * 1000
+        r.raise_for_status()
+        stats.record(OpResult("health", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("health", lat, False, str(e)))
+
+
+async def op_health_ready(client: httpx.AsyncClient, world: World, stats: Stats):
+    """GET /health/ready — same .writetest race plus vector backend init."""
+    t0 = time.perf_counter()
+    try:
+        r = await client.get("/health/ready")
+        lat = (time.perf_counter() - t0) * 1000
+        # 503 is valid (degraded), only network errors are failures
+        stats.record(OpResult("health_ready", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("health_ready", lat, False, str(e)))
+
+
+async def op_health_live(client: httpx.AsyncClient, world: World, stats: Stats):
+    """GET /health/live — no I/O, but still triggers metrics inc+save."""
+    t0 = time.perf_counter()
+    try:
+        r = await client.get("/health/live")
+        lat = (time.perf_counter() - t0) * 1000
+        r.raise_for_status()
+        stats.record(OpResult("health_live", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("health_live", lat, False, str(e)))
+
+
+async def op_health_metrics(client: httpx.AsyncClient, world: World, stats: Stats):
+    """GET /health/metrics — reads counters+latencies, triggers metrics save."""
+    t0 = time.perf_counter()
+    try:
+        r = await client.get("/health/metrics")
+        lat = (time.perf_counter() - t0) * 1000
+        r.raise_for_status()
+        stats.record(OpResult("health_metrics", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("health_metrics", lat, False, str(e)))
+
+
 async def op_archive_restore(client: httpx.AsyncClient, world: World, stats: Stats):
     # First download an archive, then restore it
     try:
@@ -347,6 +397,10 @@ OPERATIONS = [
     (op_create_collection,   10),  # create collections
     (op_delete_collection,    5),  # delete collections less often
     (op_delete_document,      8),  # purge individual docs
+    (op_health,              10),  # health check (.writetest + metrics race)
+    (op_health_ready,         6),  # readiness (.writetest + vector init)
+    (op_health_live,          8),  # liveness (metrics save race only)
+    (op_health_metrics,       6),  # metrics snapshot (counter + latency reads)
     (op_archive_download,     5),  # archive downloads
     (op_archive_restore,      4),  # archive restores (heaviest)
 ]
