@@ -1,7 +1,7 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import json
+import json, os
 from pave.main import VERSION
 from pave import metrics
 
@@ -89,9 +89,28 @@ def test_percentile_calculation():
     assert pcts["p95"] >= 90.0
     assert pcts["p99"] >= 95.0
 
+def test_metrics_coalesce_and_flush(tmp_path):
+    """inc/record_latency mark dirty; flush writes once; no .tmp debris."""
+    metrics.set_data_dir(str(tmp_path))
+    metrics.reset()
+    path = tmp_path / "metrics.json"
+    if path.exists():
+        path.unlink()
+    # mutations should NOT write immediately
+    metrics.inc("search_total", 1)
+    metrics.record_latency("search", 7.5)
+    assert not path.exists(), "save should be deferred, not immediate"
+    # flush writes
+    metrics.flush()
+    assert path.exists()
+    data = json.loads(path.read_text())
+    assert data["counters"]["search_total"] == 1.0
+    assert 7.5 in data["latencies"]["search"]
+    # no leftover .tmp files
+    assert not any(f.endswith(".tmp") for f in os.listdir(tmp_path))
+
 def test_metrics_persistence(tmp_path):
     """Metrics should persist to disk and reload."""
-    import os
     # Set up a temp data dir
     metrics.set_data_dir(str(tmp_path))
     # Reset to clean state
@@ -100,6 +119,7 @@ def test_metrics_persistence(tmp_path):
     metrics.inc("search_total", 5)
     metrics.inc("documents_indexed_total", 3)
     metrics.record_latency("search", 42.5)
+    metrics.flush()
     # Verify file exists
     path = tmp_path / "metrics.json"
     assert path.exists()

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json, os, logging, shutil
+from contextlib import asynccontextmanager
 import uvicorn
 
 from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, \
@@ -18,7 +19,8 @@ from pave.config import get_cfg, get_logger
 from pave.auth import AuthContext, auth_ctx, authorize_tenant, \
     enforce_policy, resolve_bind
 from pave.metrics import inc, set_error, snapshot, to_prometheus, \
-    reset as metrics_reset, set_data_dir as metrics_set_data_dir
+    reset as metrics_reset, set_data_dir as metrics_set_data_dir, \
+    flush as metrics_flush
 from pave.stores.factory import get_store
 from pave.stores.base import BaseStore
 from pave.service import \
@@ -41,9 +43,16 @@ class SearchBody(BaseModel):
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        metrics_flush()
+
     app = FastAPI(
         title=cfg.get("instance.name","Patchvec"),
-        description=cfg.get("instance.desc","Vector Search Microservice")
+        description=cfg.get("instance.desc","Vector Search Microservice"),
+        lifespan=lifespan,
     )
     app.state.store = get_store(cfg)
     app.state.cfg = cfg

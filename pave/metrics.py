@@ -1,7 +1,7 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
-import json, os, time, threading
+import json, os, tempfile, time, threading
 from collections import deque
 from contextlib import contextmanager
 from typing import Any
@@ -9,6 +9,7 @@ from typing import Any
 _started = time.time()
 _lock = threading.Lock()
 _data_dir: str | None = None
+_dirty = False
 _METRICS_FILE = "metrics.json"
 
 _counters: dict[str, float] = {
@@ -68,22 +69,41 @@ def load() -> None:
         pass  # ignore load errors, start fresh
 
 def save() -> None:
-    """Persist metrics to disk."""
+    """Persist metrics to disk (atomic write via temp file + rename)."""
+    global _dirty
     path = _metrics_path()
     if not path:
         return
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        d = os.path.dirname(path)
+        os.makedirs(d, exist_ok=True)
         with _lock:
             data = {
                 "counters": dict(_counters),
                 "last_error": _last_error,
                 "latencies": {op: list(samples) for op, samples in _latencies.items()},
             }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
+            _dirty = False
+        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     except Exception:
         pass  # ignore save errors
+
+def flush() -> None:
+    """Persist metrics only if changed since last save."""
+    if _dirty:
+        save()
 
 def reset() -> dict[str, Any]:
     """Reset all metrics to initial state and persist."""
@@ -98,24 +118,26 @@ def reset() -> dict[str, Any]:
     return {"ok": True, "reset_at": time.time()}
 
 def inc(name: str, value: float = 1.0):
+    global _dirty
     with _lock:
         _counters[name] = _counters.get(name, 0.0) + value
-    save()
+        _dirty = True
 
 def set_error(msg: str):
-    global _last_error
+    global _last_error, _dirty
     with _lock:
         _last_error = msg
         _counters["errors_total"] = _counters.get("errors_total", 0.0) + 1.0
-    save()
+        _dirty = True
 
 def record_latency(op: str, duration_ms: float):
     """Record a latency sample for an operation type (search, ingest)."""
+    global _dirty
     with _lock:
         if op not in _latencies:
             _latencies[op] = deque(maxlen=_LATENCY_WINDOW)
         _latencies[op].append(duration_ms)
-    save()
+        _dirty = True
 
 @contextmanager
 def timed(op: str):
