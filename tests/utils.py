@@ -9,7 +9,7 @@ from pave.config import get_cfg
 
 class FakeEmbeddings:
     """Tiny in-memory index. Keeps interface you use in tests."""
-    def __init__(self, config):  # config unused
+    def __init__(self, config, **kwargs):  # config/kwargs unused
         self._docs = {}  # rid -> {"text": str, "meta_json": str, "meta": dict}
         self.last_sql = None
 

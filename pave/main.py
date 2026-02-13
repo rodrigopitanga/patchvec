@@ -44,8 +44,17 @@ class SearchBody(BaseModel):
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
 
+    log = get_logger()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Eagerly load the sentence-transformer model so the first
+        # request doesn't pay the cold-start penalty.
+        try:
+            app.state.store.load_or_init("_system", "health")
+            log.info("Embedding model warm-up complete")
+        except Exception as e:
+            log.warning("Embedding model warm-up failed: %s", e)
         yield
         metrics_flush()
 
