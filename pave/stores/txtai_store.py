@@ -45,6 +45,7 @@ class TxtaiStore(BaseStore):
 
     def __init__(self):
         self._emb: dict[tuple[str, str], Embeddings] = {}
+        self._models: dict = {}  # shared model cache across all Embeddings instances
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(c.get("data_dir"), f"t_{tenant}", f"c_{collection}")
@@ -118,7 +119,7 @@ class TxtaiStore(BaseStore):
         base = self._base_path(tenant, collection)
         os.makedirs(base, exist_ok=True)
 
-        em = Embeddings(self._config())
+        em = Embeddings(self._config(), models=self._models)
         idxpath = os.path.join(base, "index")
         # consider (existing) index valid only if embeddings file exists
         embeddings_file = os.path.join(idxpath, "embeddings")
@@ -128,7 +129,7 @@ class TxtaiStore(BaseStore):
                 em.load(idxpath)
             except Exception:
                 # broken index -> start clean
-                em = Embeddings(self._config())
+                em = Embeddings(self._config(), models=self._models)
 
         self._emb[key] = em
 
