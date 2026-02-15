@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import os, json, shutil
-from typing import Iterable, Dict, Any, List, Tuple
+from collections.abc import Iterable
+from typing import Any
 from pave.stores.base import BaseStore, Record
 from pave.config import get_cfg
 
@@ -150,7 +151,7 @@ class DummyStore(BaseStore):
             data = json.load(open(cat, "r", encoding="utf-8"))
         except Exception:
             data = {}
-        ids: List[str] = []
+        ids: list[str] = []
         for i, (rid, _, _) in enumerate(records):
             ids.append(rid or f"{docid}-{i}")
         data.setdefault(docid, []).extend(ids)
@@ -159,12 +160,12 @@ class DummyStore(BaseStore):
         return len(ids)
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
-               filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+               filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         if not os.path.isfile(cat):
             return []
         data = json.load(open(cat, "r", encoding="utf-8"))
-        hits: List[Dict[str, Any]] = []
+        hits: list[dict[str, Any]] = []
         for docid, ids in data.items():
             for cid in ids[:k]:
                 hits.append({"id": cid, "score": 1.0, "meta": {"docid": docid}})
@@ -174,7 +175,7 @@ class DummyStore(BaseStore):
 class SpyStore(BaseStore):
     def __init__(self, impl: BaseStore):
         self.impl = impl
-        self.calls: List[Tuple] = []
+        self.calls: list[tuple] = []
 
     def load_or_init(self, tenant: str, collection: str) -> None:
         self.calls.append(("load_or_init", tenant, collection))
@@ -201,6 +202,6 @@ class SpyStore(BaseStore):
         self.calls.append(("index_records", tenant, collection, docid, len(recs)))
         return self.impl.index_records(tenant, collection, docid, recs)
 
-    def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+    def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.calls.append(("search", tenant, collection, text, k, filters))
         return self.impl.search(tenant, collection, text, k, filters)

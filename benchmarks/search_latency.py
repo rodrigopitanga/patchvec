@@ -9,12 +9,12 @@ Usage:
 
 Indexes sample data, fires concurrent searches, and reports latency percentiles.
 """
+from __future__ import annotations
 
 import argparse
 import asyncio
 import statistics
 import time
-from typing import List
 
 try:
     import httpx
@@ -48,7 +48,7 @@ QUERIES = [
 ]
 
 
-def percentile(data: List[float], p: float) -> float:
+def percentile(data: list[float], p: float) -> float:
     if not data:
         return 0.0
     sorted_data = sorted(data)
@@ -91,7 +91,7 @@ async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
         print(f"Indexed {len(SAMPLE_DOCS)} documents.")
 
         print(f"Running {num_queries} queries with concurrency={concurrency}...")
-        latencies: List[float] = []
+        latencies: list[float] = []
         semaphore = asyncio.Semaphore(concurrency)
 
         async def bounded_search(query: str) -> float:

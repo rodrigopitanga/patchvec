@@ -11,6 +11,7 @@ Fires random concurrent operations (collection create/delete, document
 ingest/delete, search, health checks, archive download/restore) and reports
 per-operation latency percentiles plus error rates.
 """
+from __future__ import annotations
 
 import argparse
 import asyncio
@@ -19,7 +20,6 @@ import string
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 try:
     import httpx
@@ -90,13 +90,13 @@ class OpResult:
 
 @dataclass
 class Stats:
-    results: List[OpResult] = field(default_factory=list)
+    results: list[OpResult] = field(default_factory=list)
 
     def record(self, r: OpResult):
         self.results.append(r)
 
     def summary(self) -> Dict:
-        by_op: Dict[str, List[OpResult]] = defaultdict(list)
+        by_op: dict[str, list[OpResult]] = defaultdict(list)
         for r in self.results:
             by_op[r.op].append(r)
 
@@ -119,7 +119,7 @@ class Stats:
         return out
 
 
-def _percentile(sorted_data: List[float], p: float) -> float:
+def _percentile(sorted_data: list[float], p: float) -> float:
     if not sorted_data:
         return 0.0
     k = (len(sorted_data) - 1) * p / 100
@@ -136,7 +136,7 @@ class World:
     """Tracks live collections and documents so workers pick valid targets."""
 
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    collections: Dict[str, List[str]] = field(default_factory=dict)
+    collections: dict[str, list[str]] = field(default_factory=dict)
     # collections[name] -> list of docids
 
     async def add_collection(self, name: str):
@@ -152,13 +152,13 @@ class World:
             if collection in self.collections:
                 self.collections[collection].append(docid)
 
-    async def pick_collection(self) -> Optional[str]:
+    async def pick_collection(self) -> str | None:
         async with self.lock:
             if not self.collections:
                 return None
             return random.choice(list(self.collections.keys()))
 
-    async def pick_doc(self) -> Optional[tuple]:
+    async def pick_doc(self) -> tuple | None:
         async with self.lock:
             candidates = [
                 (c, d)
@@ -177,7 +177,7 @@ class World:
                 except ValueError:
                     pass
 
-    async def snapshot_collections(self) -> List[str]:
+    async def snapshot_collections(self) -> list[str]:
         async with self.lock:
             return list(self.collections.keys())
 

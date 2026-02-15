@@ -128,7 +128,8 @@ class TxtaiStore(BaseStore):
             try:
                 em.load(idxpath)
             except Exception:
-                # broken index -> start clean
+                log.warning("Corrupt or unreadable index at %s for %s/%s, starting fresh",
+                            idxpath, tenant, collection)
                 em = Embeddings(self._config(), models=self._models)
 
         self._emb[key] = em
