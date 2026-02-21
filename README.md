@@ -17,10 +17,10 @@ Patchvec is a compact vector store built for people who want provenance and fast
 
 ### 🐳 Docker workflow (prebuilt images)
 
-Pull the image that fits your hardware from the [https://gitlab.com/flowlexi](Flowlexi) Container Registry on Gitlab (CUDA builds publish as `latest`, CPU-only as `latest-cpu`).
+Pull the image that fits your hardware from the [https://gitlab.com/flowlexi](Flowlexi) Container Registry on Gitlab (CUDA builds publish as `latest-gpu`, CPU-only as `latest-cpu`).
 
 ```bash
-docker pull registry.gitlab.com/flowlexi/patchvec/patchvec:latest
+docker pull registry.gitlab.com/flowlexi/patchvec/patchvec:latest-gpu
 docker pull registry.gitlab.com/flowlexi/patchvec/patchvec:latest-cpu
 ```
 
