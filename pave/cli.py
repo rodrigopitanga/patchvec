@@ -10,6 +10,7 @@ from pave.service import (
     create_data_archive as svc_dump_archive,
     restore_data_archive as svc_restore_archive,
     delete_collection as svc_delete_collection,
+    rename_collection as svc_rename_collection,
     delete_document as svc_delete_document,
     ingest_document as svc_ingest_document,
     do_search as svc_do_search,
@@ -53,6 +54,10 @@ def cmd_search(args):
 
 def cmd_delete(args):
     out = svc_delete_collection(store, args.tenant, args.collection)
+    print(json.dumps(out, ensure_ascii=False))
+
+def cmd_rename(args):
+    out = svc_rename_collection(store, args.tenant, args.old_name, args.new_name)
     print(json.dumps(out, ensure_ascii=False))
 
 def cmd_delete_document(args):
@@ -131,6 +136,12 @@ def main_cli(argv=None):
     p_delete.add_argument("tenant")
     p_delete.add_argument("collection")
     p_delete.set_defaults(func=cmd_delete)
+
+    p_rename = sub.add_parser("rename-collection")
+    p_rename.add_argument("tenant")
+    p_rename.add_argument("old_name")
+    p_rename.add_argument("new_name")
+    p_rename.set_defaults(func=cmd_rename)
 
     p_delete_doc = sub.add_parser("delete-document")
     p_delete_doc.add_argument("tenant")

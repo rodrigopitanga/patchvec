@@ -28,6 +28,7 @@ from pave.service import \
     create_data_archive as svc_create_data_archive, \
     restore_data_archive as svc_restore_data_archive, \
     delete_collection as svc_delete_collection, \
+    rename_collection as svc_rename_collection, \
     delete_document as svc_delete_document, \
     ingest_document as svc_ingest_document, \
     do_search as svc_do_search
@@ -40,6 +41,9 @@ class SearchBody(BaseModel):
     k: int = 5
     filters: dict[str, Any] | None = None
     request_id: str | None = None
+
+class RenameCollectionBody(BaseModel):
+    new_name: str
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
@@ -239,6 +243,20 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     ):
         inc("requests_total")
         return svc_delete_collection(store, tenant, name)
+
+    @app.put("/collections/{tenant}/{name}")
+    def rename_collection_route(
+        tenant: str,
+        name: str,
+        body: RenameCollectionBody,
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_rename_collection(store, tenant, name, body.new_name)
+        if not result.get("ok"):
+            raise HTTPException(status_code=400, detail=result.get("error", "rename failed"))
+        return result
 
     @app.post("/collections/{tenant}/{collection}/documents")
     async def upload_document(

@@ -123,6 +123,17 @@ class DummyStore(BaseStore):
     def delete_collection(self, tenant: str, collection: str) -> None:
         shutil.rmtree(self._dir(tenant, collection), ignore_errors=True)
 
+    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+        if old_name == new_name:
+            raise ValueError(f"old and new collection names are the same: {old_name}")
+        old_path = self._dir(tenant, old_name)
+        new_path = self._dir(tenant, new_name)
+        if not os.path.isdir(old_path):
+            raise ValueError(f"collection '{old_name}' does not exist")
+        if os.path.exists(new_path):
+            raise ValueError(f"collection '{new_name}' already exists")
+        os.rename(old_path, new_path)
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         try:
@@ -188,6 +199,10 @@ class SpyStore(BaseStore):
     def delete_collection(self, tenant: str, collection: str) -> None:
         self.calls.append(("delete_collection", tenant, collection))
         return self.impl.delete_collection(tenant, collection)
+
+    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+        self.calls.append(("rename_collection", tenant, old_name, new_name))
+        return self.impl.rename_collection(tenant, old_name, new_name)
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         self.calls.append(("purge_doc", tenant, collection, docid))

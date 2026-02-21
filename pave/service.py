@@ -45,6 +45,19 @@ def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
         "deleted": name
     }
 
+def rename_collection(store, tenant: str, old_name: str, new_name: str) -> dict[str, Any]:
+    try:
+        store.rename_collection(tenant, old_name, new_name)
+        m_inc("collections_renamed_total", 1.0)
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "old_name": old_name,
+            "new_name": new_name
+        }
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
 def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str, Any]:
     if not store.has_doc(tenant, collection, docid):
         return {

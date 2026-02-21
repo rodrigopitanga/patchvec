@@ -20,6 +20,11 @@ class BaseStore(ABC):
     def delete_collection(self, tenant: str, collection: str) -> None: ...
 
     @abstractmethod
+    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+        """Rename a collection. Raises ValueError if old doesn't exist or new already exists."""
+        ...
+
+    @abstractmethod
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool: ...
 
     @abstractmethod

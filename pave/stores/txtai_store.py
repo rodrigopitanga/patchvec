@@ -158,6 +158,38 @@ class TxtaiStore(BaseStore):
             if os.path.isdir(p):
                 shutil.rmtree(p)
 
+    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+        if old_name == new_name:
+            raise ValueError(f"old and new collection names are the same: {old_name}")
+
+        old_key = (tenant, old_name)
+        new_key = (tenant, new_name)
+        old_path = self._base_path(tenant, old_name)
+        new_path = self._base_path(tenant, new_name)
+
+        # Acquire locks in sorted order to prevent deadlock
+        lock_old = get_lock(f"t_{tenant}:c_{old_name}")
+        lock_new = get_lock(f"t_{tenant}:c_{new_name}")
+        locks = sorted([lock_old, lock_new], key=id)
+        locks[0].acquire()
+        locks[1].acquire()
+        try:
+            # Pre-checks
+            if not os.path.isdir(old_path):
+                raise ValueError(f"collection '{old_name}' does not exist")
+            if os.path.exists(new_path):
+                raise ValueError(f"collection '{new_name}' already exists")
+
+            # Atomic directory rename
+            os.rename(old_path, new_path)
+
+            # Update in-memory cache
+            if old_key in self._emb:
+                self._emb[new_key] = self._emb.pop(old_key)
+        finally:
+            locks[1].release()
+            locks[0].release()
+
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
         cat = self._load_catalog(tenant, collection)
         ids = cat.get(docid)

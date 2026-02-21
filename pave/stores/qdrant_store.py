@@ -17,6 +17,9 @@ class QdrantStore(BaseStore):
     def delete_collection(self, tenant: str, collection: str) -> None:
         raise NotImplementedError("to be implemented")
 
+    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+        raise NotImplementedError("to be implemented")
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         raise NotImplementedError("to be implemented")
 
