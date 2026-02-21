@@ -1,7 +1,68 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
-# Changelog
+## 0.5.7 — 2026-02-21
+
+### Store
+- Ensure CRLF-rich documents round-trip intact
+- Sanitize txtai metadata persistence (closes #3)
+- Prevent infinite recursion with deeply nested collections
+- Push !-prefixed filters into SQL pre-filter instead of post-filter, reducing...
+- Change default embedding model to multilingual and add multilingual cross lan...
+- Build a match_reason as part of the search return contract
+- Fixed race condition in get_lock() with double-checked locking pattern using...
+- Replace eval() with operator module in filter matching
+- Replace assert with runtime check in index_records
+- Fix collection_lock usage across all TxtaiStore methods
+- [fix] Disable meta-device loading so that Pooling.to() works on PyTorch>=2.6...
+
+### Documentation
+- Refresh workflows and roadmap
+- Revise roadmap based on technical evaluation
+- [test] Document and test the live-data-update path (purge + ingest)
+- Added benchmark suite documentation
+- Update short description (ABOUT.md) to reflect recent workflow changes
+
+### Build
+- Push torch cpu requirement to 2.8+
+- Add cpu/gpu extras with proper torch wheel selection and python version. Clos...
+- Fix assets package and license definitions in setup.py
+- Consolidate deps into setup.py, single source of truth
+
+### Core
+- Add feature to dump entire datastore as .zip file (api and cli)
+- Add feature to push/restore data archive from zip backup (api and cli)
+- [metrics] Persist metric across app resets and add metrics reset cli utility...
+- Pretty terminal logging with colors and level-based filtering
+
+### API
+- Add latency histograms (p50/p95/p99)** on  for search and ingest
+- Structured request logging with request_id, added latency and request_id to s...
+- [cli] Add delete document by ID endpoint and command
+
+### Performance
+- Add concurrent stress test exercising all supported API operations
+- Eagerly load embedding model at server startup
+
+### Bug Fixes
+- Atomic writes, coalesced metrics flush, Makefile benchmark targets
+
+### Config
+- Implement initial/decent multilevel logging support
+
+### Infrastructure
+- Add benchmarks/ directory with search latency load test
+
+### Packaging
+- Revamp the automated changelog generation script
+
+### Chores
+- Update ROADMAP.md
+- Update to Python 3.10+ type hint syntax
+- Update copyright notices to 2026, add missing copyright headers
+- Use Python 3.10+ typing syntax; warn on corrupt index
+- Small fix in README.md to make docs consistent with docker image naming scheme
+- Update project urls
 
 ---
 ## 0.5.6 — 2025-10-29
