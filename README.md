@@ -151,7 +151,7 @@ curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
 
 ### 🛠️ Developer workflow
 
-Building from source relies on the `Makefile` shortcuts (`make install-dev`, `USE_CPU=1 make serve`, `make test`, etc.). The full contributor workflow, target reference, and task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md).
+Building from source relies on the `Makefile` shortcuts (`make install-dev`, `USE_CPU=1 make serve`, `make test`, etc.). The full contributor workflow, target reference, and task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks are documented in [README-benchmarks.md](README-benchmarks.md).
 
 ## 🗺️ Roadmap
 
