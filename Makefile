@@ -83,6 +83,8 @@ help:
 	@echo "  benchmark-latency  Search latency benchmark"
 	@echo "  benchmark-stress   Concurrent stress test"
 	@echo "  check           Run end-to-end demo inside Docker container"
+	@echo "  changelog       Preview changelog entry for VERSION (no write)"
+	@echo "  changelog-write Update CHANGELOG.md for VERSION and print new entry"
 	@echo "  release         Bump/tag/push; updates CHANGELOG; optional Docker publish"
 	@echo "  publish-test    Upload to TestPyPI (builds first)"
 	@echo "  publish         Upload to PyPI (builds first)"
@@ -299,7 +301,7 @@ release:
 	  echo "Bumping to $(VERSION) via 'make bump'..."; \
 	  $(MAKE) bump VERSION=$(VERSION); \
 	fi; \
-	$(PYTHON_BIN) scripts/update_changelog.py $(VERSION) || { echo "Changelog generation failed"; exit 1; }; \
+	$(MAKE) changelog-write VERSION=$(VERSION) || { echo "Changelog generation failed"; exit 1; }; \
 	git add CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
 	echo "Running tests..."; \
 	$(MAKE) test || { echo "Tests failed."; revert_changes; exit 1; }; \
@@ -315,6 +317,22 @@ release:
 	  $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)"; \
 	fi; \
 	echo "✅ Release v$(VERSION) done."
+
+# -------- changelog --------
+.PHONY: changelog
+changelog:
+	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected (setup.py). Set VERSION=x.y.z if needed."; exit 1; fi
+	@TMPFILE=$$(mktemp); \
+	cp CHANGELOG.md $$TMPFILE; \
+	CHANGELOG_SILENT=1 CHANGELOG_PATH=$$TMPFILE $(PYTHON_BIN) scripts/update_changelog.py $(VERSION); \
+	awk 'BEGIN{p=0} /^## /{p=1} p{print} /^---/{exit}' $$TMPFILE; \
+	rm -f $$TMPFILE
+
+.PHONY: changelog-write
+changelog-write:
+	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected (setup.py). Set VERSION=x.y.z if needed."; exit 1; fi
+	@$(PYTHON_BIN) scripts/update_changelog.py $(VERSION)
+	@awk 'BEGIN{p=0} /^## /{p=1} p{print} /^---/{exit}' CHANGELOG.md
 
 # ------------------- E2E CHECK (dockerized) -------------------
 # Build+run container, create collection, ingest 20k leagues, search, stop.
