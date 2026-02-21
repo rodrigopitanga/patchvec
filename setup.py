@@ -73,8 +73,8 @@ setup(
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     ],
     project_urls={
-        "Homepage": "https://gitlab.com/flowlexi/patchvec",
-        "Source": "https://gitlab.com/flowlexi/patchvec",
-        "Tracker": "https://gitlab.com/flowlexi/patchvec/issues",
+        "Homepage": "https://github.com/rodrigopitanga/patchvec/?tab=readme-ov-file#readme-ov-file",
+        "Source": "https://github.com/rodrigopitanga/patchvec",
+        "Tracker": "https://github.com/rodrigopitanga/patchvec/issues",
     },
 )
