@@ -1,10 +1,9 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# requirements-cpu.txt — CPU-only installation (source installs)
+# requirements-cpu.txt — CPU-only source install
+# Wraps setup.py[cpu] with the PyTorch CPU wheel index.
 # Usage: pip install -r requirements-cpu.txt
 --index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://pypi.org/simple
-torch>=2.10.0
-faiss-cpu
--r requirements-base.txt
+.[cpu]

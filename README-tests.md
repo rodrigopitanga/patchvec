@@ -9,5 +9,5 @@ vvv# PatchVec test suite (minimal per spec)
 - No source-code changes; tests only tweak `CFG._data`
 
 ## Run
-pip install -r requirements-test.txt
+pip install ".[test]"
 pytest -q

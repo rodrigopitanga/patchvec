@@ -22,26 +22,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# copy packaging metadata + requirements early for good Docker caching
+# copy packaging metadata early for good Docker layer caching
 COPY setup.py /app/
 COPY pave.toml /app/
-COPY requirements.txt /app/requirements.txt
-COPY requirements-cpu.txt /app/requirements-cpu.txt
-COPY requirements-base.txt /app/requirements-base.txt
+COPY requirements-cpu.txt /app/
 
-# Use pip cache mount so downloads/wheels persist across builds
+# create a dummy package so setup.py can resolve deps without full source
+RUN mkdir -p /app/pave && touch /app/pave/__init__.py
+
+# install deps only (cached until setup.py changes)
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ "${USE_CPU}" = "1" ] || [ "${USE_CPU}" = "true" ] ; then \
-      echo "=== Installing CPU deps ==="; \
-      pip install --progress-bar=off -r /app/requirements-cpu.txt ; \
+      echo "=== Installing CPU deps ===" ; \
+      pip install --progress-bar=off -r requirements-cpu.txt ; \
     else \
-      echo "=== Installing GPU deps ==="; \
-      pip install --progress-bar=off -r /app/requirements.txt ; \
+      echo "=== Installing GPU deps ===" ; \
+      pip install --progress-bar=off . ; \
     fi
 
-# now copy package source and install package into site-packages so `import pave` works
+# now copy real source and reinstall (deps already satisfied, fast)
 COPY pave /app/pave
-RUN pip install --no-cache-dir --progress-bar=off /app
+RUN pip install --no-cache-dir --no-deps --progress-bar=off /app
 
 # Write build id file and label the image. Use ${BUILD_ID} expansion.
 RUN printf "%s\n" "${BUILD_ID}" > /app/BUILD_ID

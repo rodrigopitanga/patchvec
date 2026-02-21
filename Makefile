@@ -1,10 +1,11 @@
 # Patchvec — Makefile
 #
 # Basic usage:
-#   make install            # default: GPU deps (requirements.txt)
-#   make install USE_CPU=1  # override: CPU-only deps (requirements-cpu.txt)
+#   make install            # default: base deps
+#   make install USE_CPU=1  # override: CPU-only deps (requirements-cpu.txt → setup.py[cpu])
 #
-# GPU by default. Set USE_CPU=1 to install CPU deps instead.
+# Base deps by default. Set USE_CPU=1 to install CPU deps instead.
+# All dependency versions live in setup.py (single source of truth).
 
 PKG_NAME        := patchvec
 PKG_ICON	:= 🍰
@@ -32,8 +33,6 @@ LOG_LEVEL       ?= debug
 # Requirements flavor (gpu default)
 USE_CPU ?= 0
 REQ_MAIN_CPU    ?= requirements-cpu.txt
-REQ_MAIN_GPU    ?= requirements.txt
-REQ_TEST        ?= requirements-test.txt
 
 # Version helpers - setup.py source of truth
 VERSION         ?= $(shell sed -n 's/^ *version="\([^"]*\)".*/\1/p' setup.py | head -1)
@@ -106,8 +105,8 @@ define install_main
 	  echo "Installing CPU deps from $(REQ_MAIN_CPU)"; \
 	  $(PIP_BIN) install -q -r $(REQ_MAIN_CPU); \
 	else \
-	  echo "Installing GPU deps from $(REQ_MAIN_GPU)"; \
-	  $(PIP_BIN) install -q -r $(REQ_MAIN_GPU); \
+	  echo "Installing base deps (setup.py)"; \
+	  $(PIP_BIN) install -q .; \
 	fi
 endef
 
@@ -118,7 +117,7 @@ install: venv
 
 .PHONY: install-dev
 install-dev: install
-	@if [ -f "$(REQ_TEST)" ]; then $(PIP_BIN) install -q -r $(REQ_TEST); else $(PIP_BIN) install -q pytest httpx; fi
+	$(PIP_BIN) install -q ".[test]"
 	@echo "✅ Dev/test deps installed."
 
 # -------- test / serve / cli --------

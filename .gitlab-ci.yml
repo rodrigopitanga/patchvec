@@ -30,7 +30,8 @@ pytest:
   stage: test
   script:
     - python -m pip install --upgrade pip -q
-    - pip install -r requirements-test.txt -q
+    - pip install -r requirements-cpu.txt -q
+    - pip install ".[test]" -q
     - pytest -q
   artifacts:
     when: always

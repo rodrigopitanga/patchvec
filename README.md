@@ -60,7 +60,7 @@ mkdir -p ~/pv && cd ~/pv #or wherever
 python -m venv .venv-pv
 source .venv-pv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "patchvec[cpu]"   # or "patchvec[gpu]" for CUDA
+pip install "patchvec[cpu]"
 
 # grab the default configs
 curl -LO https://raw.githubusercontent.com/patchvec/patchvec/main/config.yml.example
@@ -83,6 +83,16 @@ pavecli create-collection demo books
 pavecli upload demo books 20k_leagues.txt --docid=verne-20k --metadata='{"lang":"en"}'
 pavecli search demo books "captain nemo" -k 3
 ```
+
+> **CPU-only deployments:** The command above pulls the default PyTorch wheel
+> from PyPI, which includes CUDA support (~2 GB). For a leaner, CPU-only torch
+> install, point pip at the PyTorch CPU index:
+>
+> ```bash
+> pip install "patchvec[cpu]" \
+>   --index-url https://download.pytorch.org/whl/cpu \
+>   --extra-index-url https://pypi.org/simple
+> ```
 
 Deactivate the virtual environment with `deactivate` when finished.
 
