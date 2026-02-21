@@ -108,7 +108,12 @@ class TxtaiStore(BaseStore):
             "backend": backend,
             "content": True,
             "store": True,
-            "dynamic": True
+            "dynamic": True,
+            # Disable meta-device loading so that Pooling.to(device) works
+            # on newer PyTorch (>=2.6) where copying out of meta tensors is
+            # forbidden.  The kwarg is forwarded through HFVectors → modelargs
+            # → AutoModel.from_pretrained(…, low_cpu_mem_usage=False).
+            "vectors": {"low_cpu_mem_usage": False},
         }
 
     def load_or_init(self, tenant: str, collection: str) -> None:
