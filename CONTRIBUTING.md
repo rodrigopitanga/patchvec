@@ -34,19 +34,11 @@ Need to inspect behaviour without reloads? After tweaking `config.yml` / `tenant
 
 ## Workflow
 
-1. Fork and clone the repository.
+1. Fork and clone the repository (menu above).
 2. Create a branch named after the task (`feature/tenant-search`, `fix/csv-metadata`, etc.).
 3. Make the change, keep commits scoped, and include tests whenever applicable.
 4. Run `make test` and `make check` or `make package` if you touched deployment or packaging paths.
 5. Open a pull request referencing the issue you claimed.
-
-Use imperative, lowercase commit messages (`docs: clarify docker quickstart`).
-
-## Issues and task claims
-
-- `ROADMAP.md` lists chores that need owners.
-- To claim a task, open an issue titled `claim: <task>` and describe the approach.
-- Good first issues live under the `bite-sized` label. Submit a draft PR within a few days of claiming.
 
 ## Code style
 
@@ -54,6 +46,61 @@ Use imperative, lowercase commit messages (`docs: clarify docker quickstart`).
 - Follow PEP 8 defaults, keep line length ≤ 88 characters, and run `ruff` locally if you have it installed.
 - Do not add framework abstractions unless they solve a concrete problem.
 - Avoid adding dependencies without discussing them in an issue first.
+- Use Python 3.10+ syntax (e.g. `dict` instead of `Dict`)
+
+## Commit messages
+
+Use the `[tag]` prefix format for commits that affect functionality:
+
+```
+[tag] Short imperative description (≤72 chars)
+```
+
+**Style:** One-liners are preferred. For complex commits, skip a line and add a breakdown:
+
+```
+[core] Add collection rename across all layers
+
+- Store: abstract method + TxtaiStore implementation with deadlock-safe locking
+- Service: rename_collection() with error handling
+- API: PUT /collections/{tenant}/{name} endpoint
+- CLI: rename-collection command
+```
+
+**Available tags** (mapped to changelog sections):
+
+| Tag | Changelog Section | Use for |
+|-----|-------------------|---------|
+| `[core]` | Core | Cross-cutting features, service logic layer |
+| `[api]` | API | REST endpoints, request/response schemas |
+| `[cli]` | CLI | Command-line interface changes |
+| `[store]` | Store | Vector store backends, indexing |
+| `[conf]` | Configuration | Configuration management |
+| `[fix]` | Bug Fixes | Bug fixes |
+| `[perf]` | Performance | Optimizations, benchmarks |
+| `[build]` | Build | Build system, dependencies (make, pip) |
+| `[pkg]` | Packaging | PyPI/Docker packaging |
+| `[doc]` | Documentation | README, docstrings, guides |
+| `[test]` | Testing | Test suite changes |
+| `[ui]` | UI | Web UI changes |
+| `[infra]` | Infrastructure | CI/CD, deployment scripts |
+
+**Two tags max**, most relevant first: `[api][cli] Add delete document endpoint`
+
+**Chores** use `chore:` for maintenance that doesn't affect functionality:
+
+```
+chore: update copyright headers
+chore(deps): bump txtai to 8.x
+```
+
+**Changelog:** Only commits starting with `[tag]` or `chore:` are included. Release commits (`chore(release): vX.Y.Z`) are auto-skipped.
+
+## Issues and task claims
+
+- `ROADMAP.md` lists chores that need owners.
+- To claim a task, open an issue titled `claim: <task>` and describe the approach.
+- Good first issues live under the `bite-sized` label. Submit a draft PR within a few days of claiming.
 
 ## Pull request checklist
 
