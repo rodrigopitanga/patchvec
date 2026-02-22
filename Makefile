@@ -58,6 +58,13 @@ endif
 BUILD_VARIANT 	:= $(if $(filter 1,$(USE_CPU)),cpu,gpu)
 BUILD_ID 	?= $(shell date -u +%Y%m%d%H%M%S)-$(shell git rev-parse --short HEAD)-$(BUILD_VARIANT)
 
+# Release CPU mode: build both images unless USE_CPU is explicitly set on command line
+ifeq ($(origin USE_CPU),command line)
+  RELEASE_CPU_MODE := single
+else
+  RELEASE_CPU_MODE := both
+endif
+
 .ONESHELL:
 SHELL := /bin/bash
 
@@ -309,12 +316,26 @@ release:
 	$(MAKE) build || { echo "Build failed."; revert_changes; exit 1; }; \
 	git commit -m "chore(release): v$(VERSION)"; \
 	git tag v$(VERSION); \
-	git push origin HEAD --tags; \
 	$(MAKE) package; \
 	if [ "$(DOCKER_PUBLISH)" = "1" ]; then \
 	  echo "Publishing Docker image(s)..."; \
-	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)"; \
-	  $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)"; \
+	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	    $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	    $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	  else \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
+	    $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
+	  fi; \
+	else \
+	  echo "Building Docker image(s) (no publish)..."; \
+	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	  else \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
+	  fi; \
 	fi; \
 	echo "✅ Release v$(VERSION) done."
 

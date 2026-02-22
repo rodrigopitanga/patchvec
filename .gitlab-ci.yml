@@ -50,7 +50,17 @@ publish-pypi:
     - python -m build
     - twine upload dist/* -u __token__ -p $PYPI_TOKEN
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+
+# GitLab PyPI publish for releases and RCs (single audit trail)
+publish-gitlab-pypi:
+  stage: release
+  script:
+    - python -m pip install --upgrade build twine
+    - python -m build
+    - twine upload --repository-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi" dist/* -u __token__ -p $CI_JOB_TOKEN
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(?:rc\d+)?$/'
 
 # Test PyPI publish for release candidates (e.g. 1.2.3rc1)
 publish-testpypi:
@@ -60,20 +70,10 @@ publish-testpypi:
     - python -m build
     - twine upload --repository testpypi dist/* -u __token__ -p $TEST_PYPI_TOKEN
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+rc\d+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+rc\d+$/'
 
 # SSH deploy for testing environment (for RCs only)
-deploy-testing:
-  stage: release
-  image: alpine:latest
-  before_script:
-    - apk add --no-cache openssh
-  script:
-    - echo "$SSH_TESTING_KEY" > key.pem
-    - chmod 600 key.pem
-    - ssh -i key.pem -o StrictHostKeyChecking=no $SSH_TESTING_USER@$SSH_TESTING_HOST "bash -s" < ./scripts/deploy_testing.sh
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+rc\d+$/'
+# deploy-testing removed (no scripts/deploy_testing.sh in repo)
 
 # Validate service in staging environment (for final releases only)
 check-alive-staging:
@@ -83,7 +83,26 @@ check-alive-staging:
     - echo "🔍 Checking if service is alive on $STAGING_HOST"
     - curl -sf http://$STAGING_HOST/health/live || (echo "❌ Service not live" && exit 1)
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
+
+# Docker publish for final releases (CPU + GPU)
+publish-docker:
+  stage: release
+  image: docker:24.0.9
+  services:
+    - docker:24.0.9-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    - export VERSION="${CI_COMMIT_TAG#v}"
+    - make docker-build VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=0
+    - make docker-push  VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=0
+    - make docker-build VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=1
+    - make docker-push  VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=1
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/'
 
 # Manual deploy to production environment
 deploy-prod:
