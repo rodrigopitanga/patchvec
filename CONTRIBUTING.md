@@ -99,8 +99,10 @@ chore(deps): bump txtai to 8.x
 ## Issues and task claims
 
 - `ROADMAP.md` lists chores that need owners.
-- To claim a task, open an issue titled `claim: <task>` and describe the approach.
-- Good first issues live under the `bite-sized` label. Submit a draft PR within a few days of claiming.
+- To claim a task, open an issue titled `claim: <task ID>` and describe the
+  approach.
+- Good first issues live under the `bite-sized` label. Submit a draft PR
+  within a few days of claiming.
 
 ## Pull request checklist
 

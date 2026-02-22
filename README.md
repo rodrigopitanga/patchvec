@@ -155,7 +155,8 @@ Building from source relies on the `Makefile` shortcuts (`make install-dev`, `US
 
 ## 🗺️ Roadmap
 
-Short & mid-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one, open an issue titled `claim: <task>`, and ship a patch.
+Short & mid-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one,
+open an issue titled `claim: <task ID>`, and ship a patch.
 
 ## 📜 License
 
