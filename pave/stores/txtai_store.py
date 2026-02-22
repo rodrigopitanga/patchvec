@@ -190,6 +190,40 @@ class TxtaiStore(BaseStore):
             locks[1].release()
             locks[0].release()
 
+    def list_collections(self, tenant: str) -> list[str]:
+        tenant_path = os.path.join(c.get("data_dir"), f"t_{tenant}")
+        if not os.path.isdir(tenant_path):
+            return []
+        collections: list[str] = []
+        for entry in os.listdir(tenant_path):
+            if not entry.startswith("c_"):
+                continue
+            collection = entry[2:]
+            if not collection:
+                continue
+            # Check for catalog.json existence (data layer, not just directory)
+            catalog_path = os.path.join(tenant_path, entry, "catalog.json")
+            if os.path.isfile(catalog_path):
+                collections.append(collection)
+        return collections
+
+    def list_tenants(self, data_dir: str) -> list[str]:
+        from pathlib import Path
+        data_dir_path = Path(data_dir).resolve()
+        if not data_dir_path.is_dir():
+            return []
+        tenants: list[str] = []
+        for entry in data_dir_path.iterdir():
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if not name.startswith("t_"):
+                continue
+            tenant = name[2:]
+            if tenant:
+                tenants.append(tenant)
+        return tenants
+
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
         cat = self._load_catalog(tenant, collection)
         ids = cat.get(docid)

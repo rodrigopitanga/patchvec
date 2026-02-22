@@ -134,6 +134,37 @@ class DummyStore(BaseStore):
             raise ValueError(f"collection '{new_name}' already exists")
         os.rename(old_path, new_path)
 
+    def list_collections(self, tenant: str) -> list[str]:
+        tenant_path = os.path.join(get_cfg().get("data_dir"), tenant)
+        if not os.path.isdir(tenant_path):
+            return []
+        collections: list[str] = []
+        for entry in os.listdir(tenant_path):
+            entry_path = os.path.join(tenant_path, entry)
+            if os.path.isdir(entry_path):
+                # Check for catalog.json existence
+                catalog_path = os.path.join(entry_path, "catalog.json")
+                if os.path.isfile(catalog_path):
+                    collections.append(entry)
+        return collections
+
+    def list_tenants(self, data_dir: str) -> list[str]:
+        from pathlib import Path
+        data_dir_path = Path(data_dir).resolve()
+        if not data_dir_path.is_dir():
+            return []
+        tenants: list[str] = []
+        for entry in data_dir_path.iterdir():
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if not name.startswith("t_"):
+                continue
+            tenant = name[2:]
+            if tenant:
+                tenants.append(tenant)
+        return tenants
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         try:
@@ -204,6 +235,10 @@ class SpyStore(BaseStore):
         self.calls.append(("rename_collection", tenant, old_name, new_name))
         return self.impl.rename_collection(tenant, old_name, new_name)
 
+    def list_collections(self, tenant: str) -> list[str]:
+        self.calls.append(("list_collections", tenant))
+        return self.impl.list_collections(tenant)
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         self.calls.append(("purge_doc", tenant, collection, docid))
         return self.impl.purge_doc(tenant, collection, docid)
@@ -220,3 +255,7 @@ class SpyStore(BaseStore):
     def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.calls.append(("search", tenant, collection, text, k, filters))
         return self.impl.search(tenant, collection, text, k, filters)
+
+    def list_tenants(self, data_dir: str) -> list[str]:
+        self.calls.append(("list_tenants", data_dir))
+        return self.impl.list_tenants(data_dir)

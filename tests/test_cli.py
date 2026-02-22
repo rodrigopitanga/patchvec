@@ -81,3 +81,19 @@ def test_cli_dump_archive_creates_zip(cli_env, tmp_path, capsys):
         assert "sample.txt" in zf.namelist()
         with zf.open("sample.txt") as f:
             assert f.read().decode("utf-8") == "hello"
+
+
+def test_cli_list_tenants(cli_env, tmp_path, capsys, monkeypatch):
+    pvcli, _, _ = cli_env
+    from pave.config import get_cfg
+    cfg = get_cfg()
+    monkeypatch.setattr(cfg, "_cfg", {**cfg._cfg, "data_dir": str(tmp_path)})
+
+    (tmp_path / "t_beta").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "t_alpha").mkdir(parents=True, exist_ok=True)
+
+    pvcli.main_cli(["list-tenants"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+    assert out["tenants"] == ["alpha", "beta"]
+    assert out["count"] == 2

@@ -78,6 +78,7 @@ def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str
         "chunks_deleted": purged
     }
 
+
 def _default_docid(filename: str) -> str:
     # Uppercase
     base = filename.upper()
@@ -342,3 +343,17 @@ def restore_archive(
 
     return {"ok": True, "data_dir": str(data_dir_path)}
 
+
+def list_tenants(store, data_dir: str | os.PathLike[str]) -> dict[str, Any]:
+    try:
+        tenants = sorted(store.list_tenants(str(data_dir)))
+        return {"ok": True, "tenants": tenants, "count": len(tenants)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def list_collections(store, tenant: str) -> dict[str, Any]:
+    try:
+        collections = sorted(store.list_collections(tenant))
+        return {"ok": True, "tenant": tenant, "collections": collections, "count": len(collections)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

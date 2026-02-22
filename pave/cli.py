@@ -13,6 +13,8 @@ from pave.service import (
     rename_collection as svc_rename_collection,
     delete_document as svc_delete_document,
     ingest_document as svc_ingest_document,
+    list_tenants as svc_list_tenants,
+    list_collections as svc_list_collections,
     search as svc_search,
 )
 from pave.config import get_cfg, reload_cfg
@@ -97,6 +99,18 @@ def cmd_reset_metrics(args):
     out = metrics.reset()
     print(json.dumps(out, ensure_ascii=False))
 
+def cmd_list_tenants(args):
+    cfg = get_cfg()
+    data_dir = cfg.get("data_dir")
+    if not data_dir:
+        raise SystemExit("data directory is not configured")
+    out = svc_list_tenants(store, data_dir)
+    print(json.dumps(out, ensure_ascii=False))
+
+def cmd_list_collections(args):
+    out = svc_list_collections(store, args.tenant)
+    print(json.dumps(out, ensure_ascii=False))
+
 def main_cli(argv=None):
     p = argparse.ArgumentParser(prog="pavecli")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -159,6 +173,13 @@ def main_cli(argv=None):
 
     p_reset_metrics = sub.add_parser("reset-metrics")
     p_reset_metrics.set_defaults(func=cmd_reset_metrics)
+
+    p_list_tenants = sub.add_parser("list-tenants")
+    p_list_tenants.set_defaults(func=cmd_list_tenants)
+
+    p_list_collections = sub.add_parser("list-collections")
+    p_list_collections.add_argument("tenant")
+    p_list_collections.set_defaults(func=cmd_list_collections)
 
     args = p.parse_args(argv)
     return args.func(args)

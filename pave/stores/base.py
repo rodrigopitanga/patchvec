@@ -25,6 +25,16 @@ class BaseStore(ABC):
         ...
 
     @abstractmethod
+    def list_collections(self, tenant: str) -> list[str]:
+        """List all collections for a tenant."""
+        ...
+
+    @abstractmethod
+    def list_tenants(self, data_dir: str) -> list[str]:
+        """List all tenants."""
+        ...
+
+    @abstractmethod
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool: ...
 
     @abstractmethod

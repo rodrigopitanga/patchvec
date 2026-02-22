@@ -31,6 +31,8 @@ from pave.service import \
     rename_collection as svc_rename_collection, \
     delete_document as svc_delete_document, \
     ingest_document as svc_ingest_document, \
+    list_tenants as svc_list_tenants, \
+    list_collections as svc_list_collections, \
     search as svc_search
 
 
@@ -223,6 +225,34 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         if not ctx.is_admin:
             raise HTTPException(status_code=403, detail="admin access required")
         return metrics_reset()
+
+    @app.get("/admin/tenants")
+    def list_tenants(
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        if not ctx.is_admin:
+            raise HTTPException(status_code=403, detail="admin access required")
+        data_dir = cfg.get("data_dir")
+        if not data_dir:
+            raise HTTPException(status_code=500, detail="data directory is not configured")
+        result = svc_list_tenants(store, data_dir)
+        if not result.get("ok"):
+            raise HTTPException(status_code=500, detail=result.get("error", "failed to list tenants"))
+        return result
+
+    @app.get("/collections/{tenant}")
+    def list_collections(
+        tenant: str,
+        ctx: AuthContext = Depends(authorize_tenant),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_list_collections(store, tenant)
+        if not result.get("ok"):
+            raise HTTPException(status_code=500, detail=result.get("error", "failed to list collections"))
+        return result
 
     @app.post("/collections/{tenant}/{name}")
     def create_collection(

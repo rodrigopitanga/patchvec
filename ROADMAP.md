@@ -41,7 +41,7 @@ Immediate chores worth tackling now. Claim a task by opening an issue titled `cl
 | # | Task | Why it matters | Source |
 |---|------|----------------|--------|
 | 11 | **`meta.priority` scoring boosts** | Enterprise consumers may need to cross-reference multiple data dimensions. Priority boosts let the system surface high-impact results first. | ROADMAP v0.5.9 |
-| 12 | **List tenants and collections API** | Operational visibility for multi-tenant deployments. Operators need to know what's indexed. | ROADMAP v0.6 |
+| 12 | ~~**List tenants and collections API**~~ | ~~Operational visibility for multi-tenant deployments. Operators need to know what's indexed.~~ | ~~ROADMAP v0.6~~ |
 | 13 | **Collection-level structured log export** | The moat is what the system learns passively — which terms are searched, which results are missing, which combinations appear. This data must be extractable per-collection for analysis. | ROADMAP v0.5.8 |
 | 14 | **Document versioning and rebuild tooling** | When source data is corrected, consumers need audit trails. Versioning supports traceable, auditable data. | ROADMAP v0.8 |
 
@@ -293,7 +293,7 @@ APIs.
 - Emit structured logs with `request_id`, tenant, and latency; rolling retention per tenant/collection.
 - Per-tenant and per-operation API rate limits (market practice §8 — quota governance).
 - Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market practice §5).
-- Support renaming collections through the API and CLI.
+- ~~Support renaming collections through the API and CLI.~~
 
 ### v0.5.9 — Ranking Quality
 - Add hybrid reranking (vector similarity + BM25/token matching).
@@ -547,7 +547,7 @@ layer (v0.7+) is cheap or expensive:
 
 **v0.6** gains:
 - Freeze search response schema (add `latency_ms`, `match_reason`, `request_id`).
-- List collections API (enables MCP and LangChain enumeration).
+- ~~List collections API (enables MCP and LangChain enumeration).~~
 - Typed return models as internal preparation.
 
 **v0.7** gains:
