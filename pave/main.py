@@ -404,7 +404,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         request_id = body.request_id or x_request_id
         if not cfg.common_enabled:
-            return JSONResponse({"matches": [], "request_id": request_id})
+            return JSONResponse({
+                "matches": [],
+                "latency_ms": 0.0,
+                "request_id": request_id,
+            })
         result = svc_search(
             store, cfg.common_tenant, cfg.common_collection, body.q, body.k,
             filters=body.filters, request_id=request_id
@@ -421,7 +425,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     ):
         inc("requests_total")
         if not cfg.common_enabled:
-            return JSONResponse({"matches": [], "request_id": x_request_id})
+            return JSONResponse({
+                "matches": [],
+                "latency_ms": 0.0,
+                "request_id": x_request_id,
+            })
         result = svc_search(
             store, cfg.common_tenant, cfg.common_collection, q, k, filters=None,
             request_id=x_request_id
