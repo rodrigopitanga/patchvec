@@ -93,11 +93,11 @@ def test_delete_document_cli(tmp_path, monkeypatch):
     import pave.cli
     monkeypatch.setattr(pave.cli, "store", store)
 
-    # Create collection and upload document
+    # Create collection and ingest document
     main_cli(["create-collection", "t1", "c1"])
     test_file = tmp_path / "test.txt"
     test_file.write_text("hello world cli test")
-    main_cli(["upload", "t1", "c1", str(test_file), "--docid", "CLI-DOC"])
+    main_cli(["ingest", "t1", "c1", str(test_file), "--docid", "CLI-DOC"])
 
     # Verify document exists
     assert store.has_doc("t1", "c1", "CLI-DOC")

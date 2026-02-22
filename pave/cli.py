@@ -7,13 +7,13 @@ from datetime import datetime, timezone
 from pave.stores.factory import get_store
 from pave.service import (
     create_collection as svc_create_collection,
-    create_data_archive as svc_dump_archive,
-    restore_data_archive as svc_restore_archive,
+    dump_archive as svc_dump_archive,
+    restore_archive as svc_restore_archive,
     delete_collection as svc_delete_collection,
     rename_collection as svc_rename_collection,
     delete_document as svc_delete_document,
     ingest_document as svc_ingest_document,
-    do_search as svc_do_search,
+    search as svc_search,
 )
 from pave.config import get_cfg, reload_cfg
 from pave import metrics
@@ -27,7 +27,7 @@ def cmd_create(args):
     out = svc_create_collection(store, args.tenant, args.collection)
     print(json.dumps(out, ensure_ascii=False))
 
-def cmd_upload(args):
+def cmd_ingest(args):
     baseid = args.docid or str(uuid.uuid4())
     meta = json.loads(args.metadata) if args.metadata else {}
     content = _read(args.file)
@@ -49,7 +49,7 @@ def cmd_upload(args):
 
 def cmd_search(args):
     filters = json.loads(args.filters) if args.filters else None
-    out = svc_do_search(store, args.tenant, args.collection, args.query, args.k, filters=filters)
+    out = svc_search(store, args.tenant, args.collection, args.query, args.k, filters=filters)
     print(json.dumps(out, ensure_ascii=False))
 
 def cmd_delete(args):
@@ -107,22 +107,22 @@ def main_cli(argv=None):
     p_create.add_argument("collection")
     p_create.set_defaults(func=cmd_create)
 
-    p_upload = sub.add_parser("upload")
-    p_upload.add_argument("tenant")
-    p_upload.add_argument("collection")
-    p_upload.add_argument("file")
-    p_upload.add_argument("--docid")
-    p_upload.add_argument("--metadata")
+    p_ingest = sub.add_parser("ingest")
+    p_ingest.add_argument("tenant")
+    p_ingest.add_argument("collection")
+    p_ingest.add_argument("file")
+    p_ingest.add_argument("--docid")
+    p_ingest.add_argument("--metadata")
 
     # --- CSV controls ---
-    p_upload.add_argument("--csv-has-header", choices=["auto", "yes", "no"],
+    p_ingest.add_argument("--csv-has-header", choices=["auto", "yes", "no"],
                           help="CSV header handling: auto (sniff), yes, or no")
-    p_upload.add_argument("--csv-meta-cols",
+    p_ingest.add_argument("--csv-meta-cols",
                           help="CSV columns to store as metadata only (exclude from text). Names or 1-based indices, comma-separated")
-    p_upload.add_argument("--csv-include-cols",
+    p_ingest.add_argument("--csv-include-cols",
                           help="CSV columns to include in indexed text. Names or 1-based indices, comma-separated. Defaults to all non-meta columns")
 
-    p_upload.set_defaults(func=cmd_upload)
+    p_ingest.set_defaults(func=cmd_ingest)
 
     p_search = sub.add_parser("search")
     p_search.add_argument("tenant")

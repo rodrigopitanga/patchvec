@@ -64,6 +64,7 @@ def test_rename_nonexistent_collection(client):
         json={"new_name": "something"},
     )
     assert r.status_code == 400
+    assert "failed to rename collection" in r.json()["detail"]
     assert "does not exist" in r.json()["detail"]
 
 
@@ -78,6 +79,7 @@ def test_rename_to_same_name(client):
         json={"new_name": "samename"},
     )
     assert r.status_code == 400
+    assert "failed to rename collection" in r.json()["detail"]
     assert "same" in r.json()["detail"].lower()
 
 
@@ -96,6 +98,7 @@ def test_rename_collision_sequence(client):
         json={"new_name": "foo"},
     )
     assert r.status_code == 400
+    assert "failed to rename collection" in r.json()["detail"]
     assert "already exists" in r.json()["detail"]
 
     # 3. Delete foo
@@ -120,4 +123,5 @@ def test_rename_collision_sequence(client):
         json={"new_name": "foo"},
     )
     assert r.status_code == 400
+    assert "failed to rename collection" in r.json()["detail"]
     assert "already exists" in r.json()["detail"]

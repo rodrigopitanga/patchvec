@@ -36,7 +36,7 @@ Use the bundled CLI inside the container to create a tenant/collection, ingest a
 
 ```bash
 docker exec patchvec pavecli create-collection demo books
-docker exec patchvec pavecli upload demo books /app/demo/20k_leagues.txt \
+docker exec patchvec pavecli ingest demo books /app/demo/20k_leagues.txt \
   --docid=verne-20k --metadata='{"lang":"en"}'
 docker exec patchvec pavecli search demo books "captain nemo" -k 3
 ```
@@ -80,7 +80,7 @@ pavesrv
 
 # option B: operate entirely via the CLI (no server needed)
 pavecli create-collection demo books
-pavecli upload demo books 20k_leagues.txt --docid=verne-20k --metadata='{"lang":"en"}'
+pavecli ingest demo books 20k_leagues.txt --docid=verne-20k --metadata='{"lang":"en"}'
 pavecli search demo books "captain nemo" -k 3
 ```
 
@@ -124,15 +124,15 @@ Configuration files copied in either workflow can be customised. Runtime options
 
 ### 🔁 Live data updates
 
-Patchvec supports live data refresh without restarting the server. Re-upload the same `docid` to *replace* vector content (filename doesn't matter - metadata will change though), or explicitly delete the document and then ingest it again.
+Patchvec supports live data refresh without restarting the server. Re-ingest the same `docid` to *replace* vector content (filename doesn't matter - metadata will change though), or explicitly delete the document and then ingest it again.
 
-CLI (re-upload to replace):
+CLI (re-ingest to replace):
 
 ```bash
-pavecli upload demo books demo/20k_leagues.txt --docid=verne-20k
+pavecli ingest demo books demo/20k_leagues.txt --docid=verne-20k
 cp demo/20k_leagues.txt demo/20k_leagues_mod.txt
 echo "THE END" >> demo/20k_leagues_mod.txt
-pavecli upload demo books 20k_leagues.txt --docid=verne-20k
+pavecli ingest demo books 20k_leagues.txt --docid=verne-20k
 ```
 
 REST (delete then ingest):

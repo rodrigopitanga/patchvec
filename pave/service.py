@@ -120,7 +120,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             "chunks": count
         }
 
-def do_search(store, tenant: str, collection: str, q: str, k: int = 5,
+def search(store, tenant: str, collection: str, q: str, k: int = 5,
               filters: dict[str, Any] | None = None, include_common: bool = False,
               common_tenant: str | None = None, common_collection: str | None = None,
               request_id: str | None = None
@@ -266,7 +266,7 @@ def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
             lock.release()
 
 
-def create_data_archive(
+def dump_archive(
         store: BaseStore | None, data_dir: str | os.PathLike[str],
         output_path: str | os.PathLike[str | None] = None,
 ) -> tuple[str, str | None]:
@@ -312,7 +312,7 @@ def create_data_archive(
     return str(archive_path), str(tmp_dir)
 
 
-def restore_data_archive(
+def restore_archive(
         store: BaseStore | None, data_dir: str | os.PathLike[str],
         archive_bytes: bytes
 ) -> dict[str, Any]:

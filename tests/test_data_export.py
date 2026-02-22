@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from pave.stores import txtai_store
-from pave.service import create_data_archive
+from pave.service import dump_archive
 
 
 def test_dump_endpoint_returns_zip(client, temp_data_dir):
@@ -28,7 +28,7 @@ def test_dump_endpoint_returns_zip(client, temp_data_dir):
             assert f.read().decode("utf-8") == "hello endpoint"
 
 
-def test_create_data_archive_acquires_txtai_locks(monkeypatch, temp_data_dir):
+def test_dump_archive_acquires_txtai_locks(monkeypatch, temp_data_dir):
     tenant_dir = Path(temp_data_dir) / "t_acme"
     collection_dir = tenant_dir / "c_invoices"
     collection_dir.mkdir(parents=True, exist_ok=True)
@@ -57,7 +57,7 @@ def test_create_data_archive_acquires_txtai_locks(monkeypatch, temp_data_dir):
     monkeypatch.setattr(txtai_store, "get_lock", fake_get_lock)
 
     store = txtai_store.TxtaiStore()
-    archive_path, tmp_dir = create_data_archive(store, temp_data_dir)
+    archive_path, tmp_dir = dump_archive(store, temp_data_dir)
     try:
         assert ("acquire", "t_acme:c_invoices") in events
         assert ("release", "t_acme:c_invoices") in events

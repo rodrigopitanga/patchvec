@@ -25,13 +25,13 @@ from pave.stores.factory import get_store
 from pave.stores.base import BaseStore
 from pave.service import \
     create_collection as svc_create_collection, \
-    create_data_archive as svc_create_data_archive, \
-    restore_data_archive as svc_restore_data_archive, \
+    dump_archive as svc_dump_archive, \
+    restore_archive as svc_restore_archive, \
     delete_collection as svc_delete_collection, \
     rename_collection as svc_rename_collection, \
     delete_document as svc_delete_document, \
     ingest_document as svc_ingest_document, \
-    do_search as svc_do_search
+    search as svc_search
 
 
 VERSION = "0.5.7"
@@ -154,7 +154,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     # ----------------- Core API ------------------
 
     @app.get("/admin/archive", response_class=FileResponse)
-    async def create_archive(
+    async def dump_archive(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
@@ -168,12 +168,12 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
         try:
             archive_path, tmp_dir = await run_in_threadpool(
-                svc_create_data_archive, store, data_dir
+                svc_dump_archive, store, data_dir
             )
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="data directory not found")
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"failed to archive data: {exc}")
+            raise HTTPException(status_code=500, detail=f"failed to dump archive: {exc}")
 
         filename = os.path.basename(archive_path)
 
@@ -207,13 +207,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         content = await file.read()
         try:
             out = await run_in_threadpool(
-                svc_restore_data_archive, store, data_dir, content
+                svc_restore_archive, store, data_dir, content
             )
             return out
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"failed to restore data: {exc}")
+            raise HTTPException(status_code=500, detail=f"failed to restore archive: {exc}")
 
     @app.delete("/admin/metrics")
     def delete_metrics(
@@ -235,7 +235,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         return svc_create_collection(store, tenant, name)
 
     @app.delete("/collections/{tenant}/{name}")
-    def delete_collection_route(
+    def delete_collection(
         tenant: str,
         name: str,
         ctx: AuthContext = Depends(authorize_tenant),
@@ -245,7 +245,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         return svc_delete_collection(store, tenant, name)
 
     @app.put("/collections/{tenant}/{name}")
-    def rename_collection_route(
+    def rename_collection(
         tenant: str,
         name: str,
         body: RenameCollectionBody,
@@ -255,11 +255,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         result = svc_rename_collection(store, tenant, name, body.new_name)
         if not result.get("ok"):
-            raise HTTPException(status_code=400, detail=result.get("error", "rename failed"))
+            raise HTTPException(status_code=400, detail=f"failed to rename collection: {result.get('error', 'unknown error')}")
         return result
 
     @app.post("/collections/{tenant}/{collection}/documents")
-    async def upload_document(
+    async def ingest_document(
         tenant: str,
         collection: str,
         file: UploadFile = File(...),
@@ -305,7 +305,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(ve))
 
     @app.delete("/collections/{tenant}/{collection}/documents/{docid}")
-    def delete_document_route(
+    def delete_document(
         tenant: str,
         collection: str,
         docid: str,
@@ -320,7 +320,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     # POST search (supports filters)
     @app.post("/collections/{tenant}/{name}/search")
-    def search_route_post(
+    def search_post(
         tenant: str,
         name: str,
         body: SearchBody,
@@ -331,7 +331,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         request_id = body.request_id or x_request_id
         include_common = bool(cfg.common_enabled)
-        result = svc_do_search(
+        result = svc_search(
             store, tenant, name, body.q, body.k, filters=body.filters,
             include_common=include_common, common_tenant=cfg.common_tenant,
             common_collection=cfg.common_collection, request_id=request_id
@@ -340,7 +340,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     # GET search (no filters)
     @app.get("/collections/{tenant}/{name}/search")
-    def search_route_get(
+    def search_get(
         tenant: str,
         name: str,
         q: str = Query(...),
@@ -351,7 +351,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     ):
         inc("requests_total")
         include_common = bool(cfg.common_enabled)
-        result = svc_do_search(
+        result = svc_search(
             store, tenant, name, q, k, filters=None,
             include_common=include_common, common_tenant=cfg.common_tenant,
             common_collection=cfg.common_collection, request_id=x_request_id
@@ -370,7 +370,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         request_id = body.request_id or x_request_id
         if not cfg.common_enabled:
             return JSONResponse({"matches": [], "request_id": request_id})
-        result = svc_do_search(
+        result = svc_search(
             store, cfg.common_tenant, cfg.common_collection, body.q, body.k,
             filters=body.filters, request_id=request_id
         )
@@ -387,7 +387,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         if not cfg.common_enabled:
             return JSONResponse({"matches": [], "request_id": x_request_id})
-        result = svc_do_search(
+        result = svc_search(
             store, cfg.common_tenant, cfg.common_collection, q, k, filters=None,
             request_id=x_request_id
         )
