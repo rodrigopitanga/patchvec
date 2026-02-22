@@ -36,7 +36,7 @@ def test_csv_default_include_all_minus_meta(store):
     # text assertions (default include excludes meta)
     hits = store.search("t", "c", "x", k=5)
     assert hits
-    txt = hits[0]["text"]
+    txt = hits[0].text
     assert "a: x" in txt
     assert "c: z" in txt
     assert "b:" not in txt
@@ -56,7 +56,7 @@ def test_csv_include_by_indices_no_header(store):
 
     hits = store.search("t2", "c2", "x", k=5)
     assert hits
-    txt = hits[0]["text"]
+    txt = hits[0].text
     assert "col_0: x" in txt
     assert "col_2: z" in txt
     assert "col_1:" not in txt  # excluded as meta

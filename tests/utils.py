@@ -4,7 +4,7 @@
 import os, json, shutil
 from collections.abc import Iterable
 from typing import Any
-from pave.stores.base import BaseStore, Record
+from pave.stores.base import BaseStore, Record, SearchResult
 from pave.config import get_cfg
 
 
@@ -202,15 +202,18 @@ class DummyStore(BaseStore):
         return len(ids)
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+               filters: dict[str, Any] | None = None) -> list[SearchResult]:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         if not os.path.isfile(cat):
             return []
         data = json.load(open(cat, "r", encoding="utf-8"))
-        hits: list[dict[str, Any]] = []
+        hits: list[SearchResult] = []
         for docid, ids in data.items():
             for cid in ids[:k]:
-                hits.append({"id": cid, "score": 1.0, "meta": {"docid": docid}})
+                hits.append(SearchResult(
+                    id=cid, score=1.0, text=None, tenant=tenant,
+                    collection=collection, meta={"docid": docid},
+                    match_reason="matched"))
         return hits
 
 
@@ -252,7 +255,8 @@ class SpyStore(BaseStore):
         self.calls.append(("index_records", tenant, collection, docid, len(recs)))
         return self.impl.index_records(tenant, collection, docid, recs)
 
-    def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def search(self, tenant: str, collection: str, text: str, k: int = 5,
+               filters: dict[str, Any] | None = None) -> list[SearchResult]:
         self.calls.append(("search", tenant, collection, text, k, filters))
         return self.impl.search(tenant, collection, text, k, filters)
 

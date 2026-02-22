@@ -6,10 +6,11 @@ import os, json, operator, tempfile
 from datetime import datetime
 from collections.abc import Iterable
 from typing import Any
+
 from threading import Lock
 from contextlib import contextmanager
 from txtai.embeddings import Embeddings
-from pave.stores.base import BaseStore, Record
+from pave.stores.base import BaseStore, Record, SearchResult
 from pave.config import CFG as c, LOG as log
 
 _LOCKS: dict[str, Lock] = {}
@@ -575,7 +576,7 @@ class TxtaiStore(BaseStore):
         return sql
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+               filters: dict[str, Any] | None = None) -> list[SearchResult]:
         """
         Queries txtai for top-k, keeps overfetch inside the store, preserves text
         from em.search when present, and falls back to lookup if missing.
@@ -623,23 +624,23 @@ class TxtaiStore(BaseStore):
             if need_lookup_ids and hasattr(em, "lookup"):
                 lookup = em.lookup(need_lookup_ids) or {}
 
-        out: list[dict[str, Any]] = []
+        out: list[SearchResult] = []
         for rid, score, txt in kept:
             if txt is None:
                 txt = lookup.get(rid)
             if txt is None:
                 txt = self._load_chunk_text(tenant, collection, rid)
-            out.append({
-                "id": rid,
-                "score": score,
-                "text": txt.get("text") if isinstance (txt, dict) else txt,
-                "tenant": tenant,
-                "collection": collection,
-                "meta": meta.get(rid) or {},
-                "match_reason": self._build_match_reason(
+            out.append(SearchResult(
+                id=rid,
+                score=score,
+                text=txt.get("text") if isinstance(txt, dict) else txt,
+                tenant=tenant,
+                collection=collection,
+                meta=meta.get(rid) or {},
+                match_reason=self._build_match_reason(
                     query, score, filters, meta.get(rid)
                 ),
-            })
+            ))
         log.info(f"SEARCH-OUT: {out}")
         return out
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
-from .base import BaseStore, Record
+from .base import BaseStore, Record, SearchResult
 
 class QdrantStore(BaseStore):
     """Stub adapter for Qdrant. To be implemented."""
@@ -32,5 +32,6 @@ class QdrantStore(BaseStore):
     def index_records(self, tenant: str, collection: str, docid: str, records: Iterable[Record]) -> int:
         raise NotImplementedError("to be implemented")
 
-    def search(self, tenant: str, collection: str, text: str, k: int = 5, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def search(self, tenant: str, collection: str, text: str, k: int = 5,
+               filters: dict[str, Any] | None = None) -> list[SearchResult]:
         raise NotImplementedError("to be implemented")

@@ -27,7 +27,8 @@ def test_index_and_search_pt_text(store):
 
     hits = store.search("acme", "undersea", "avião", k=5)
     assert len(hits) >= 1
-    assert hits[0]["text"] is not None and "avião" in hits[0]["text"].lower() or "aviao" in hits[0]["text"].lower()
+    text = hits[0].text or ""
+    assert "avião" in text.lower() or "aviao" in text.lower()
 
 def test_index_two_docs_no_purge(store):
     # Portuguese content; ensure non-null texts returned
@@ -46,7 +47,7 @@ def test_index_two_docs_no_purge(store):
     hits = store.search("acme", "undersea2", "amarelo", k=5)
     assert ("purge_doc", "acme", "undersea2", "doc1") not in store.calls
     assert len(hits) >= 1
-    assert hits[0]["text"] is not None and "submarino" in hits[0]["text"].lower()
+    assert hits[0].text is not None and "submarino" in hits[0].text.lower()
 
     recs3 = [
         {"id": "doc3::0", "content": "Som amarelo.", "metadata": {"lang": "pt"}},
@@ -56,7 +57,7 @@ def test_index_two_docs_no_purge(store):
 
     hits = store.search("acme", "undersea2", "amarelo", k=5)
     assert len(hits) >= 2
-    assert hits[0]["text"] is not None and "amarelo" in hits[0]["text"].lower()
+    assert hits[0].text is not None and "amarelo" in hits[0].text.lower()
 
 def test_index_adds_docid_prefix(store):
     recs = [
@@ -65,9 +66,9 @@ def test_index_adds_docid_prefix(store):
     n = store.index_records("acme", "cycling", "docbike", recs)
     assert n == 1
     hits = store.search("acme", "cycling", "bicicleta", k=5)
-    assert hits[0]["text"] is not None and "bicicleta" in hits[0]["text"].lower()
-    assert hits[0]["text"] is not None and "verde" in hits[0]["text"].lower()
-    assert hits[0]["id"] is not None and "docbike::0" == hits[0]["id"]
+    assert hits[0].text is not None and "bicicleta" in hits[0].text.lower()
+    assert hits[0].text is not None and "verde" in hits[0].text.lower()
+    assert hits[0].id is not None and "docbike::0" == hits[0].id
 
 def test_chunk_sidecar_preserves_crlf(store):
     text = "First line\r\nSecond line\r\n"
@@ -92,7 +93,7 @@ def test_meta_json_and_filters(store):
     hits = store.search("ten", "c1", "world", k=5, filters={"lang": "en"})
     assert len(hits) == 1
     print(f"debug:: HITS: {hits}")
-    assert hits[0]["meta"]["lang"] == "en"
+    assert hits[0].meta["lang"] == "en"
 
     # Ensure meta was JSON-encoded internally (FakeEmbeddings asserts this)
 

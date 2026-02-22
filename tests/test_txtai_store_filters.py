@@ -27,7 +27,7 @@ def store(request):
     yield s, tenant, coll
 
 def _ids(results):
-    return [r["id"].split("::")[-1] for r in results]
+    return [r.id.split("::")[-1] for r in results]
 
 def test_split_filters_basic(store):
     s, _, _ = store
@@ -204,10 +204,10 @@ def test_match_reason_semantic_only(store):
     res = s.search(tenant, coll, "foo bar", 5)
     assert len(res) > 0
     for r in res:
-        assert "match_reason" in r
-        assert "semantic similarity" in r["match_reason"]
+        assert r.match_reason
+        assert "semantic similarity" in r.match_reason
         # Should include percentage
-        assert "%" in r["match_reason"]
+        assert "%" in r.match_reason
 
 
 def test_match_reason_with_filters(store):
@@ -217,10 +217,10 @@ def test_match_reason_with_filters(store):
     res = s.search(tenant, coll, "alpha", 5, filters=f)
     assert len(res) > 0
     r = res[0]
-    assert "match_reason" in r
-    assert "semantic similarity" in r["match_reason"]
-    assert "filters:" in r["match_reason"]
-    assert "name=foobar" in r["match_reason"]
+    assert r.match_reason
+    assert "semantic similarity" in r.match_reason
+    assert "filters:" in r.match_reason
+    assert "name=foobar" in r.match_reason
 
 
 def test_match_reason_multiple_filters(store):
@@ -231,7 +231,7 @@ def test_match_reason_multiple_filters(store):
     res = s.search(tenant, coll, "beta", 5, filters=f)
     ids = _ids(res)
     assert "r2" in ids
-    r2 = next(r for r in res if r["id"].endswith("r2"))
-    reason = r2["match_reason"]
+    r2 = next(r for r in res if r.id.endswith("r2"))
+    reason = r2.match_reason
     assert "name=fooqux" in reason
     assert "docid=filterdoc" in reason

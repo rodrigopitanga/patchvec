@@ -22,7 +22,7 @@ from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
 from pave.preprocess import preprocess
-from pave.stores.base import BaseStore
+from pave.stores.base import BaseStore, SearchResult
 
 _log = get_logger()
 
@@ -135,20 +135,24 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     if include_common and common_tenant and common_collection:
-        matches: list[dict[str, Any]] = []
+        matches: list[SearchResult] = []
         matches.extend(store.search(
             tenant, collection, q, max(10, k * 2), filters=filters))
         matches.extend(store.search(
             common_tenant, common_collection, q, max(10, k * 2), filters=filters))
         from heapq import nlargest
-        top = nlargest(k, matches, key=lambda x: x["score"])
+        top = nlargest(k, matches, key=lambda x: x.score)
         m_inc("matches_total", float(len(top) or 0))
         latency_ms = round((_time.perf_counter() - start) * 1000, 2)
         m_record_latency("search", latency_ms)
         _log.info(
             "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
             tenant, collection, k, len(top), latency_ms, request_id)
-        return {"matches": top, "latency_ms": latency_ms, "request_id": request_id}
+        return {
+            "matches": [r.to_dict() for r in top],
+            "latency_ms": latency_ms,
+            "request_id": request_id,
+        }
     top = store.search(tenant, collection, q, k, filters=filters)
     m_inc("matches_total", float(len(top) or 0))
     latency_ms = round((_time.perf_counter() - start) * 1000, 2)
@@ -157,9 +161,9 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
         "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
         tenant, collection, k, len(top), latency_ms, request_id)
     return {
-        "matches": top,
+        "matches": [r.to_dict() for r in top],
         "latency_ms": latency_ms,
-        "request_id": request_id
+        "request_id": request_id,
     }
 
 

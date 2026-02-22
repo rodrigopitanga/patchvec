@@ -11,7 +11,6 @@ from fastapi import FastAPI, Header, Body, File, UploadFile, Form, Path, \
     Query, Depends, Request, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse, FileResponse
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
 from typing import Any
 from starlette.background import BackgroundTask
 
@@ -34,18 +33,10 @@ from pave.service import \
     list_tenants as svc_list_tenants, \
     list_collections as svc_list_collections, \
     search as svc_search
+from pave.schemas import SearchBody, RenameCollectionBody, SearchResponse
 
 
 VERSION = "0.5.7"
-
-class SearchBody(BaseModel):
-    q: str
-    k: int = 5
-    filters: dict[str, Any] | None = None
-    request_id: str | None = None
-
-class RenameCollectionBody(BaseModel):
-    new_name: str
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
@@ -363,7 +354,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         return result
 
     # POST search (supports filters)
-    @app.post("/collections/{tenant}/{name}/search")
+    @app.post("/collections/{tenant}/{name}/search", response_model=SearchResponse)
     def search_post(
         tenant: str,
         name: str,

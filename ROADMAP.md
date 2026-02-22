@@ -307,7 +307,7 @@ APIs.
 - Resolve embedder factory integration with TxtaiStore.
 - Remove or gate `qdrant-client` dependency behind extras.
 - Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`).
-- Typed response models (internal `SearchResult` dataclass).
+- ~~Typed response models (internal `SearchResult` dataclass).~~
 
 ### 0.7 — SDK & Orchestrator Integration
 - Python SDK client package (`pave`).
@@ -527,10 +527,10 @@ layer (v0.7+) is cheap or expensive:
 4. **List collections** (P2-12) — Both LangChain and MCP need enumeration.
    Without it, users must know collection names ahead of time.
 
-5. **`BaseStore.search()` return type** — Currently returns
+5. ~~**`BaseStore.search()` return type** — Currently returns
    `List[Dict[str, Any]]`. For SDK/adapter consumption, a typed dataclass
    (e.g., `SearchResult(id, score, text, meta)`) would be cleaner. This is
-   a v0.6 candidate.
+   a v0.6 candidate.~~
 
 ### Integration roadmap
 
@@ -540,7 +540,7 @@ layer (v0.7+) is cheap or expensive:
 | v0.7 | LangChain `VectorStore` adapter | SDK + doc delete (P1-6) |
 | v0.8 | MCP server | SDK + list collections (P2-12) |
 | v0.8 | LlamaIndex adapter | SDK |
-| v0.9 | Typed response models (`SearchResult` dataclass) | API freeze candidate |
+| ~~v0.9~~ | ~~Typed response models (`SearchResult` dataclass)~~ | ~~API freeze candidate~~ |
 | 1.0 | Published integrations on PyPI (`pave-langchain`, `pave-mcp`) | API freeze |
 
 ### What this means for the revised version milestones

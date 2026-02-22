@@ -4,10 +4,26 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from dataclasses import dataclass, asdict
 from typing import Any
 
 
 Record = tuple[str, str, dict[str, Any]]  # (rid, text, meta)
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """Store-layer search result."""
+    id: str
+    score: float
+    text: str | None
+    tenant: str
+    collection: str
+    meta: dict[str, Any]
+    match_reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 class BaseStore(ABC):
     @abstractmethod
@@ -21,7 +37,7 @@ class BaseStore(ABC):
 
     @abstractmethod
     def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
-        """Rename a collection. Raises ValueError if old doesn't exist or new already exists."""
+        """Rename a collection. Raises ValueError if old/new name invalid."""
         ...
 
     @abstractmethod
@@ -46,12 +62,6 @@ class BaseStore(ABC):
 
     @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        """
-        Search for similar documents.
-
-        Returns a list of dicts, each containing:
-          - id, score, text, tenant, collection, meta
-          - match_reason: human-readable explanation of why the result matched
-        """
+               filters: dict[str, Any] | None = None) -> list[SearchResult]:
+        """Search for similar documents. Returns a list of SearchResult entries."""
         ...

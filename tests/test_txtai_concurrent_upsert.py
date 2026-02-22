@@ -29,7 +29,7 @@ def test_concurrent_upsert_without_lock_eventually_fails(cfg):
             ex.submit(unsafe_upsert, REC0)
             ex.submit(unsafe_upsert, REC1)
         results = store.search(tenant, coll, "texto", 5)
-        texts = [r["text"] for r in results]
+        texts = [r.text for r in results]
         if not ("texto A" in texts and "texto B" in texts):
             failed_once = True
             break
@@ -54,7 +54,7 @@ def test_concurrent_upsert_with_manual_lock(cfg):
             ex.submit(safe_upsert, REC0)
             ex.submit(safe_upsert, REC1)
         results = store.search(tenant, coll, "texto", 5)
-        texts = [r["text"] for r in results]
+        texts = [r.text for r in results]
         assert "texto A" in texts and "texto B" in texts,\
             "Inconsistent state detected despite locking (manual test)"
 
@@ -72,6 +72,6 @@ def test_concurrent_upsert_with_lock_always_consistent(cfg):
             ex.submit(safe_upsert, REC0)
             ex.submit(safe_upsert, REC1)
         results = store.search(tenant, coll, "texto", 5)
-        texts = [r["text"] for r in results]
+        texts = [r.text for r in results]
         assert "texto A" in texts and "texto B" in texts,\
             "Inconsistent state detected despite locking (main codepath)"

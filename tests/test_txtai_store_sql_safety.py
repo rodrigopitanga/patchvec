@@ -82,7 +82,7 @@ def test_search_handles_special_characters(store):
 
     hits = store.search(tenant, collection, "world; -- comment", k=5)
     assert hits
-    assert hits[0]["id"].endswith("::r1")
+    assert hits[0].id.endswith("::r1")
 
 
 def test_round_trip_with_weird_metadata_field(store):
@@ -98,13 +98,13 @@ def test_round_trip_with_weird_metadata_field(store):
     hits = store.search(tenant, collection, "strange", k=5, filters=filters)
 
     assert hits
-    assert hits[0]["id"].endswith("::r2")
+    assert hits[0].id.endswith("::r2")
 
     emb = store._emb[(tenant, collection)]
     safe_key = TxtaiStore._sanit_field(weird_key)
     assert emb.last_sql and f"[{safe_key}]" in emb.last_sql
 
-    rid = hits[0]["id"]
+    rid = hits[0].id
     stored_meta = store._load_meta(tenant, collection).get(rid) or {}
     assert safe_key in stored_meta
     assert stored_meta[safe_key] == TxtaiStore._sanit_sql(weird_value)
@@ -113,4 +113,4 @@ def test_round_trip_with_weird_metadata_field(store):
     assert doc["meta"].get(safe_key) == TxtaiStore._sanit_sql(weird_value)
     serialized = json.loads(doc["meta_json"]) if doc.get("meta_json") else {}
     assert serialized.get(safe_key) == TxtaiStore._sanit_sql(weird_value)
-    assert hits[0]["meta"].get(safe_key) == TxtaiStore._sanit_sql(weird_value)
+    assert hits[0].meta.get(safe_key) == TxtaiStore._sanit_sql(weird_value)
