@@ -39,7 +39,8 @@ make benchmark-latency BENCH_QUERIES=500 BENCH_CONCUR=20
 
 ```bash
 pip install httpx
-python benchmarks/search_latency.py --url http://localhost:8086 --queries 100 --concurrency 10
+python benchmarks/search_latency.py --url http://localhost:8086 \
+  --queries 100 --concurrency 10
 ```
 
 ### Options
@@ -56,7 +57,9 @@ Reports min, max, mean, p50, p95, p99 latencies in milliseconds.
 
 ## stress.py
 
-Fires random concurrent operations (collection create/delete, document ingest/delete, search, health checks, archive download/restore) and reports per-operation latency percentiles plus error rates.
+Fires random concurrent operations (collection create/delete, document ingest/delete,
+search, health checks, archive download/restore) and reports per-operation latency
+percentiles plus error rates.
 
 ### Developer workflow
 
@@ -77,9 +80,9 @@ python benchmarks/stress.py --url http://localhost:8086 --duration 30 --concurre
 
 ### Options
 
-* `--url` - PatchVec base URL (default: http://localhost:8086)
-* `--duration` - Test duration in seconds (default: 30)
-* `--concurrency` - Max concurrent operations (default: 15)
+* `--url` - PatchVec base URL (default: http://localhost:8086) * `--duration` - Test
+duration in seconds (default: 30) * `--concurrency` - Max concurrent operations
+(default: 15)
 
 ### Output
 

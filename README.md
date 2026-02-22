@@ -1,23 +1,31 @@
-<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
-<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> --> <!--
+SPDX-License-Identifier: GPL-3.0-or-later -->
 
 # 🍰 PatchVec — Lightweight, Pluggable Vector Search Microservice
 
-Patchvec is a compact vector store built for people who want provenance and fast iteration on RAG plumbing. No black boxes, no hidden pipelines: every chunk records document id, page, and byte offsets, and you can swap embeddings or storage backends per collection.
+Patchvec is a compact vector store built for people who want provenance and fast
+iteration on RAG plumbing. No black boxes, no hidden pipelines: every chunk records
+document id, page, and byte offsets, and you can swap embeddings or storage backends per
+collection.
 
 ## ⚙️ Core capabilities
 
-- **Docker images** — prebuilt CPU/GPU images published to the GitLab Container Registry.
+- **Docker images** — prebuilt CPU/GPU images published to the GitLab Container
+  Registry.
 - **Tenants and collections** — isolation by tenant with per-collection configuration.
-- **Pluggable embeddings** — choose the embedding adapter per collection; wire in local or hosted models.
+- **Pluggable embeddings** — choose the embedding adapter per collection; wire in local
+  or hosted models.
 - **REST and CLI** — production use over HTTP, quick experiments with the bundled CLI.
-- **Deterministic provenance** — every hit returns doc id, page, offset, and snippet for traceability.
+- **Deterministic provenance** — every hit returns doc id, page, offset, and snippet for
+  traceability.
 
 ## 🧭 Workflows
 
 ### 🐳 Docker workflow (prebuilt images)
 
-Pull the image that fits your hardware from the [https://gitlab.com/flowlexi](Flowlexi) Container Registry on Gitlab (CUDA builds publish as `latest-gpu`, CPU-only as `latest-cpu`).
+Pull the image that fits your hardware from the [https://gitlab.com/flowlexi](Flowlexi)
+Container Registry on Gitlab (CUDA builds publish as `latest-gpu`, CPU-only as `latest-
+cpu`).
 
 ```bash
 docker pull registry.gitlab.com/flowlexi/patchvec/patchvec:latest-gpu
@@ -32,7 +40,8 @@ docker run -d --name patchvec \
   registry.gitlab.com/flowlexi/patchvec/patchvec:latest-cpu
 ```
 
-Use the bundled CLI inside the container to create a tenant/collection, ingest a demo document, and query it:
+Use the bundled CLI inside the container to create a tenant/collection, ingest a demo
+document, and query it:
 
 ```bash
 docker exec patchvec pavecli create-collection demo books
@@ -51,7 +60,8 @@ docker rm -f patchvec
 
 ### 🐍 PyPI workflow
 
-Install Patchvec from PyPI inside an isolated virtual environment and point it at a local configuration directory.
+Install Patchvec from PyPI inside an isolated virtual environment and point it at a
+local configuration directory.
 
 **Requires Python 3.10–3.14.**
 
@@ -87,18 +97,21 @@ pavecli search demo books "captain nemo" -k 3
 > **CPU-only deployments:** The command above pulls the default PyTorch wheel
 > from PyPI, which includes CUDA support (~2 GB). For a leaner, CPU-only torch
 > install, point pip at the PyTorch CPU index:
->
 > ```bash
 > pip install "patchvec[cpu]" \
->   --index-url https://download.pytorch.org/whl/cpu \
->   --extra-index-url https://pypi.org/simple
+> --index-url https://download.pytorch.org/whl/cpu \
+> --extra-index-url https://pypi.org/simple
 > ```
 
 Deactivate the virtual environment with `deactivate` when finished.
 
 ### 🌐 REST API and Web UI usage
 
-When the server is running (either via Docker or `pavesrv`), the API listens on `http://localhost:8086`. The following `curl` commands mirror the CLI sequence above—adjust the file path to wherever you stored the corpus (`/app/demo/20k_leagues.txt` in Docker, `~/pv/20k_leagues.txt` for PyPI installs) and reuse the bearer token exported earlier:
+When the server is running (either via Docker or `pavesrv`), the API listens on
+`http://localhost:8086`. The following `curl` commands mirror the CLI sequence
+above—adjust the file path to wherever you stored the corpus
+(`/app/demo/20k_leagues.txt` in Docker, `~/pv/20k_leagues.txt` for PyPI installs) and
+reuse the bearer token exported earlier:
 
 ```bash
 # create collection
@@ -116,15 +129,20 @@ curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
   "http://localhost:8086/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
-There is a simple Swagger UI available at the root of the server. Just point your browser to `http://localhost:8086/`
+There is a simple Swagger UI available at the root of the server. Just point your
+browser to `http://localhost:8086/`
 
 Health and metrics endpoints are available at `/health` and `/metrics`.
 
-Configuration files copied in either workflow can be customised. Runtime options are also accepted via the `PATCHVEC_*` environment variable scheme (`PATCHVEC_SERVER__PORT`, `PATCHVEC_AUTH__MODE`, etc.), which precedes conf files.
+Configuration files copied in either workflow can be customised. Runtime options are
+also accepted via the `PATCHVEC_*` environment variable scheme (`PATCHVEC_SERVER__PORT`,
+`PATCHVEC_AUTH__MODE`, etc.), which precedes conf files.
 
 ### 🔁 Live data updates
 
-Patchvec supports live data refresh without restarting the server. Re-ingest the same `docid` to *replace* vector content (filename doesn't matter - metadata will change though), or explicitly delete the document and then ingest it again.
+Patchvec supports live data refresh without restarting the server. Re-ingest the same
+`docid` to *replace* vector content (filename doesn't matter - metadata will change
+though), or explicitly delete the document and then ingest it again.
 
 CLI (re-ingest to replace):
 
@@ -151,12 +169,15 @@ curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
 
 ### 🛠️ Developer workflow
 
-Building from source relies on the `Makefile` shortcuts (`make install-dev`, `USE_CPU=1 make serve`, `make test`, etc.). The full contributor workflow, target reference, and task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks are documented in [README-benchmarks.md](README-benchmarks.md).
+Building from source relies on the `Makefile` shortcuts (`make install-dev`, `USE_CPU=1
+make serve`, `make test`, etc.). The full contributor workflow, target reference, and
+task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks
+are documented in [README-benchmarks.md](README-benchmarks.md).
 
 ## 🗺️ Roadmap
 
-Short & mid-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one,
-open an issue titled `claim: <task ID>`, and ship a patch.
+Short & mid-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one, open an
+issue titled `claim: <task ID>`, and ship a patch.
 
 ## 📜 License
 

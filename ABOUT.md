@@ -47,7 +47,8 @@ export PATCHVEC_AUTH__GLOBAL_KEY="your-secret"
 ```
 
 ## Minimal config (optional)
-By default PatchVec runs with sensible local defaults. To customize, create `config.yml`:
+By default PatchVec runs with sensible local defaults. To customize, create
+`config.yml`:
 ```yaml
 vector_store:
   type: default
@@ -66,7 +67,8 @@ export PATCHVEC_GLOBAL_KEY="your-secret"
 ## CLI example
 ```bash
 pavecli create-collection demo books
-pavecli upload demo books demo/20k_leagues.txt --docid=verne-20k --metadata='{"lang":"en"}'
+pavecli upload demo books demo/20k_leagues.txt --docid=verne-20k \
+  --metadata='{"lang":"en"}'
 pavecli search demo books "captain nemo" -k 5
 ```
 
