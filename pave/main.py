@@ -166,16 +166,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
         data_dir = cfg.get("data_dir")
         if not data_dir:
-            raise HTTPException(status_code=500, detail="data directory is not configured")
+            raise HTTPException(
+                status_code=500, detail="data directory is not configured")
 
         try:
             archive_path, tmp_dir = await run_in_threadpool(
                 svc_dump_archive, store, data_dir
             )
         except FileNotFoundError:
-            raise HTTPException(status_code=404, detail="data directory not found")
+            raise HTTPException(
+                status_code=404, detail="data directory not found")
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"failed to dump archive: {exc}")
+            raise HTTPException(
+                status_code=500, detail=f"failed to dump archive: {exc}")
 
         filename = os.path.basename(archive_path)
 
@@ -204,7 +207,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
         data_dir = cfg.get("data_dir")
         if not data_dir:
-            raise HTTPException(status_code=500, detail="data directory is not configured")
+            raise HTTPException(
+                status_code=500, detail="data directory is not configured")
 
         content = await file.read()
         try:
@@ -215,7 +219,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"failed to restore archive: {exc}")
+            raise HTTPException(
+                status_code=500, detail=f"failed to restore archive: {exc}")
 
     @app.delete("/admin/metrics")
     def delete_metrics(
@@ -236,10 +241,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             raise HTTPException(status_code=403, detail="admin access required")
         data_dir = cfg.get("data_dir")
         if not data_dir:
-            raise HTTPException(status_code=500, detail="data directory is not configured")
+            raise HTTPException(
+                status_code=500, detail="data directory is not configured")
         result = svc_list_tenants(store, data_dir)
         if not result.get("ok"):
-            raise HTTPException(status_code=500, detail=result.get("error", "failed to list tenants"))
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "failed to list tenants"))
         return result
 
     @app.get("/collections/{tenant}")
@@ -251,7 +259,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         result = svc_list_collections(store, tenant)
         if not result.get("ok"):
-            raise HTTPException(status_code=500, detail=result.get("error", "failed to list collections"))
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "failed to list collections"))
         return result
 
     @app.post("/collections/{tenant}/{name}")
@@ -285,7 +295,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         result = svc_rename_collection(store, tenant, name, body.new_name)
         if not result.get("ok"):
-            raise HTTPException(status_code=400, detail=f"failed to rename collection: {result.get('error', 'unknown error')}")
+            err = result.get("error", "unknown error")
+            raise HTTPException(
+                status_code=400, detail=f"failed to rename collection: {err}")
         return result
 
     @app.post("/collections/{tenant}/{collection}/documents")
@@ -345,7 +357,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         result = svc_delete_document(store, tenant, collection, docid)
         if not result.get("ok"):
-            raise HTTPException(status_code=404, detail=result.get("error", "document not found"))
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("error", "document not found"))
         return result
 
     # POST search (supports filters)

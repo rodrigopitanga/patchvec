@@ -18,7 +18,9 @@ from typing import Any
 
 import time as _time
 from pave.config import get_logger
-from pave.metrics import inc as m_inc, timed as m_timed, record_latency as m_record_latency
+from pave.metrics import (
+    inc as m_inc, timed as m_timed, record_latency as m_record_latency
+)
 from pave.preprocess import preprocess
 from pave.stores.base import BaseStore
 
@@ -45,7 +47,8 @@ def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
         "deleted": name
     }
 
-def rename_collection(store, tenant: str, old_name: str, new_name: str) -> dict[str, Any]:
+def rename_collection(store, tenant: str, old_name: str,
+                      new_name: str) -> dict[str, Any]:
     try:
         store.rename_collection(tenant, old_name, new_name)
         m_inc("collections_renamed_total", 1.0)
@@ -101,9 +104,12 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             m_inc("purge_total", purged)
         meta_doc = metadata or {}
         records = []
-        for local_id, text, extra in preprocess(filename, content, csv_options=csv_options):
+        for local_id, text, extra in preprocess(
+            filename, content, csv_options=csv_options
+        ):
             rid = f"{baseid}::{local_id}"
-            now = datetime.now(tz.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+            now = datetime.now(tz.utc).isoformat(timespec="seconds")
+            now = now.replace("+00:00", "Z")
             meta = {"docid": baseid, "filename": filename, "ingested_at": now}
             meta.update(meta_doc)
             meta.update(extra)
@@ -139,15 +145,17 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
         m_inc("matches_total", float(len(top) or 0))
         latency_ms = round((_time.perf_counter() - start) * 1000, 2)
         m_record_latency("search", latency_ms)
-        _log.info("search tenant=%s collection=%s k=%d hits=%d latency_ms=%.2f request_id=%s",
-                  tenant, collection, k, len(top), latency_ms, request_id)
+        _log.info(
+            "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
+            tenant, collection, k, len(top), latency_ms, request_id)
         return {"matches": top, "latency_ms": latency_ms, "request_id": request_id}
     top = store.search(tenant, collection, q, k, filters=filters)
     m_inc("matches_total", float(len(top) or 0))
     latency_ms = round((_time.perf_counter() - start) * 1000, 2)
     m_record_latency("search", latency_ms)
-    _log.info("search tenant=%s collection=%s k=%d hits=%d latency_ms=%.2f request_id=%s",
-              tenant, collection, k, len(top), latency_ms, request_id)
+    _log.info(
+        "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
+        tenant, collection, k, len(top), latency_ms, request_id)
     return {
         "matches": top,
         "latency_ms": latency_ms,
@@ -354,6 +362,11 @@ def list_tenants(store, data_dir: str | os.PathLike[str]) -> dict[str, Any]:
 def list_collections(store, tenant: str) -> dict[str, Any]:
     try:
         collections = sorted(store.list_collections(tenant))
-        return {"ok": True, "tenant": tenant, "collections": collections, "count": len(collections)}
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "collections": collections,
+            "count": len(collections),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}

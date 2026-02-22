@@ -51,7 +51,8 @@ def cmd_ingest(args):
 
 def cmd_search(args):
     filters = json.loads(args.filters) if args.filters else None
-    out = svc_search(store, args.tenant, args.collection, args.query, args.k, filters=filters)
+    out = svc_search(store, args.tenant, args.collection, args.query, args.k,
+                     filters=filters)
     print(json.dumps(out, ensure_ascii=False))
 
 def cmd_delete(args):
@@ -72,7 +73,8 @@ def cmd_dump_archive(args):
     if not data_dir:
         raise SystemExit("data directory is not configured")
 
-    output = args.output or f"patchvec-data-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.zip"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    output = args.output or f"patchvec-data-{stamp}.zip"
     archive_path, _ = svc_dump_archive(store, data_dir, output)
     out = {
         "ok": True,
@@ -131,10 +133,14 @@ def main_cli(argv=None):
     # --- CSV controls ---
     p_ingest.add_argument("--csv-has-header", choices=["auto", "yes", "no"],
                           help="CSV header handling: auto (sniff), yes, or no")
-    p_ingest.add_argument("--csv-meta-cols",
-                          help="CSV columns to store as metadata only (exclude from text). Names or 1-based indices, comma-separated")
-    p_ingest.add_argument("--csv-include-cols",
-                          help="CSV columns to include in indexed text. Names or 1-based indices, comma-separated. Defaults to all non-meta columns")
+    p_ingest.add_argument(
+        "--csv-meta-cols",
+        help="CSV columns for metadata only (not indexed). "
+             "Names or 1-based indices, comma-separated")
+    p_ingest.add_argument(
+        "--csv-include-cols",
+        help="CSV columns to index. Names or 1-based indices, "
+             "comma-separated. Defaults to all non-meta columns")
 
     p_ingest.set_defaults(func=cmd_ingest)
 
