@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import pytest
-from pave.service import ingest_document as svc_ingest
+from pave.service import ingest_document as svc_ingest, ServiceError
 from pave.stores.txtai_store import TxtaiStore
 import pave.stores.txtai_store as store_mod
 from utils import FakeEmbeddings
@@ -14,8 +14,13 @@ def store(monkeypatch, tmp_path):
     class DummyCFG:
         data_dir = str(tmp_path / "data")
         def get(self, key, default=None):
-            if key.endswith("embed_model"): return "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-            if key.endswith("vector_backend"): return "faiss"
+            if key.endswith("embed_model"):
+                return (
+                    "sentence-transformers/paraphrase-multilingual-"
+                    "MiniLM-L12-v2"
+                )
+            if key.endswith("vector_backend"):
+                return "faiss"
             return default
     monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
     monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
@@ -68,8 +73,9 @@ def test_csv_include_by_indices_no_header(store):
 def test_csv_refuse_names_without_header(store):
     # names specified but header disabled -> must raise
     csv = "x,metaY,z\n"
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceError) as excinfo:
         svc_ingest(
             store, "t3", "c3", "f3.csv", _csv_bytes(csv), "D3", None,
             csv_options={"has_header": "no", "meta_cols": "b", "include_cols": ""}
         )
+    assert excinfo.value.code == "invalid_csv_options"

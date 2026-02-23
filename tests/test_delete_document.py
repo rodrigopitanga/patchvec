@@ -28,10 +28,13 @@ def test_delete_document_success(client):
     assert len(r.json()["matches"]) == 0
 
 def test_delete_document_not_found(client):
-    """DELETE non-existent document should return 404."""
+    """DELETE non-existent document is idempotent: 200 with chunks_deleted=0."""
     client.post("/collections/acme/deldoc2")
     r = client.delete("/collections/acme/deldoc2/documents/NONEXISTENT")
-    assert r.status_code == 404
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["chunks_deleted"] == 0
 
 def test_delete_document_preserves_others(client):
     """Deleting one document should not affect other documents."""

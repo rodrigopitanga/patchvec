@@ -27,28 +27,55 @@ from pave.stores.base import BaseStore, SearchResult
 _log = get_logger()
 
 # Pure-ish service functions operating on a store adapter
+class ServiceError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
 
 def create_collection(store, tenant: str, name: str) -> dict[str, Any]:
-    store.load_or_init(tenant, name)
-    store.save(tenant, name)
-    m_inc("collections_created_total", 1.0)
-    return {
-        "ok": True,
-        "tenant": tenant,
-        "collection": name
-    }
+    try:
+        store.load_or_init(tenant, name)
+        store.save(tenant, name)
+        m_inc("collections_created_total", 1.0)
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "collection": name
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "create_collection_failed",
+            "error": str(e),
+        }
 
 def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
-    store.delete_collection(tenant, name)
-    m_inc("collections_deleted_total", 1.0)
-    return {
-        "ok": True,
-        "tenant": tenant,
-        "deleted": name
-    }
+    try:
+        store.delete_collection(tenant, name)
+        m_inc("collections_deleted_total", 1.0)
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "deleted": name
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "delete_collection_failed",
+            "error": str(e),
+        }
 
-def rename_collection(store, tenant: str, old_name: str,
-                      new_name: str) -> dict[str, Any]:
+def rename_collection(store, tenant: str,
+                      old_name: str, new_name: str) -> dict[str, Any]:
+    if old_name == new_name:
+        return {
+            "ok": False,
+            "code": "rename_invalid",
+            "error": "old and new names are the same",
+            "error_type": "invalid",
+        }
     try:
         store.rename_collection(tenant, old_name, new_name)
         m_inc("collections_renamed_total", 1.0)
@@ -59,27 +86,56 @@ def rename_collection(store, tenant: str, old_name: str,
             "new_name": new_name
         }
     except ValueError as e:
-        return {"ok": False, "error": str(e)}
-
-def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str, Any]:
-    if not store.has_doc(tenant, collection, docid):
+        err = str(e)
+        if "does not exist" in err:
+            return {
+                "ok": False,
+                "code": "collection_not_found",
+                "error": err,
+                "error_type": "not_found",
+            }
+        if "already exists" in err:
+            return {
+                "ok": False,
+                "code": "collection_conflict",
+                "error": err,
+                "error_type": "conflict",
+            }
         return {
             "ok": False,
-            "error": "document not found",
+            "code": "rename_invalid",
+            "error": err,
+            "error_type": "invalid",
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "rename_failed",
+            "error": str(e),
+            "error_type": "failed",
+        }
+
+def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str, Any]:
+    try:
+        if store.has_doc(tenant, collection, docid):
+            purged = store.purge_doc(tenant, collection, docid)
+            m_inc("purge_total", float(purged))
+            m_inc("documents_deleted_total", 1.0)
+        else:
+            purged = 0
+        return {
+            "ok": True,
             "tenant": tenant,
             "collection": collection,
-            "docid": docid
+            "docid": docid,
+            "chunks_deleted": purged,
         }
-    purged = store.purge_doc(tenant, collection, docid)
-    m_inc("purge_total", float(purged))
-    m_inc("documents_deleted_total", 1.0)
-    return {
-        "ok": True,
-        "tenant": tenant,
-        "collection": collection,
-        "docid": docid,
-        "chunks_deleted": purged
-    }
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "delete_document_failed",
+            "error": str(e),
+        }
 
 
 def _default_docid(filename: str) -> str:
@@ -98,34 +154,49 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                     docid: str | None, metadata: dict[str, Any] | None,
                     csv_options: dict[str, Any] | None = None) -> dict[str, Any]:
     with m_timed("ingest"):
-        baseid = docid or _default_docid(filename)
-        if baseid and store.has_doc(tenant, collection, baseid):
-            purged = store.purge_doc(tenant, collection, baseid)
-            m_inc("purge_total", purged)
-        meta_doc = metadata or {}
-        records = []
-        for local_id, text, extra in preprocess(
-            filename, content, csv_options=csv_options
-        ):
-            rid = f"{baseid}::{local_id}"
-            now = datetime.now(tz.utc).isoformat(timespec="seconds")
-            now = now.replace("+00:00", "Z")
-            meta = {"docid": baseid, "filename": filename, "ingested_at": now}
-            meta.update(meta_doc)
-            meta.update(extra)
-            records.append((rid, text, meta))
-        if not records:
-            return {"ok": False, "error": "no text extracted"}
-        count = store.index_records(tenant, collection, baseid, records)
-        m_inc("documents_indexed_total", 1.0)
-        m_inc("chunks_indexed_total", float(count or 0))
-        return {
-            "ok": True,
-            "tenant": tenant,
-            "collection": collection,
-            "docid": baseid,
-            "chunks": count
-        }
+        try:
+            baseid = docid or _default_docid(filename)
+            if baseid and store.has_doc(tenant, collection, baseid):
+                purged = store.purge_doc(tenant, collection, baseid)
+                m_inc("purge_total", purged)
+            meta_doc = metadata or {}
+            records = []
+            for local_id, text, extra in preprocess(
+                filename, content, csv_options=csv_options
+            ):
+                rid = f"{baseid}::{local_id}"
+                now = datetime.now(tz.utc).isoformat(timespec="seconds")
+                now = now.replace("+00:00", "Z")
+                meta = {"docid": baseid, "filename": filename, "ingested_at": now}
+                meta.update(meta_doc)
+                meta.update(extra)
+                records.append((rid, text, meta))
+            if not records:
+                return {
+                    "ok": False,
+                    "code": "no_text_extracted",
+                    "error": "no text extracted",
+                }
+            count = store.index_records(tenant, collection, baseid, records)
+            m_inc("documents_indexed_total", 1.0)
+            m_inc("chunks_indexed_total", float(count or 0))
+            return {
+                "ok": True,
+                "tenant": tenant,
+                "collection": collection,
+                "docid": baseid,
+                "chunks": count
+            }
+        except ServiceError:
+            raise
+        except ValueError as exc:
+            raise ServiceError("invalid_csv_options", str(exc)) from exc
+        except Exception as e:
+            return {
+                "ok": False,
+                "code": "ingest_failed",
+                "error": str(e),
+            }
 
 def search(store, tenant: str, collection: str, q: str, k: int = 5,
               filters: dict[str, Any] | None = None, include_common: bool = False,
@@ -134,14 +205,28 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
               ) -> dict[str, Any]:
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
-    if include_common and common_tenant and common_collection:
-        matches: list[SearchResult] = []
-        matches.extend(store.search(
-            tenant, collection, q, max(10, k * 2), filters=filters))
-        matches.extend(store.search(
-            common_tenant, common_collection, q, max(10, k * 2), filters=filters))
-        from heapq import nlargest
-        top = nlargest(k, matches, key=lambda x: x.score)
+    try:
+        if include_common and common_tenant and common_collection:
+            matches: list[SearchResult] = []
+            matches.extend(store.search(
+                tenant, collection, q, max(10, k * 2), filters=filters))
+            matches.extend(store.search(
+                common_tenant, common_collection, q, max(10, k * 2),
+                filters=filters))
+            from heapq import nlargest
+            top = nlargest(k, matches, key=lambda x: x.score)
+            m_inc("matches_total", float(len(top) or 0))
+            latency_ms = round((_time.perf_counter() - start) * 1000, 2)
+            m_record_latency("search", latency_ms)
+            _log.info(
+                "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
+                tenant, collection, k, len(top), latency_ms, request_id)
+            return {
+                "matches": [r.to_dict() for r in top],
+                "latency_ms": latency_ms,
+                "request_id": request_id,
+            }
+        top = store.search(tenant, collection, q, k, filters=filters)
         m_inc("matches_total", float(len(top) or 0))
         latency_ms = round((_time.perf_counter() - start) * 1000, 2)
         m_record_latency("search", latency_ms)
@@ -153,18 +238,8 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             "latency_ms": latency_ms,
             "request_id": request_id,
         }
-    top = store.search(tenant, collection, q, k, filters=filters)
-    m_inc("matches_total", float(len(top) or 0))
-    latency_ms = round((_time.perf_counter() - start) * 1000, 2)
-    m_record_latency("search", latency_ms)
-    _log.info(
-        "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
-        tenant, collection, k, len(top), latency_ms, request_id)
-    return {
-        "matches": [r.to_dict() for r in top],
-        "latency_ms": latency_ms,
-        "request_id": request_id,
-    }
+    except Exception as exc:
+        raise ServiceError("search_failed", str(exc)) from exc
 
 
 def _write_zip(source_dir: Path, target_path: Path) -> None:
@@ -361,7 +436,11 @@ def list_tenants(store, data_dir: str | os.PathLike[str]) -> dict[str, Any]:
         tenants = sorted(store.list_tenants(str(data_dir)))
         return {"ok": True, "tenants": tenants, "count": len(tenants)}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {
+            "ok": False,
+            "code": "list_tenants_failed",
+            "error": str(e),
+        }
 
 def list_collections(store, tenant: str) -> dict[str, Any]:
     try:
@@ -373,4 +452,8 @@ def list_collections(store, tenant: str) -> dict[str, Any]:
             "count": len(collections),
         }
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {
+            "ok": False,
+            "code": "list_collections_failed",
+            "error": str(e),
+        }

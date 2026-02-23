@@ -13,7 +13,7 @@ def test_upload_csv_and_search(client):
     data = {"docid": "DOC-CSV"}
 
     r = client.post("/collections/acme/csvs/documents", files=files, data=data)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 201, r.text
     out = r.json()
     assert out["ok"] is True
     # Preprocess makes one chunk per row (ignore header)

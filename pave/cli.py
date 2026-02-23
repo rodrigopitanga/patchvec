@@ -16,18 +16,25 @@ from pave.service import (
     list_tenants as svc_list_tenants,
     list_collections as svc_list_collections,
     search as svc_search,
+    ServiceError,
 )
 from pave.config import get_cfg, reload_cfg
 from pave import metrics
 
 store = get_store(get_cfg())
 
+def _dump(out, pretty: bool = True):
+    if pretty:
+        print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(json.dumps(out, ensure_ascii=False))
+
 def _read(path: str) -> bytes:
     return pathlib.Path(path).read_bytes()
 
 def cmd_create(args):
     out = svc_create_collection(store, args.tenant, args.collection)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_ingest(args):
     baseid = args.docid or str(uuid.uuid4())
@@ -47,25 +54,25 @@ def cmd_ingest(args):
         store, args.tenant, args.collection, args.file, content,
         baseid if args.docid else None, meta, csv_options=csv_opts
     )
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_search(args):
     filters = json.loads(args.filters) if args.filters else None
     out = svc_search(store, args.tenant, args.collection, args.query, args.k,
                      filters=filters)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_delete(args):
     out = svc_delete_collection(store, args.tenant, args.collection)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_rename(args):
     out = svc_rename_collection(store, args.tenant, args.old_name, args.new_name)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_delete_document(args):
     out = svc_delete_document(store, args.tenant, args.collection, args.docid)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_dump_archive(args):
     cfg = get_cfg()
@@ -81,7 +88,7 @@ def cmd_dump_archive(args):
         "archive": archive_path,
         "source": str(data_dir),
     }
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_restore_archive(args):
     cfg = get_cfg()
@@ -91,7 +98,7 @@ def cmd_restore_archive(args):
 
     content = _read(args.file)
     out = svc_restore_archive(store, data_dir, content)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_reset_metrics(args):
     cfg = get_cfg()
@@ -99,7 +106,7 @@ def cmd_reset_metrics(args):
     if data_dir:
         metrics.set_data_dir(data_dir)
     out = metrics.reset()
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_list_tenants(args):
     cfg = get_cfg()
@@ -107,14 +114,19 @@ def cmd_list_tenants(args):
     if not data_dir:
         raise SystemExit("data directory is not configured")
     out = svc_list_tenants(store, data_dir)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def cmd_list_collections(args):
     out = svc_list_collections(store, args.tenant)
-    print(json.dumps(out, ensure_ascii=False))
+    _dump(out, pretty=not args.compact)
 
 def main_cli(argv=None):
     p = argparse.ArgumentParser(prog="pavecli")
+    p.add_argument(
+        "--compact",
+        action="store_true",
+        help="Emit compact JSON for scripting",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     #if p.config: reload_cfg(p.config)
 
@@ -188,7 +200,12 @@ def main_cli(argv=None):
     p_list_collections.set_defaults(func=cmd_list_collections)
 
     args = p.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ServiceError as exc:
+        out = {"ok": False, "code": exc.code, "error": exc.message}
+        _dump(out, pretty=not args.compact)
+        return 1
 
 if __name__ == "__main__":
     raise SystemExit(main_cli())

@@ -127,6 +127,20 @@ without it if you have a properly configured GPU).
 Ship code, not questions. If you need help, post logs and the failing command instead of
 asking for permission to ask.
 
+## API response policy
+
+- Use HTTP status codes for success vs failure (no 200 for errors).
+- Errors must use the standard envelope:
+  `{"ok": false, "code": "...", "error": "...", "details"?}`.
+- Error `code` values are created in the service layer whenever possible.
+- Service raises `ServiceError(code, message)` for exceptional failures.
+- API/CLI render the error envelope and preserve HTTP status codes.
+- Success responses stay unwrapped (simple payloads).
+- Cross-cutting metadata (e.g., `request_id`, `latency_ms`) may appear as
+  top-level fields on success and error responses.
+- Typed error schema: `ErrorResponse` in `pave/schemas.py` documents the
+  envelope for OpenAPI and future client SDKs.
+
 ## Architecture
 
 - Stores live under `pave/stores/*` (default txtai/FAISS today, Qdrant stub

@@ -13,11 +13,11 @@ def test_metrics_json(client):
 def test_metrics_counters(client):
     # create, upload, search -> counters move
     r = client.post("/collections/acme/m", headers={})
-    assert r.status_code == 200
+    assert r.status_code == 201
     r = client.post("/collections/acme/m/documents",
                     files={"file": ("a.txt", b"hello world", "text/plain")},
                     data={"docid": "D1"})
-    assert r.status_code == 200
+    assert r.status_code == 201
 
     r = client.get("/collections/acme/m/search", params={"q": "hello", "k": 5})
     assert r.status_code == 200

@@ -32,8 +32,9 @@ from pave.service import \
     ingest_document as svc_ingest_document, \
     list_tenants as svc_list_tenants, \
     list_collections as svc_list_collections, \
-    search as svc_search
-from pave.schemas import SearchBody, RenameCollectionBody, SearchResponse
+    search as svc_search, ServiceError
+from pave.schemas import SearchBody, RenameCollectionBody, SearchResponse, \
+    ErrorResponse
 
 
 VERSION = "0.5.7"
@@ -42,6 +43,9 @@ VERSION = "0.5.7"
 def build_app(cfg=get_cfg()) -> FastAPI:
 
     log = get_logger()
+
+    def _resp(*codes: int) -> dict[int, dict[str, type[ErrorResponse]]]:
+        return {code: {"model": ErrorResponse} for code in codes}
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -63,6 +67,21 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.store = get_store(cfg)
     app.state.cfg = cfg
     app.state.version = VERSION
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        detail = exc.detail
+        if isinstance(detail, dict):
+            code = detail.get("code", "http_error")
+            message = detail.get("error") or detail.get("message") or str(detail)
+        else:
+            code = "http_error"
+            message = str(detail)
+        return JSONResponse(
+            {"ok": False, "code": code, "error": message},
+            status_code=exc.status_code,
+            headers=exc.headers,
+        )
 
     # Initialize metrics persistence
     data_dir = cfg.get("data_dir")
@@ -146,30 +165,45 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     # ----------------- Core API ------------------
 
-    @app.get("/admin/archive", response_class=FileResponse)
+    def _error(status_code: int, code: str, message: str) -> JSONResponse:
+        return JSONResponse(
+            {"ok": False, "code": code, "error": message},
+            status_code=status_code,
+        )
+
+    @app.get(
+        "/admin/archive",
+        response_class=FileResponse,
+        responses=_resp(401, 403, 404, 500),
+    )
     async def dump_archive(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            raise HTTPException(status_code=403, detail="admin access required")
+            return _error(403, "admin_required", "admin access required")
 
         data_dir = cfg.get("data_dir")
         if not data_dir:
-            raise HTTPException(
-                status_code=500, detail="data directory is not configured")
+            return _error(
+                500,
+                "data_dir_not_configured",
+                "data directory is not configured",
+            )
 
         try:
             archive_path, tmp_dir = await run_in_threadpool(
                 svc_dump_archive, store, data_dir
             )
         except FileNotFoundError:
-            raise HTTPException(
-                status_code=404, detail="data directory not found")
+            return _error(404, "data_dir_not_found", "data directory not found")
         except Exception as exc:
-            raise HTTPException(
-                status_code=500, detail=f"failed to dump archive: {exc}")
+            return _error(
+                500,
+                "archive_dump_failed",
+                f"failed to dump archive: {exc}",
+            )
 
         filename = os.path.basename(archive_path)
 
@@ -186,7 +220,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             background=background,
         )
 
-    @app.put("/admin/archive")
+    @app.put(
+        "/admin/archive",
+        responses=_resp(400, 401, 403, 500),
+    )
     async def restore_archive(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
@@ -194,12 +231,15 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            raise HTTPException(status_code=403, detail="admin access required")
+            return _error(403, "admin_required", "admin access required")
 
         data_dir = cfg.get("data_dir")
         if not data_dir:
-            raise HTTPException(
-                status_code=500, detail="data directory is not configured")
+            return _error(
+                500,
+                "data_dir_not_configured",
+                "data directory is not configured",
+            )
 
         content = await file.read()
         try:
@@ -208,40 +248,57 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             )
             return out
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            return _error(400, "archive_invalid", str(exc))
         except Exception as exc:
-            raise HTTPException(
-                status_code=500, detail=f"failed to restore archive: {exc}")
+            return _error(
+                500,
+                "archive_restore_failed",
+                f"failed to restore archive: {exc}",
+            )
 
-    @app.delete("/admin/metrics")
+    @app.delete(
+        "/admin/metrics",
+        responses=_resp(401, 403),
+    )
     def delete_metrics(
         ctx: AuthContext = Depends(auth_ctx),
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            raise HTTPException(status_code=403, detail="admin access required")
+            return _error(403, "admin_required", "admin access required")
         return metrics_reset()
 
-    @app.get("/admin/tenants")
+    @app.get(
+        "/admin/tenants",
+        responses=_resp(401, 403, 500),
+    )
     def list_tenants(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            raise HTTPException(status_code=403, detail="admin access required")
+            return _error(403, "admin_required", "admin access required")
         data_dir = cfg.get("data_dir")
         if not data_dir:
-            raise HTTPException(
-                status_code=500, detail="data directory is not configured")
+            return _error(
+                500,
+                "data_dir_not_configured",
+                "data directory is not configured",
+            )
         result = svc_list_tenants(store, data_dir)
         if not result.get("ok"):
-            raise HTTPException(
-                status_code=500,
-                detail=result.get("error", "failed to list tenants"))
+            return _error(
+                500,
+                result.get("code", "list_tenants_failed"),
+                result.get("error", "failed to list tenants"),
+            )
         return result
 
-    @app.get("/collections/{tenant}")
+    @app.get(
+        "/collections/{tenant}",
+        responses=_resp(401, 403, 500),
+    )
     def list_collections(
         tenant: str,
         ctx: AuthContext = Depends(authorize_tenant),
@@ -250,12 +307,18 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         result = svc_list_collections(store, tenant)
         if not result.get("ok"):
-            raise HTTPException(
-                status_code=500,
-                detail=result.get("error", "failed to list collections"))
+            return _error(
+                500,
+                result.get("code", "list_collections_failed"),
+                result.get("error", "failed to list collections"),
+            )
         return result
 
-    @app.post("/collections/{tenant}/{name}")
+    @app.post(
+        "/collections/{tenant}/{name}",
+        status_code=201,
+        responses=_resp(401, 403, 500),
+    )
     def create_collection(
         tenant: str,
         name: str,
@@ -263,9 +326,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        return svc_create_collection(store, tenant, name)
+        result = svc_create_collection(store, tenant, name)
+        if not result.get("ok"):
+            return _error(
+                500,
+                result.get("code", "create_collection_failed"),
+                result.get("error", "failed to create collection"),
+            )
+        return result
 
-    @app.delete("/collections/{tenant}/{name}")
+    @app.delete(
+        "/collections/{tenant}/{name}",
+        responses=_resp(401, 403, 500),
+    )
     def delete_collection(
         tenant: str,
         name: str,
@@ -273,9 +346,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        return svc_delete_collection(store, tenant, name)
+        result = svc_delete_collection(store, tenant, name)
+        if not result.get("ok"):
+            return _error(
+                500,
+                result.get("code", "delete_collection_failed"),
+                result.get("error", "failed to delete collection"),
+            )
+        return result
 
-    @app.put("/collections/{tenant}/{name}")
+    @app.put(
+        "/collections/{tenant}/{name}",
+        responses=_resp(400, 401, 403, 404, 409, 500),
+    )
     def rename_collection(
         tenant: str,
         name: str,
@@ -286,12 +369,26 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         result = svc_rename_collection(store, tenant, name, body.new_name)
         if not result.get("ok"):
-            err = result.get("error", "unknown error")
-            raise HTTPException(
-                status_code=400, detail=f"failed to rename collection: {err}")
+            error_type = result.get("error_type", "invalid")
+            status_map = {
+                "not_found": 404,
+                "conflict": 409,
+                "invalid": 400,
+                "failed": 500,
+            }
+            status_code = status_map.get(error_type, 500)
+            return _error(
+                status_code,
+                result.get("code", "rename_invalid"),
+                result.get("error", "failed to rename collection"),
+            )
         return result
 
-    @app.post("/collections/{tenant}/{collection}/documents")
+    @app.post(
+        "/collections/{tenant}/{collection}/documents",
+        status_code=201,
+        responses=_resp(400, 401, 403, 500),
+    )
     async def ingest_document(
         tenant: str,
         collection: str,
@@ -312,9 +409,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 import json
                 meta_obj = json.loads(metadata)
             except Exception as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"invalid metadata json: {e}"
+                return _error(
+                    400,
+                    "invalid_metadata_json",
+                    f"invalid metadata json: {e}",
                 )
 
         content = await file.read()
@@ -328,16 +426,35 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             }
 
         try:
-            out = svc_ingest_document(
+            result = svc_ingest_document(
                 store, tenant, collection, file.filename, content,
                 docid, meta_obj, csv_options=csv_opts
             )
-            return out
-        except ValueError as ve:
-            # e.g., names provided but no header
-            raise HTTPException(status_code=400, detail=str(ve))
+            if not result.get("ok"):
+                code = result.get("code", "ingest_failed")
+                status_map = {
+                    "no_text_extracted": 400,
+                    "ingest_failed": 500,
+                }
+                return _error(
+                    status_map.get(code, 500),
+                    code,
+                    result.get("error", "failed to ingest document"),
+                )
+            return result
+        except ServiceError as exc:
+            code = exc.code
+            status_map = {"invalid_csv_options": 400, "ingest_failed": 500}
+            return _error(
+                status_map.get(code, 500),
+                code,
+                exc.message,
+            )
 
-    @app.delete("/collections/{tenant}/{collection}/documents/{docid}")
+    @app.delete(
+        "/collections/{tenant}/{collection}/documents/{docid}",
+        responses=_resp(401, 403, 500),
+    )
     def delete_document(
         tenant: str,
         collection: str,
@@ -348,13 +465,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         result = svc_delete_document(store, tenant, collection, docid)
         if not result.get("ok"):
-            raise HTTPException(
-                status_code=404,
-                detail=result.get("error", "document not found"))
+            return _error(
+                500,
+                result.get("code", "delete_document_failed"),
+                result.get("error", "failed to delete document"),
+            )
         return result
 
     # POST search (supports filters)
-    @app.post("/collections/{tenant}/{name}/search", response_model=SearchResponse)
+    @app.post(
+        "/collections/{tenant}/{name}/search",
+        response_model=SearchResponse,
+        responses=_resp(401, 403, 500),
+    )
     def search_post(
         tenant: str,
         name: str,
@@ -366,15 +489,21 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         request_id = body.request_id or x_request_id
         include_common = bool(cfg.common_enabled)
-        result = svc_search(
-            store, tenant, name, body.q, body.k, filters=body.filters,
-            include_common=include_common, common_tenant=cfg.common_tenant,
-            common_collection=cfg.common_collection, request_id=request_id
-        )
-        return JSONResponse(result)
+        try:
+            result = svc_search(
+                store, tenant, name, body.q, body.k, filters=body.filters,
+                include_common=include_common, common_tenant=cfg.common_tenant,
+                common_collection=cfg.common_collection, request_id=request_id
+            )
+            return JSONResponse(result)
+        except ServiceError as exc:
+            return _error(500, exc.code, exc.message)
 
     # GET search (no filters)
-    @app.get("/collections/{tenant}/{name}/search")
+    @app.get(
+        "/collections/{tenant}/{name}/search",
+        responses=_resp(401, 403, 500),
+    )
     def search_get(
         tenant: str,
         name: str,
@@ -386,15 +515,21 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     ):
         inc("requests_total")
         include_common = bool(cfg.common_enabled)
-        result = svc_search(
-            store, tenant, name, q, k, filters=None,
-            include_common=include_common, common_tenant=cfg.common_tenant,
-            common_collection=cfg.common_collection, request_id=x_request_id
-        )
-        return JSONResponse(result)
+        try:
+            result = svc_search(
+                store, tenant, name, q, k, filters=None,
+                include_common=include_common, common_tenant=cfg.common_tenant,
+                common_collection=cfg.common_collection, request_id=x_request_id
+            )
+            return JSONResponse(result)
+        except ServiceError as exc:
+            return _error(500, exc.code, exc.message)
 
     # Common collection search
-    @app.post("/search")
+    @app.post(
+        "/search",
+        responses=_resp(401, 403, 500),
+    )
     def search_common_post(
         body: SearchBody,
         x_request_id: str | None = Header(None, alias="X-Request-ID"),
@@ -409,13 +544,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 "latency_ms": 0.0,
                 "request_id": request_id,
             })
-        result = svc_search(
-            store, cfg.common_tenant, cfg.common_collection, body.q, body.k,
-            filters=body.filters, request_id=request_id
-        )
-        return JSONResponse(result)
+        try:
+            result = svc_search(
+                store, cfg.common_tenant, cfg.common_collection, body.q, body.k,
+                filters=body.filters, request_id=request_id
+            )
+            return JSONResponse(result)
+        except ServiceError as exc:
+            return _error(500, exc.code, exc.message)
 
-    @app.get("/search")
+    @app.get(
+        "/search",
+        responses=_resp(401, 403, 500),
+    )
     def search_common_get(
         q: str = Query(...),
         k: int = Query(5, ge=1),
@@ -430,11 +571,14 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 "latency_ms": 0.0,
                 "request_id": x_request_id,
             })
-        result = svc_search(
-            store, cfg.common_tenant, cfg.common_collection, q, k, filters=None,
-            request_id=x_request_id
-        )
-        return JSONResponse(result)
+        try:
+            result = svc_search(
+                store, cfg.common_tenant, cfg.common_collection, q, k,
+                filters=None, request_id=x_request_id
+            )
+            return JSONResponse(result)
+        except ServiceError as exc:
+            return _error(500, exc.code, exc.message)
 
     return app
 

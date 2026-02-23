@@ -20,7 +20,7 @@ def test_upload_pdf_and_search(client):
     data = {"docid": "DOC-PDF"}
 
     r = client.post("/collections/acme/pdfs/documents", files=files, data=data)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 201, r.text
     out = r.json()
     assert out["ok"] is True
     assert out["chunks"] >= 1

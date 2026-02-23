@@ -3,8 +3,18 @@
 
 """Pydantic schemas for API request/response validation."""
 
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel
+
+
+class ErrorResponse(BaseModel):
+    """API error envelope."""
+    ok: Literal[False]
+    code: str
+    error: str
+    details: dict[str, Any] | None = None
+    request_id: str | None = None
+    latency_ms: float | None = None
 
 
 class SearchResult(BaseModel):

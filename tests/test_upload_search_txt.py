@@ -9,7 +9,7 @@ def test_upload_txt_and_search_post_get(client):
     files = {"file": ("sample.txt", content, "text/plain")}
     data = {"docid": "DOC-TXT", "metadata": json.dumps({"lang": "pt"})}
     r = client.post("/collections/acme/txts/documents", files=files, data=data)
-    assert r.status_code == 200
+    assert r.status_code == 201
 
     # GET without filters
     s2 = client.get("/collections/acme/txts/search",
@@ -37,14 +37,14 @@ def test_reupload_same_docid_calls_purge_and_reindexes(client):
                      files={"file":
                             ("a.txt", b"alpha bravo charlie", "text/plain")},
                      data={"docid": "R-42"})
-    assert r1.status_code == 200
+    assert r1.status_code == 201
 
     # second upload with same docid -> must call purge
     r2 = client.post("/collections/acme/reup/documents",
                      files={"file":
                             ("a.txt", b"delta echo foxtrot", "text/plain")},
                      data={"docid": "R-42"})
-    assert r2.status_code == 200
+    assert r2.status_code == 201
     assert ("purge_doc", "acme", "reup", "R-42") in store.calls
 
     # confirm only new content appears
@@ -65,7 +65,7 @@ def test_upload_diff_docid_same_coll(client):
                      files={"file":
                             ("a.txt", b"pareciam estar sentados", "text/plain")},
                      data={"docid": "D-41"})
-    assert r1.status_code == 200
+    assert r1.status_code == 201
 
     s0 = client.post(
         "/collections/acme/acoll/search",
@@ -85,7 +85,7 @@ def test_upload_diff_docid_same_coll(client):
                      files={"file":
                             ("b.txt", b"delta echo foxtrot", "text/plain")},
                      data={"docid": "D-42"})
-    assert r2.status_code == 200
+    assert r2.status_code == 201
 
     # new doc in coll should not purge previous
     assert ("purge_doc", "acme", "acoll", "D-41") not in store.calls
