@@ -2,10 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import annotations
-import os, json, operator, tempfile
-from datetime import datetime
+import os, json, operator, tempfile, sqlite3
+from datetime import datetime, date
 from collections.abc import Iterable
 from typing import Any
+
+# Python 3.12 deprecated the default sqlite3 datetime adapters.
+# Register explicit ISO adapters so txtai's internal DB doesn't warn.
+sqlite3.register_adapter(date, date.isoformat)
+sqlite3.register_adapter(datetime, datetime.isoformat)
 
 from threading import Lock
 from contextlib import contextmanager
