@@ -35,7 +35,7 @@ from pave.service import \
     search as svc_search, ServiceError
 from pave.schemas import SearchBody, RenameCollectionBody, SearchResponse, \
     ErrorResponse
-
+from pave.ui import attach_ui
 
 VERSION = "0.5.8a0"
 
@@ -406,7 +406,6 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         meta_obj = None
         if metadata:
             try:
-                import json
                 meta_obj = json.loads(metadata)
             except Exception as e:
                 return _error(
@@ -629,14 +628,24 @@ def main_srv():
                 reload=reload,
                 workers=workers,
                 log_level=log_level,
-                timeout_keep_alive=timeout_keep_alive)
+                timeout_keep_alive=timeout_keep_alive,
+                )
 
-# Default app instance for `uvicorn pave.main:app`
-app = build_app()
+# Lazy module-level `app` — only built when first accessed (e.g. by uvicorn).
+# Importing `build_app` or `VERSION` from this module is now side-effect-free.
+_app = None
 
-# UI attach (minimal)
-from pave.ui import attach_ui
-attach_ui(app)
+def __getattr__(name: str):
+    if name == "app":
+        global _app
+        if _app is None:
+            _app = build_app()
+            try:
+                attach_ui(_app)
+            except Exception:
+                pass
+        return _app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 if __name__ == "__main__":
     main_srv()
