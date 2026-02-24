@@ -219,7 +219,7 @@ package: build $(ART_DIR)
 .PHONY: docker-build
 docker-build: install
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-build VERSION=0.5.4')"; exit 1; fi
-	@if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	@set -e; if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
 	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
 	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
 	elif [ -n "$(REGISTRY)" ]; then \
@@ -235,7 +235,7 @@ docker-build: install
 .PHONY: docker-push
 docker-push:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-push VERSION=0.5.4')"; exit 1; fi
-	@if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	@set -e; if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
 	  $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
 	  $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
 	elif [ -n "$(REGISTRY)" ]; then \
