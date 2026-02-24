@@ -387,7 +387,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post(
         "/collections/{tenant}/{collection}/documents",
         status_code=201,
-        responses=_resp(400, 401, 403, 500),
+        responses=_resp(400, 401, 403, 413, 500),
     )
     async def ingest_document(
         tenant: str,
@@ -416,6 +416,16 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 )
 
         content = await file.read()
+
+        _raw_mb = cfg.get("ingest.max_file_size_mb")
+        max_mb = float(_raw_mb) if _raw_mb is not None else 500.0
+        max_bytes = int(max_mb * 1024 * 1024)
+        if max_bytes > 0 and len(content) > max_bytes:
+            return _error(
+                413,
+                "file_too_large",
+                f"file exceeds the {int(max_mb)} MB limit",
+            )
 
         csv_opts = None
         if csv_has_header or csv_meta_cols or csv_include_cols:

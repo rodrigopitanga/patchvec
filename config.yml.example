@@ -48,6 +48,12 @@ embedder:
     api_key: ${PATCHVEC_OPENAI_API_KEY}
     dim: 1536
 
+# Ingest limits
+ingest:
+  max_file_size_mb: 500   # reject uploads larger than this (MB); 0 = unlimited
+                          # ensure your reverse proxy (e.g. nginx client_max_body_size)
+                          # is set to at least the same value
+
 # Text preprocessing
 preprocess:
   txt_chunk_size: 1000

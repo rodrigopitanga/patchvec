@@ -46,6 +46,7 @@ _DEFAULTS = {
     "data_dir": "./data",
     "auth": {"mode": "none", "api_keys": {}, "tenants_file": None},
     "vector_store": {"type": "default"},
+    "ingest": {"max_file_size_mb": 500},
 }
 
 _ENV_PATTERN = re.compile(r"\$\{([^}:|]+)(?:\|([^}]*))?\}")
