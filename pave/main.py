@@ -615,6 +615,7 @@ def main_srv():
     reload = bool(cfg.get("server.reload", False))
     workers = int(cfg.get("server.workers", 1))
     log_level = str(cfg.get("server.log_level", "info"))
+    timeout_keep_alive = int(cfg.get("server.timeout_keep_alive") or 75)
 
     if cfg.get("dev",0):
         log_level = "debug"
@@ -627,7 +628,8 @@ def main_srv():
                 port=port,
                 reload=reload,
                 workers=workers,
-                log_level=log_level)
+                log_level=log_level,
+                timeout_keep_alive=timeout_keep_alive)
 
 # Default app instance for `uvicorn pave.main:app`
 app = build_app()

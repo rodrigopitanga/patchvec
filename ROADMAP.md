@@ -71,7 +71,7 @@ Size legend: 🧩 bite-sized, 🧱 foundational
 | P1-09 | **Metadata store (SQLite)** | 🧱 | ACID + concurrency | v0.5.8 |
 | P1-10 | **Per-collection embeddings** | 🧱 | Model per collection | v0.6 |
 | P1-11 | **Global `request_id` echo** | 🧩 | Traceability | v0.6 |
-| P1-12 | **Ingest timeout guidance** | 🧩 | Avoid client timeouts | v0.5.8 |
+| P1-12 | ~~**Ingest timeout guidance**~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | **Ingest size limits** | 🧩 | Fail fast on huge uploads | v0.5.8 |
 | P1-14 | **Response envelope standardization** | 🧱 | SDK-friendly API | v0.6 |
 | P1-15 | **Embedded/library mode** | 🧱 | In-app use, adoption | v0.7 |
@@ -193,7 +193,7 @@ and logs (market practice §7).~~
 Order: must first, then should.
 - Error code standardization (consistent codes/messages).
 - Add ingest size limits with clear errors.
-- Document ingest timeout guidance (client/proxy/uvicorn).
+- ~~Document ingest timeout guidance (client/proxy/uvicorn).~~
 - Make `build_app()` lazy; avoid eager app creation at import time.
 - Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market
 practice §5).

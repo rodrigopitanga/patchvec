@@ -67,6 +67,19 @@ server:
   reload: false
   workers: 1
   log_level: info
+  # Keep-alive timeout in seconds (passed to uvicorn --timeout-keep-alive).
+  # Should be lower than your reverse proxy's keepalive_timeout.
+  # nginx default: 75 s — set this to 65 when behind nginx.
+  timeout_keep_alive: 75
+
+# Reverse-proxy timeout guidance for ingest endpoints
+# Ingest embeds the entire document before responding; for large files this
+# can take tens of seconds.  Raise these nginx directives accordingly:
+#
+#   proxy_read_timeout   300;  # wait up to 5 min for upstream response
+#   client_body_timeout  120;  # wait up to 2 min for client to send body
+#
+# HTTP client read timeout should also be at least 300 s for ingest calls.
 
 # Optional instance customization
 instance:
