@@ -171,10 +171,14 @@ sentence-transformers, OpenAI, etc.).
 
 ## Release tags and GitLab CI
 
-Pushing a GitLab tag triggers the release pipeline:
+Pushing a tag to the GitLab repository triggers the release pipeline
+automatically (no manual steps). Tag format:
+`vX.Y.Z` where each component is 1–4 digits, with an optional suffix up to 16
+non-whitespace characters (e.g. `rc1`, `a0`, `b2`).
 
-- `vX.Y.Z` publishes to PyPI and GitLab Package Registry, and builds/pushes Docker
-  images to the GitLab Container Registry.
-- `vX.Y.ZrcN` publishes to TestPyPI and GitLab Package Registry. RC tags do **not**
-  trigger Docker builds.
+| Tag pattern | PyPI | TestPyPI | GitLab Package Registry | Docker |
+|-------------|------|----------|-------------------------|--------|
+| `vX.Y.Z` | ✓ | — | ✓ | CPU + GPU |
+| `vX.Y.ZrcN` (N ≤ 999) | — | ✓ | ✓ | CPU only |
+| `vX.Y.Z<other>` | — | — | ✓ | — |
 - `make clean` / `make clean-dist` — remove caches and build outputs.
