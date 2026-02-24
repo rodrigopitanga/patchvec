@@ -1,6 +1,35 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
+## 0.5.8a0 — 2026-02-24
+
+### API
+- [cli] add list-tenants and list-collections endpoints and commands
+- Ensure latency_ms in all /search returns (incl. common disabled)
+- Normalize error envelope and make document delete idempotent
+
+### Core
+- Add collection rename functionality across all layers
+- Standardize naming across API, CLI, and service layers
+- Add SearchResult dataclass for type-safe search results
+
+### Documentation
+- Add coding style, commit message standards to developer docs
+- Revamp ROADMAP structure, priorities, and release ordering
+
+### Build
+- Make release re-run safety, docker-build/push USE_CPU parity
+
+### Infrastructure
+- Remove deploy jobs, add docker RC build, fix tag patterns
+
+### Chores
+- Refine release pipeline, CI/CD workflow, and developer docs
+- Enforce 88-char line limit across project files
+- Enforce 88-char line limit across docs
+- Update ROADMAP
+
+---
 ## 0.5.7 — 2026-02-21
 
 ### Store

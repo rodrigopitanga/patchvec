@@ -37,7 +37,7 @@ from pave.schemas import SearchBody, RenameCollectionBody, SearchResponse, \
     ErrorResponse
 
 
-VERSION = "0.5.7"
+VERSION = "0.5.8a0"
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
