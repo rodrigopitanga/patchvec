@@ -51,58 +51,76 @@ These are non-negotiable constraints that apply across all versions.
 
 ### P0 — Blocks first consumer GA launch
 
-Size legend: 🧩 bite-sized, 🧱 foundational
+Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 
-| ID | Task | Size | Why it blocks | Source |
+| ID | Task | Effort | Why it blocks | Source |
 |---|---|---|---|---|
-| P0-01 | ~~**Multilingual embedding model**~~ |  | Non-EN recall | `txtai_store.py` |
-| P0-02 | ~~**`match_reason` on every hit**~~ |  | Trust + explanation gap | v0.5.7 |
-| P0-03 | ~~**Latency histograms**~~ |  | No latency visibility | v0.5.7 |
-| P0-04 | ~~**Negation pre-filter**~~ |  | Tail latency | `txtai_store.py` |
-| P0-05 | ~~**`trace_id` propagation**~~ |  | No request correlation | v0.5.8 |
+| P0-01 | ~~Multilingual embedding model~~ |  | Non-EN recall | `txtai_store.py` |
+| P0-02 | ~~`match_reason` on every hit~~ |  | Trust + explanation gap | v0.5.7 |
+| P0-03 | ~~Latency histograms~~ |  | No latency visibility | v0.5.7 |
+| P0-04 | ~~Negation pre-filter~~ |  | Tail latency | `txtai_store.py` |
+| P0-05 | ~~`trace_id` propagation~~ |  | No request correlation | v0.5.8 |
 
 ### P1 — Critical for first B2B pilots
 
-| ID | Task | Size | Why it matters | Source |
+| ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
-| P1-06 | ~~**Delete doc by ID**~~ | 🧩 | No partial data fixes | v0.5.7 |
-| P1-07 | **Hybrid reranking** | 🧱 | Exact token boost | v0.5.9 |
-| P1-08 | **Per-tenant rate limiting** |  | Abuse protection | v0.5.8 |
-| P1-09 | **Metadata store (SQLite)** | 🧱 | ACID + concurrency | v0.5.8 |
-| P1-10 | **Per-collection embeddings** | 🧱 | Model per collection | v0.6 |
-| P1-11 | **Global `request_id` echo** | 🧩 | Traceability | v0.6 |
-| P1-12 | ~~**Ingest timeout guidance**~~ | 🧩 | Avoid client timeouts | v0.5.8 |
-| P1-13 | **Ingest size limits** | 🧩 | Fail fast on huge uploads | v0.5.8 |
-| P1-14 | **Response envelope standardization** | 🧱 | SDK-friendly API | v0.6 |
-| P1-15 | **Embedded/library mode** | 🧱 | In-app use, adoption | v0.7 |
-| P1-16 | **Batch ingest endpoint** | 🧩 | Throughput, DX | v0.7 |
-| P1-17 | **Get document by ID** | 🧩 | Visibility, library mode | v0.7 |
+| P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
+| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.5.9 |
+| P1-08 | Per-tenant rate limiting |  | Abuse protection | v0.5.8 |
+| P1-09 | Metadata store (SQLite) | 🧱 | ACID + concurrency | v0.5.8 |
+| P1-10 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
+| P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.6 |
+| P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
+| P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
+| P1-14 | Response envelope standardization | 🧱 | SDK-friendly API | v0.6 |
+| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v0.7 |
+| P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v0.7 |
+| P1-17 | Get document by ID | 🧩 | Visibility, library mode | v0.7 |
+| P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
+| P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
+| P1-20 | Search timeout + concurrency cap | 🔧 | Graceful degradation | v0.5.8 |
+| P1-21 | Serve listings + metrics from store | 🧩 | Internal store query layer | v0.5.8 |
+| P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v0.6 |
+| P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.6 |
+| P1-24 | Python client package | 🧱 | SDK foundation | v0.7 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
-| ID | Task | Size | Why it matters | Source |
+| ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
-| P2-11 | **`meta.priority` boosts** |  | Surface priority items | v0.5.9 |
-| P2-12 | ~~**List tenants/collections API**~~ | 🧩 | Ops visibility | v0.6 |
-| P2-13 | **Collection log export** | 🧱 | Search analytics | v0.5.8 |
-| P2-14 | **Document versioning** | 🧱 | Audit trails | v0.8 |
-| P2-19 | **Tenant admin infra** | 🧱 | Admin ops | v0.6 |
-| P2-20 | **Collection limit / tenant** | 🧩 | Cap growth | v0.6 |
-| P2-21 | **Storage limit / tenant** | 🧩 | Cap storage | v0.6 |
-| P2-22 | **Usage stats to mothership** |  | Capacity planning | v0.7 |
-| P2-23 | **Developer visibility tools** | 🧱 | DX, debuggability | v0.7 |
-| P2-24 | **Delete by ID list / by query** | 🧩 | Bulk ops, DX | v0.8 |
-| P2-25 | **Collection version tagging** | 🧩 | Portability, migration | v0.6 |
-| P2-26 | **Tenant profiles + templates** | 🧱 | Quota governance, tiers | v0.8 |
-| P2-27 | **Image ingest + embeddings** | 🧱 | Multimodal adoption | v0.8 |
+| P2-11 | `meta.priority` boosts |  | Surface priority items | v0.5.9 |
+| P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v0.6 |
+| P2-13 | Collection log export | 🧱 | Search analytics | v0.7b |
+| P2-14 | Document versioning | 🧱 | Audit trails | v0.8 |
+| P2-19 | Tenant admin infra | 🧱 | Admin ops | v0.6 |
+| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v0.8 |
+| P2-20 | Collection limit / tenant | 🧩 | Cap growth | v0.6 |
+| P2-21 | Storage limit / tenant | 🧩 | Cap storage | v0.6 |
+| P2-22 | Usage stats to mothership |  | Capacity planning | v0.7 |
+| P2-23 | Developer visibility tools | 🧱 | DX, debuggability | v0.7 |
+| P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v0.8 |
+| P2-25 | Collection version tagging | 🧩 | Portability, migration | v0.6 |
+| P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v0.8 |
+| P2-27 | Image ingest + embeddings | 🧱 | Multimodal adoption | v0.8 |
+| P2-28 | Structured log emission + retention | 🧩 | Analytics foundation | v0.5.8 |
+| P2-29 | Multilingual relevance fixtures | 🧩 | Recall validation | v0.5.9 |
+| P2-30 | Benchmark CI gate + p99 SLO | 🧩 | Latency contract | v0.5.9 |
+| P2-31 | Formalize collection independence | 🔧 | Portability contract | v0.6 |
+| P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v0.7b |
+| P2-33 | JS/TS client | 🧱 | Web + Node adoption | v0.7b |
+| P2-34 | LangChain adapter | 🧱 | Framework coverage | v0.7b |
+| P2-35 | MCP server | 🧱 | AI agent integration | v0.8 |
+| P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v0.8 |
+| P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.0 |
 
 ### P3 — Scale and long-term
 
-| ID | Task | Size | Source |
+| ID | Task | Effort | Source |
 |---|---|---|---|
 | P3-15 | Async ingest + parallel purge |  | v0.9 |
 | P3-16 | Horizontal scalability + routing | 🧱 | v0.9 |
-| P3-17 | JWT auth + per-tenant quotas | 🧱 | v0.8 |
+| P3-17 | OIDC/JWT auth (additive; API keys remain) | 🧱 | v0.8 |
 | P3-18 | API freeze + SDK client | 🧱 | v1.0 |
 | P3-23 | Docs website | 🧩 | v0.7 |
 | P3-24 | Revamp UI | 🧱 | v0.7 |
@@ -114,12 +132,22 @@ Size legend: 🧩 bite-sized, 🧱 foundational
 | P3-30 | Retain original uploaded files (opt-in) | 🧱 | v0.9 |
 | P3-31 | Async ingest jobs + job status API | 🧱 | v0.9 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v0.9 |
-| P3-33 | Tenant job notifications (webhook/email) | 🧱 | v1.0+ |
 | P3-34 | Relicensing (AGPLv3 candidate) | 🧱 | v0.5.9 |
 | P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.6 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | v1.0+ |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
-| P3-38 | Tenant syndicates (opt-in grouping, no mandatory hierarchy) | 🧱 | v1.0+ |
+| P3-39 | Resolve embedder factory integration | 🔧 | v0.6 |
+| P3-40 | Publish pip freeze snapshot | 🧩 | v0.6 |
+| P3-41 | Swagger UI tenant/collection defaults | 🧩 | v0.7b |
+| P3-42 | Alive test in CI | 🧩 | v0.7b |
+| P3-43 | Go client | 🧱 | v0.8 |
+| P3-44 | Persistent metrics in UI | 🧩 | v0.8 |
+| P3-45 | Independence principle audit | 🔧 | v0.8 |
+| P3-46 | Matrix CI builds | 🧱 | v0.9 |
+| P3-47 | Additional media types: graphic/geom | 🧱 | v1.0 |
+| P3-48 | Additional media types: AV | 🧱 | v1.0 |
+| P3-49 | Additional media types: georeferenced | 🧱 | v1.0 |
+| P3-50 | Split main.py routes into APIRouter modules (health, admin, collections, documents, search) | 🧩 | v0.5.9 |
 
 ---
 
@@ -190,11 +218,11 @@ and logs (market practice §7).~~
 - ~~Update copyright notices, polish logging infrastructure~~
 
 ### v0.5.8 — Resilience
-Order: must first, then should.
-- Error code standardization (consistent codes/messages).
-- Add ingest size limits with clear errors.
+
+- ~~Error code standardization (consistent codes/messages).~~
+- ~~Add ingest size limits with clear errors.~~
 - ~~Document ingest timeout guidance (client/proxy/uvicorn).~~
-- Make `build_app()` lazy; avoid eager app creation at import time.
+- ~~Make `build_app()` lazy; avoid eager app creation at import time.~~
 - Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market
 practice §5).
 - Per-tenant and per-operation API rate limits (market practice §8 — quota governance).
@@ -205,7 +233,8 @@ tenant/collection.
 - ~~Support renaming collections through the API and CLI.~~
 
 ### v0.5.9 — Relevance
-Order: must first, then should.
+
+- Split main.py into APIRouter modules per domain.
 - Honor `meta.priority` boosts during scoring.
 - Add hybrid reranking (vector similarity + BM25/token matching).
 - Multilingual relevance evaluation fixtures (non-English test corpus).
@@ -215,7 +244,7 @@ Order: must first, then should.
 - Response envelope standardization (v0.6 prep).
 
 ### 0.6 — Stability
-Order: must first, then should.
+
 - Define embedder/store separation contract (txtai models vs FAISS store).
 - Resolve embedder factory integration with TxtaiStore.
 - Tenant admin infrastructure (limits, visibility, controls).
@@ -223,6 +252,7 @@ Order: must first, then should.
 - Per-tenant storage limit.
 - Configure embedding model per collection via `config.yml`.
 - Per-collection hot caches with isolation.
+- Global `request_id` echo across all endpoints and responses.
 - Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`).
 - Response envelope standardization (consistent success/error shape).
 - Collection version tagging (PatchVec version + schema version baked into collection
@@ -266,7 +296,11 @@ Order: must first, then should.
   cloud-native and infrastructure consumers.
 - Document versioning, rebuild tooling.
 - Persistent metrics in the UI.
-- JWT auth, per-tenant quotas, transactional rollback.
+- Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
+  `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml` into SQL on
+  first boot; SQL becomes source of truth for keys and limits thereafter.
+- OIDC/JWT as opt-in alternative auth (`auth.oidc.issuer` config); API keys
+  remain permanently supported. PatchVec accepts either on any request.
 - Extensible ingest plugin architecture (foundation for additional media types;
   plugin interface must be stable before any specific media type ships).
 - Image ingest + embeddings (separate image collections, CLIP-style models;
@@ -297,10 +331,11 @@ Order: must first, then should.
 - Additional media types: graphic/geom (feature detection).
 - Additional media types: AV (transcriptions, pattern detection).
 - Additional media types: georeferenced content.
-- Tenant job notifications (webhook/email).
 - Audit logs for admin actions.
 
 ### 1.0+ — Post-freeze backlog (no IDs yet)
+- Tenant job notifications (webhook/email).
+- Tenant syndicates (opt-in grouping, no mandatory hierarchy).
 - Rust client (WASM target; browser-side or embedded use cases).
 - Multimodal collections: images, audio, and text in a shared vector space
   (cross-modal search; requires model architecture commitment).
@@ -344,7 +379,7 @@ path harder to reason about for security audits. (done v0.5.7)
 
 2. **Global singleton at import time** — `main.py:362` calls `build_app()` at
 module level, which instantiates the store and config eagerly. This makes testing harder
-(requires monkeypatching) and prevents lazy initialization. (schedule v0.5.8)
+(requires monkeypatching) and prevents lazy initialization. (done v0.5.8)
 
 3. **`assert` in production code** — `txtai_store.py:265` uses `assert` to verify
 chunk text round-trips. Assertions are stripped when Python runs with `-O`. This should
