@@ -8,6 +8,8 @@ import os
 import io
 import pytest
 from pathlib import Path
+
+pytestmark = pytest.mark.slow
 from utils import FakeEmbeddings
 
 # --- Fixtures ----------------------------------------------------------------

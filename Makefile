@@ -74,7 +74,8 @@ help:
 	@echo "  venv            Create local virtualenv (.venv)"
 	@echo "  install         Install runtime deps (GPU by default; USE_CPU=1 for CPU)"
 	@echo "  install-dev     Install dev/test deps (GPU by default; USE_CPU=1 for CPU)"
-	@echo "  test            Run pytest"
+	@echo "  test            Run pytest (full suite)"
+	@echo "  test-fast       Run pytest (skip slow/real-embedding tests)"
 	@echo "  serve           Run API server (DEV: PATCHVEC_DEV=1, auth=none, loopback)"
 	@echo "  cli             Run CLI (pass ARGS='...')"
 	@echo "  bump            Bump file versions everywhere"
@@ -133,6 +134,10 @@ install-dev: install
 .PHONY: test
 test: install-dev
 	PYTHONPATH=. $(PYTHON_BIN) -m pytest -q
+
+.PHONY: test-fast
+test-fast: install-dev
+	PYTHONPATH=. $(PYTHON_BIN) -m pytest -q -m "not slow"
 
 .PHONY: serve
 serve: install

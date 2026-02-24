@@ -1,6 +1,11 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import pytest
+
+pytestmark = pytest.mark.slow
+
+
 def test_upload_pdf_and_search(client):
     # create collection
     client.post("/collections/acme/pdfs")

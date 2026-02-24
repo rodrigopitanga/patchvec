@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import pytest
+
+pytestmark = pytest.mark.slow
+
 
 def test_upload_csv_and_search(client):
     # create collection

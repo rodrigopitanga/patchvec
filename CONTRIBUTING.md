@@ -152,6 +152,74 @@ sentence-transformers, OpenAI, etc.).
 - CLI entrypoints are defined in `pave/cli.py`; shell shims `pavecli.sh`/`pavesrv.sh`
   wrap the same commands for repo contributors.
 
+## Testing
+
+The suite is split into **fast** (default) and **slow** tests:
+
+```bash
+make test-fast   # seconds — no model loaded, FakeEmbeddings only
+make test        # full suite, loads real embeddings for slow tests
+```
+
+### Fast vs slow tests
+
+Non-slow tests have `FakeEmbeddings` injected automatically by the `conftest`
+autouse fixture. `FakeEmbeddings` stores chunks in memory and uses **substring
+matching** — deterministic and instant, but not semantically meaningful.
+
+Slow tests use the real `TxtaiStore` with a small sentence-transformers model
+(`paraphrase-MiniLM-L3-v2`).
+
+**Mark a test (or a whole module) as slow when it:**
+
+- creates a real `TxtaiStore` directly (`TxtaiStore(...)` in the test/fixture)
+- needs real semantic similarity (filter ordering, multilingual, ranking)
+- is an end-to-end upload-and-search pipeline test
+
+Add `pytestmark` at the top of the module to mark every test in the file:
+
+```python
+import pytest
+
+pytestmark = pytest.mark.slow
+```
+
+Or decorate individual tests:
+
+```python
+@pytest.mark.slow
+def test_semantic_ranking(client): ...
+```
+
+### How embedding injection works
+
+The autouse fixture in `conftest.py` checks for the `slow` marker:
+
+| Test type | Embeddings class | Model |
+|-----------|-----------------|-------|
+| fast (default) | `FakeEmbeddings` (monkeypatched) | none |
+| `@pytest.mark.slow` | real `txtai.embeddings.Embeddings` | `paraphrase-MiniLM-L3-v2` |
+
+Because `FakeEmbeddings` is injected at the module level, tests that create
+`TxtaiStore()` directly (instead of using the `app` fixture) **must** be marked
+slow — otherwise `TxtaiStore` will receive `FakeEmbeddings` and real txtai
+features (persistence format, filter SQL, etc.) will not work.
+
+### Forcing FakeEmbeddings in a single test
+
+If you need to unit-test non-embedding logic inside `TxtaiStore` without
+loading a model, patch `Embeddings` explicitly and skip the slow marker:
+
+```python
+from tests.utils import FakeEmbeddings
+import pave.stores.txtai_store as store_mod
+
+def test_purge_clears_index(monkeypatch, tmp_path):
+    monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
+    store = TxtaiStore(...)
+    ...
+```
+
 ## Makefile Targets (base by default; `USE_CPU=1` for CPU-only wheels).
 
 - `make install` — install runtime deps.

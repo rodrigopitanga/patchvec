@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import json
+import pytest
+
+pytestmark = pytest.mark.slow
+
 
 def test_upload_txt_and_search_post_get(client):
     client.post("/collections/acme/txts")

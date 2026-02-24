@@ -5,6 +5,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import pytest
+
+pytestmark = pytest.mark.slow
+
 from pave.stores.txtai_store import TxtaiStore
 from pave.config import get_cfg
 
