@@ -219,25 +219,26 @@ package: build $(ART_DIR)
 .PHONY: docker-build
 docker-build: install
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-build VERSION=0.5.4')"; exit 1; fi
-	@if [ -n "$(REGISTRY)" ]; then \
+	@if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	elif [ -n "$(REGISTRY)" ]; then \
 	  echo "Building $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) from $(DOCKERFILE)"; \
 	  docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then docker tag $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) $(REGISTRY)/$(IMAGE_NAME):$(LATEST_TAG); fi; \
 	else \
 	  echo "Building $(IMAGE_NAME):$(IMAGE_TAG) from $(DOCKERFILE)"; \
 	  docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
-	fi
-	@if [ "$(PUSH_LATEST)" = "1" ]; then \
-	  if [ -n "$(REGISTRY)" ]; then \
-	    docker tag $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) $(REGISTRY)/$(IMAGE_NAME):$(LATEST_TAG); \
-	  else \
-	    docker tag $(IMAGE_NAME):$(IMAGE_TAG) $(IMAGE_NAME):$(LATEST_TAG); \
-	  fi; \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then docker tag $(IMAGE_NAME):$(IMAGE_TAG) $(IMAGE_NAME):$(LATEST_TAG); fi; \
 	fi
 
 .PHONY: docker-push
 docker-push:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-push VERSION=0.5.4')"; exit 1; fi
-	@if [ -n "$(REGISTRY)" ]; then \
+	@if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	  $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	  $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	elif [ -n "$(REGISTRY)" ]; then \
 	  echo "Pushing $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)"; \
 	  docker push $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG); \
 	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(REGISTRY)/$(IMAGE_NAME):$(LATEST_TAG); fi; \
@@ -314,8 +315,23 @@ release:
 	$(MAKE) test || { echo "Tests failed."; revert_changes; exit 1; }; \
 	echo "Building dists..."; \
 	$(MAKE) build || { echo "Build failed."; revert_changes; exit 1; }; \
-	git commit -m "chore(release): v$(VERSION)"; \
-	git tag v$(VERSION); \
+	if git diff --cached --quiet; then \
+	  echo "Nothing to commit — release commit already exists, skipping."; \
+	else \
+	  git commit -m "chore(release): v$(VERSION)"; \
+	fi; \
+	if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
+	  printf "Tag v$(VERSION) already exists. Re-tag? [y/N] "; \
+	  read RETAG < /dev/tty; \
+	  if [ "$$RETAG" = "y" ] || [ "$$RETAG" = "Y" ]; then \
+	    git tag -d "v$(VERSION)"; \
+	    git tag "v$(VERSION)"; \
+	  else \
+	    echo "Keeping existing tag."; \
+	  fi; \
+	else \
+	  git tag "v$(VERSION)"; \
+	fi; \
 	$(MAKE) package; \
 	if [ "$(DOCKER_PUBLISH)" = "1" ]; then \
 	  echo "Publishing Docker image(s)..."; \
@@ -495,8 +511,8 @@ benchmark: benchmark-latency benchmark-stress
 
 # Upload para o TestPyPI (faz build antes)
 publish-test: build
-	$(PYTHON_BIN) -m twine upload --repository testpypi $(DIST_DIR)/*
+	$(PYTHON_BIN) -m twine upload --skip-existing --repository testpypi $(DIST_DIR)/*
 
 # Upload para o PyPI oficial (requer token)
 publish: build
-	$(PYTHON_BIN) -m twine upload $(DIST_DIR)/*
+	$(PYTHON_BIN) -m twine upload --skip-existing $(DIST_DIR)/*

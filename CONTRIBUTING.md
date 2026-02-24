@@ -165,9 +165,21 @@ sentence-transformers, OpenAI, etc.).
 - `make changelog-write` — update `CHANGELOG.md` for `VERSION`.
 - `make release VERSION=x.y.z` — bump versions, regenerate changelog, run tests/build,
   create artifacts (`./artifacts`), tag (no push), and build Docker images:
-- If `USE_CPU` is not set, builds both CPU and GPU images.
-- If `USE_CPU=0` or `USE_CPU=1`, builds only the requested variant.
-- If `DOCKER_PUBLISH=1`, pushes images; otherwise builds only.
+  - If `USE_CPU` is not set, builds both CPU and GPU images.
+  - If `USE_CPU=0` or `USE_CPU=1`, builds only the requested variant.
+  - If `DOCKER_PUBLISH=1`, pushes images; otherwise builds only.
+
+### If `make release` fails
+
+`make release VERSION=x.y.z` is safe to re-run after fixing the failure:
+
+- **Failed before commit** (e.g. tests): bumped files are uncommitted. Fix and
+  re-run, or `git checkout -- .` to start clean.
+- **Failed after commit, before tag**: re-run skips the commit (nothing staged)
+  and creates the tag normally.
+- **Failed after tag** (e.g. Docker): re-run skips the commit, then prompts
+  `Re-tag? [y/N]` — answer `N` to keep the existing tag and continue from the
+  Docker step.
 
 ## Release tags and GitLab CI
 
