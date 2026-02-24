@@ -13,6 +13,38 @@ task, open an issue titled `claim: <task ID>` and link your branch or PR.
 > correct results**. Every TODO is evaluated against that metric and general production
 > readiness.
 
+## Design Principles
+
+These are non-negotiable constraints that apply across all versions.
+
+- **Zero boilerplate by default.** A working setup requires no org, workspace, profile,
+  or grouping ceremony. Create a collection and go. Groupings, limits, and profiles are
+  opt-in — never required for a basic setup.
+- **Collection independence.** Collections are not owned by tenants. The tenant is a
+  runtime namespace, not a structural owner. Collections must be fully portable: export
+  from one instance/tenant, import into another without data loss or format surprise.
+- **Transparency by default.** Developers must be able to see what was indexed, what
+  chunks were produced, what metadata is stored. Opacity is a DX failure.
+- **Layered independence.** Auth, tenant profiles, collections, and server configuration
+  are orthogonal concerns. No layer forces coupling to another. A tenant can exist
+  without a profile; a collection can exist without a custom embedding config.
+- **Optional tenant groupings ("syndicates").** When tenant grouping is needed (e.g.
+  for org-level quotas or shared collections), it is expressed as a lightweight syndicate
+  — an opt-in overlay, not a mandatory hierarchy. No boilerplate orgs/workspaces.
+- **Server and library are the same thing.** PatchVec must run equally well as an HTTP
+  microservice and as an in-process Python library (embedded, single-tenant, no uvicorn).
+  The service layer is the API; HTTP is just one transport.
+- **Media types are progressive, not baked in.** Text is the baseline. Every additional
+  media type (images, audio, video, and beyond) is added through a stable ingest plugin
+  interface without touching the core. The plugin contract must be stable before any
+  specific media type ships.
+- **Collections are version-safe.** Every collection records the PatchVec and schema
+  version it was written with. Incompatible reads must fail loudly with actionable
+  guidance, not silently corrupt. Migration tooling ships alongside breaking changes.
+- **PatchVec enforces limits; it does not govern business logic.** Resource limits,
+  quotas, and tier profiles are read from a manifest and applied at runtime. Billing,
+  onboarding, and payment are outside PatchVec's scope — it just reads a file.
+
 ---
 
 ## Priority Evaluation (external driver)
@@ -42,6 +74,9 @@ Size legend: 🧩 bite-sized, 🧱 foundational
 | P1-12 | **Ingest timeout guidance** | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | **Ingest size limits** | 🧩 | Fail fast on huge uploads | v0.5.8 |
 | P1-14 | **Response envelope standardization** | 🧱 | SDK-friendly API | v0.6 |
+| P1-15 | **Embedded/library mode** | 🧱 | In-app use, adoption | v0.7 |
+| P1-16 | **Batch ingest endpoint** | 🧩 | Throughput, DX | v0.7 |
+| P1-17 | **Get document by ID** | 🧩 | Visibility, library mode | v0.7 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -55,6 +90,11 @@ Size legend: 🧩 bite-sized, 🧱 foundational
 | P2-20 | **Collection limit / tenant** | 🧩 | Cap growth | v0.6 |
 | P2-21 | **Storage limit / tenant** | 🧩 | Cap storage | v0.6 |
 | P2-22 | **Usage stats to mothership** |  | Capacity planning | v0.7 |
+| P2-23 | **Developer visibility tools** | 🧱 | DX, debuggability | v0.7 |
+| P2-24 | **Delete by ID list / by query** | 🧩 | Bulk ops, DX | v0.8 |
+| P2-25 | **Collection version tagging** | 🧩 | Portability, migration | v0.6 |
+| P2-26 | **Tenant profiles + templates** | 🧱 | Quota governance, tiers | v0.8 |
+| P2-27 | **Image ingest + embeddings** | 🧱 | Multimodal adoption | v0.8 |
 
 ### P3 — Scale and long-term
 
@@ -69,20 +109,67 @@ Size legend: 🧩 bite-sized, 🧱 foundational
 | P3-25 | Multilingual UI/errors/docs | 🧱 | v0.7 |
 | P3-26 | Embedder/store contract | 🧱 | v0.6 |
 | P3-27 | Chunking strategies | 🧱 | v0.9 |
-| P3-28 | Media-type ingest plugins | 🧱 | v0.8 |
-| P3-29 | Additional media types | 🧱 | v1.0+ |
-| P3-30 | Retain uploaded files | 🧱 | v0.9 |
+| P3-28 | Extensible ingest plugin architecture | 🧱 | v0.8 |
+| P3-29 | Audio/video ingest + embeddings | 🧱 | v0.9 |
+| P3-30 | Retain original uploaded files (opt-in) | 🧱 | v0.9 |
 | P3-31 | Async ingest jobs + job status API | 🧱 | v0.9 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v0.9 |
 | P3-33 | Tenant job notifications (webhook/email) | 🧱 | v1.0+ |
 | P3-34 | Relicensing (AGPLv3 candidate) | 🧱 | v0.5.9 |
 | P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.6 |
+| P3-36 | Multimodal collections (cross-modal search) | 🧱 | v1.0+ |
+| P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
+| P3-38 | Tenant syndicates (opt-in grouping, no mandatory hierarchy) | 🧱 | v1.0+ |
 
 ---
 
 ## Release Schedule (internal driver)
 
-### v0.5.7 — Production Readiness
+### v0.1 — Prototype
+- First search + ingest pipeline; single-tenant, FAISS-backed, sbert embeddings.
+- CLI-driven TXT ingestion and REST search endpoint; minimal auth stub.
+
+### v0.2 — Isolation
+- Multi-tenant routing (`/{tenant}/{collection}`) with per-tenant API key auth.
+- Collection creation, deletion, and document management endpoints.
+
+### v0.3 — Extension
+- QdrantStore skeleton, OpenAI embedder proof of concept, unified `CFG` config.
+- Full CLI mode added.
+
+### v0.4 — Modularity
+- Codebase split into `stores/`, `embedders/`, `auth.py`, `service.py`, `cli.py`,
+  `preprocess.py`, `metrics.py`.
+
+### v0.5 — Pluggability
+- `BaseStore` ABC, `StoreFactory` + `EmbedderFactory`; runtime backend selection.
+- `/health` endpoint; `DummyStore` for isolated testing.
+
+### v0.5.1 — Hardening
+- Auth refactored into dependency-injected `auth_ctx()`; unified GET/POST search.
+- Comprehensive pytest suite; factories migrated to `match` syntax.
+
+### v0.5.2 — Ingestion
+- CSV and PDF ingest alongside TXT; `TxtaiEmbedder`, `OpenAIEmbedder`, `SbertEmbedder`.
+- Fixed JSON body search route; docker-compose stub added.
+
+### v0.5.3 — Foundation
+- Makefile release flow, GitLab/GitHub CI/CD, `.env.example`, `tenants.yml`.
+- README split into user + contributor docs; REST curl examples; PyPI install path.
+
+### v0.5.4 — Launch
+- Initial public release; CSV ingestion knobs, deterministic doc-ID re-ingest.
+- Request metrics standardized; Docker GPU/CPU + PyPI publish pipeline bootstrapped.
+
+### v0.5.5 — Refinement
+- FAISS index initialization on collection creation; correct text retrieval from store.
+- Auth edge cases fixed; entry point hardened for production binding.
+
+### v0.5.6 — Deployment
+- Docker GPU/CPU split pipeline; Swagger/OpenAPI UI with branding and auth helpers.
+- Ingestion timestamps; improved FAISS concurrency and chunk text persistence fallback.
+
+### v0.5.7 — Readiness
 - ~~Switch default embedding model to multilingual (e.g., `paraphrase-multilingual-
 MiniLM-L12-v2`).~~
 - ~~Return a `match_reason` field alongside every search hit.~~
@@ -102,7 +189,7 @@ and logs (market practice §7).~~
 - ~~Push legacy typing synthax to Python 3.10~~
 - ~~Update copyright notices, polish logging infrastructure~~
 
-### v0.5.8 — Infrastructure & Resilience
+### v0.5.8 — Resilience
 Order: must first, then should.
 - Error code standardization (consistent codes/messages).
 - Add ingest size limits with clear errors.
@@ -117,15 +204,17 @@ practice §5).
 tenant/collection.
 - ~~Support renaming collections through the API and CLI.~~
 
-### v0.5.9 — Ranking Quality
+### v0.5.9 — Relevance
 Order: must first, then should.
 - Honor `meta.priority` boosts during scoring.
 - Add hybrid reranking (vector similarity + BM25/token matching).
 - Multilingual relevance evaluation fixtures (non-English test corpus).
+- Run benchmark suite in CI; publish results as artifacts; define p99
+  latency SLO gate (closes Market Practice §2 gap).
 - Relicensing review (AGPLv3 candidate).
 - Response envelope standardization (v0.6 prep).
 
-### 0.6 — Per-Collection Embeddings & Schema Freeze
+### 0.6 — Stability
 Order: must first, then should.
 - Define embedder/store separation contract (txtai models vs FAISS store).
 - Resolve embedder factory integration with TxtaiStore.
@@ -136,38 +225,74 @@ Order: must first, then should.
 - Per-collection hot caches with isolation.
 - Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`).
 - Response envelope standardization (consistent success/error shape).
+- Collection version tagging (PatchVec version + schema version baked into collection
+  metadata at creation/write time — foundation for portability and migration).
+- Formalize collection independence from tenant: tenant is a namespace, not an owner;
+  collections must be fully exportable and importable across instances and tenants.
+- Publish `pip freeze` snapshot as a release artifact alongside Docker images.
 - Rebranding review (PaveDB candidate).
 - ~~List tenants and collections via API (CLI parity).~~
 - ~~Typed response models (internal `SearchResult` dataclass).~~
 - ~~Remove or gate `qdrant-client` dependency behind extras.~~
 
-### 0.7 — SDK & Orchestrator Integration
-- Python SDK client package (`pave`).
+### 0.7a — Adoption
+- Python client package (`pave`): HTTP mode for remote instances; library mode for
+  in-process use (no HTTP). Same package, two transports.
+- Embedded/library mode: run PatchVec in-process without HTTP server (expose
+  service + store layer as a Python API; single-tenant default).
+- Batch ingest endpoint (list of documents in one call).
+- Get document by ID endpoint (retrieve text + metadata for a known docid).
+
+### 0.7b — Reach
+- `pavecli --host`: route CLI commands through the HTTP client instead of the service
+  layer directly; depends on Python client. CLI becomes a thin wrapper.
+- JavaScript/TypeScript client: typed, bootstrapped from OpenAPI spec, published to
+  npm. Covers web frontends and Node.js backends.
 - LangChain `VectorStore` + `Retriever` adapter (covers LangGraph + CrewAI).
+- Developer visibility tools: chunk inspector, indexed document browser, metadata
+  explorer — debuggability as a first-class feature.
 - Default tenant/collection selectors in Swagger UI.
 - Collection-level structured log export for analytics.
+- Alive test in CI pipeline (post-deploy health check against a real environment).
 - Docs website (public docs, API reference).
 - Revamp UI.
 - Multilingual support for UI, error messages, and docs.
 - Usage stats to mothership (opt-in/anon).
 
-### 0.8 — MCP, LlamaIndex & Governance
+### 0.8 — Governance
 - MCP server (expose search/ingest/list as MCP tools).
 - LlamaIndex `VectorStore` adapter.
+- Go client: generated from OpenAPI spec, published as a Go module; covers
+  cloud-native and infrastructure consumers.
 - Document versioning, rebuild tooling.
 - Persistent metrics in the UI.
 - JWT auth, per-tenant quotas, transactional rollback.
-- Media-type ingest plugin PoC (extensible ingest pipeline).
+- Extensible ingest plugin architecture (foundation for additional media types;
+  plugin interface must be stable before any specific media type ships).
+- Image ingest + embeddings (separate image collections, CLIP-style models;
+  multimodal collections deferred to post-1.0).
+- Delete by ID list and delete by metadata query (single-collection scope first).
+- Tenant profiles: manifest-driven resource limits (memory, storage, concurrency,
+  models available), profile templates (e.g. free/paid tiers); PatchVec enforces
+  limits, does not handle billing or onboarding.
+- Collection migration tooling: detect version mismatches, provide upgrade path
+  across PatchVec/txtai/FAISS version changes.
+- Commit to independence principle: auth, tenant profiles, collections, and
+  server config are orthogonal — no coupling between layers.
 
 ### 0.9 — Scale
 - Async ingest, parallel purge.
 - Horizontal scalability, tenant groups, sub-index routing.
 - Chunking strategies (semantic, hybrid) foundations.
-- Retain uploaded files (originals + versioning hooks).
+- Retain original uploaded files, opt-in (originals + versioning hooks).
 - Async ingest jobs with status tracking API.
 - Per-tenant parallel ingest limits.
+- Audio/video ingest + embeddings (transcription pipeline for audio; key-frame +
+  audio track for video; separate collections, multimodal deferred).
+- Matrix CI builds (Python 3.10/3.11/3.12 × core ML versions) as pre-1.0
+  compatibility gate.
 
-### 1.0 — API Freeze
+### 1.0 — Contract
 - Lock routes, publish final OpenAPI spec, ship SDK client.
 - Additional media types: graphic/geom (feature detection).
 - Additional media types: AV (transcriptions, pattern detection).
@@ -176,6 +301,9 @@ Order: must first, then should.
 - Audit logs for admin actions.
 
 ### 1.0+ — Post-freeze backlog (no IDs yet)
+- Rust client (WASM target; browser-side or embedded use cases).
+- Multimodal collections: images, audio, and text in a shared vector space
+  (cross-modal search; requires model architecture commitment).
 - Vector dimension/schema guardrails.
 - Soft-delete + TTL policies.
 - Snapshot/backup automation.
@@ -585,12 +713,17 @@ Status: done.
 
 | Version | Deliverable | Depends on |
 |---------|------------|------------|
-| v0.7 | Python SDK (`pave` client package) | Stable REST API (v0.6) |
-| v0.7 | LangChain `VectorStore` adapter | SDK + doc delete (P1-6) |
-| v0.8 | MCP server | SDK |
-| v0.8 | LlamaIndex adapter | SDK |
+| v0.7.0 | Python client (`pave`): HTTP + library mode | Stable REST API (v0.6) |
+| v0.7.0 | Embedded mode, batch ingest, get-doc-by-ID | Python client |
+| v0.7.5 | `pavecli --host` (remote CLI via HTTP client) | Python client |
+| v0.7.5 | JS/TS client (npm) | OpenAPI spec (auto-generated, then typed) |
+| v0.7.5 | LangChain `VectorStore` adapter | Python client |
+| v0.8 | Go client (Go module, generated) | Stable OpenAPI spec |
+| v0.8 | MCP server | Python client |
+| v0.8 | LlamaIndex adapter | Python client |
 | ~~v0.9~~ | ~~Typed response models~~ | ~~API freeze~~ |
-| 1.0 | Published integrations on PyPI (`pave-langchain`, `pave-mcp`) | API freeze |
+| 1.0 | Published integrations on PyPI/npm (`pave-langchain`, `pave-mcp`) | API freeze |
+| 1.0+ | Rust client (WASM target) | API freeze |
 
 ### What this means for the revised version milestones
 
