@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-import json, os, logging, shutil
+import asyncio, functools, json, os, logging, shutil
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import uvicorn
 
@@ -58,6 +59,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             log.warning("Embedding model warm-up failed: %s", e)
         yield
         metrics_flush()
+        for _exec in (app.state.search_executor, app.state.ingest_executor):
+            if _exec is not None:
+                _exec.shutdown(wait=False)
 
     app = FastAPI(
         title=cfg.get("instance.name","Patchvec"),
@@ -67,6 +71,67 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.store = get_store(cfg)
     app.state.cfg = cfg
     app.state.version = VERSION
+
+    # Search limits
+    _raw_conc = cfg.get("search.max_concurrent")
+    _max_conc = int(_raw_conc) if _raw_conc is not None else 42
+    _raw_to = cfg.get("search.timeout_ms")
+    _to_ms = int(_raw_to) if _raw_to is not None else 30_000
+    # Dedicated executor: threads == max_concurrent so work starts immediately.
+    app.state.search_executor = (
+        ThreadPoolExecutor(max_workers=_max_conc) if _max_conc > 0 else None
+    )
+    # Plain counter instead of threading.Semaphore: check+increment has no
+    # await between them, so it is atomic in the asyncio event loop.
+    app.state.max_searches = _max_conc
+    app.state.active_searches = 0
+    app.state.search_timeout_s = _to_ms / 1000.0 if _to_ms > 0 else 0.0
+
+    _raw_iconc = cfg.get("ingest.max_concurrent")
+    _max_iconc = int(_raw_iconc) if _raw_iconc is not None else 7
+    app.state.ingest_executor = (
+        ThreadPoolExecutor(max_workers=_max_iconc) if _max_iconc > 0 else None
+    )
+    app.state.max_ingests = _max_iconc
+    app.state.active_ingests = 0
+
+    async def _do_search(fn):
+        """Concurrency gate + timeout wrapper for all search handlers."""
+        timeout_s = app.state.search_timeout_s
+        max_s = app.state.max_searches
+        # Check-and-increment has no await between them: atomic in asyncio.
+        if max_s > 0:
+            if app.state.active_searches >= max_s:
+                return _error(
+                    503, "search_overloaded",
+                    "too many concurrent searches, try again later",
+                )
+            app.state.active_searches += 1
+        try:
+            loop = asyncio.get_running_loop()
+            future = loop.run_in_executor(app.state.search_executor, fn)
+            try:
+                if timeout_s > 0:
+                    result = await asyncio.wait_for(
+                        asyncio.shield(future), timeout=timeout_s
+                    )
+                else:
+                    result = await future
+                return JSONResponse(result)
+            except asyncio.TimeoutError:
+                # Thread keeps running; suppress its eventual result/exception.
+                future.add_done_callback(
+                    lambda f: f.exception() if not f.cancelled() else None
+                )
+                return _error(
+                    503, "search_timeout",
+                    f"search timed out after {int(timeout_s * 1000)}ms",
+                )
+            except ServiceError as exc:
+                return _error(500, exc.code, exc.message)
+        finally:
+            if max_s > 0:
+                app.state.active_searches -= 1
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
@@ -485,9 +550,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post(
         "/collections/{tenant}/{name}/search",
         response_model=SearchResponse,
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 500, 503),
     )
-    def search_post(
+    async def search_post(
         tenant: str,
         name: str,
         body: SearchBody,
@@ -498,22 +563,22 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         inc("requests_total")
         request_id = body.request_id or x_request_id
         include_common = bool(cfg.common_enabled)
-        try:
-            result = svc_search(
-                store, tenant, name, body.q, body.k, filters=body.filters,
-                include_common=include_common, common_tenant=cfg.common_tenant,
-                common_collection=cfg.common_collection, request_id=request_id
-            )
-            return JSONResponse(result)
-        except ServiceError as exc:
-            return _error(500, exc.code, exc.message)
+        return await _do_search(functools.partial(
+            svc_search,
+            store, tenant, name, body.q, body.k,
+            filters=body.filters,
+            include_common=include_common,
+            common_tenant=cfg.common_tenant,
+            common_collection=cfg.common_collection,
+            request_id=request_id,
+        ))
 
     # GET search (no filters)
     @app.get(
         "/collections/{tenant}/{name}/search",
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 500, 503),
     )
-    def search_get(
+    async def search_get(
         tenant: str,
         name: str,
         q: str = Query(...),
@@ -524,22 +589,22 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     ):
         inc("requests_total")
         include_common = bool(cfg.common_enabled)
-        try:
-            result = svc_search(
-                store, tenant, name, q, k, filters=None,
-                include_common=include_common, common_tenant=cfg.common_tenant,
-                common_collection=cfg.common_collection, request_id=x_request_id
-            )
-            return JSONResponse(result)
-        except ServiceError as exc:
-            return _error(500, exc.code, exc.message)
+        return await _do_search(functools.partial(
+            svc_search,
+            store, tenant, name, q, k,
+            filters=None,
+            include_common=include_common,
+            common_tenant=cfg.common_tenant,
+            common_collection=cfg.common_collection,
+            request_id=x_request_id,
+        ))
 
     # Common collection search
     @app.post(
         "/search",
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 500, 503),
     )
-    def search_common_post(
+    async def search_common_post(
         body: SearchBody,
         x_request_id: str | None = Header(None, alias="X-Request-ID"),
         ctx: AuthContext = Depends(auth_ctx),
@@ -553,20 +618,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 "latency_ms": 0.0,
                 "request_id": request_id,
             })
-        try:
-            result = svc_search(
-                store, cfg.common_tenant, cfg.common_collection, body.q, body.k,
-                filters=body.filters, request_id=request_id
-            )
-            return JSONResponse(result)
-        except ServiceError as exc:
-            return _error(500, exc.code, exc.message)
+        return await _do_search(functools.partial(
+            svc_search,
+            store, cfg.common_tenant, cfg.common_collection,
+            body.q, body.k,
+            filters=body.filters,
+            request_id=request_id,
+        ))
 
     @app.get(
         "/search",
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 500, 503),
     )
-    def search_common_get(
+    async def search_common_get(
         q: str = Query(...),
         k: int = Query(5, ge=1),
         x_request_id: str | None = Header(None, alias="X-Request-ID"),
@@ -580,14 +644,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 "latency_ms": 0.0,
                 "request_id": x_request_id,
             })
-        try:
-            result = svc_search(
-                store, cfg.common_tenant, cfg.common_collection, q, k,
-                filters=None, request_id=x_request_id
-            )
-            return JSONResponse(result)
-        except ServiceError as exc:
-            return _error(500, exc.code, exc.message)
+        return await _do_search(functools.partial(
+            svc_search,
+            store, cfg.common_tenant, cfg.common_collection,
+            q, k,
+            filters=None,
+            request_id=x_request_id,
+        ))
 
     return app
 

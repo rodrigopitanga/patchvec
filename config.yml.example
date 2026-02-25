@@ -54,6 +54,12 @@ ingest:
                           # ensure your reverse proxy (e.g. nginx client_max_body_size)
                           # is set to at least the same value
 
+# Search limits
+search:
+  max_concurrent: 42      # max parallel searches; excess requests get 503 immediately
+                          # 0 = unlimited (not recommended in production)
+  timeout_ms: 30000       # per-search timeout in ms; 503 on expiry; 0 = no timeout
+
 # Text preprocessing
 preprocess:
   txt_chunk_size: 1000
