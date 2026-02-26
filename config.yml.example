@@ -53,6 +53,8 @@ ingest:
   max_file_size_mb: 500   # reject uploads larger than this (MB); 0 = unlimited
                           # ensure your reverse proxy (e.g. nginx client_max_body_size)
                           # is set to at least the same value
+  max_concurrent: 7       # max parallel ingests; excess requests get 503 immediately
+                          # ingest is CPU/memory heavy; 0 = unlimited
 
 # Search limits
 search:

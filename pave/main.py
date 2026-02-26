@@ -452,7 +452,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post(
         "/collections/{tenant}/{collection}/documents",
         status_code=201,
-        responses=_resp(400, 401, 403, 413, 500),
+        responses=_resp(400, 401, 403, 413, 500, 503),
     )
     async def ingest_document(
         tenant: str,
@@ -499,31 +499,48 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 "include_cols": csv_include_cols or "",
             }
 
+        max_i = app.state.max_ingests
+        if max_i > 0:
+            if app.state.active_ingests >= max_i:
+                return _error(
+                    503, "ingest_overloaded",
+                    "too many concurrent ingests, try again later",
+                )
+            app.state.active_ingests += 1
         try:
-            result = svc_ingest_document(
-                store, tenant, collection, file.filename, content,
-                docid, meta_obj, csv_options=csv_opts
-            )
-            if not result.get("ok"):
-                code = result.get("code", "ingest_failed")
-                status_map = {
-                    "no_text_extracted": 400,
-                    "ingest_failed": 500,
-                }
+            try:
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    app.state.ingest_executor,
+                    functools.partial(
+                        svc_ingest_document,
+                        store, tenant, collection, file.filename, content,
+                        docid, meta_obj, csv_options=csv_opts,
+                    ),
+                )
+                if not result.get("ok"):
+                    code = result.get("code", "ingest_failed")
+                    status_map = {
+                        "no_text_extracted": 400,
+                        "ingest_failed": 500,
+                    }
+                    return _error(
+                        status_map.get(code, 500),
+                        code,
+                        result.get("error", "failed to ingest document"),
+                    )
+                return result
+            except ServiceError as exc:
+                code = exc.code
+                status_map = {"invalid_csv_options": 400, "ingest_failed": 500}
                 return _error(
                     status_map.get(code, 500),
                     code,
-                    result.get("error", "failed to ingest document"),
+                    exc.message,
                 )
-            return result
-        except ServiceError as exc:
-            code = exc.code
-            status_map = {"invalid_csv_options": 400, "ingest_failed": 500}
-            return _error(
-                status_map.get(code, 500),
-                code,
-                exc.message,
-            )
+        finally:
+            if max_i > 0:
+                app.state.active_ingests -= 1
 
     @app.delete(
         "/collections/{tenant}/{collection}/documents/{docid}",

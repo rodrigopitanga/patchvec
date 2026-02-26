@@ -46,7 +46,7 @@ _DEFAULTS = {
     "data_dir": "./data",
     "auth": {"mode": "none", "api_keys": {}, "tenants_file": None},
     "vector_store": {"type": "default"},
-    "ingest": {"max_file_size_mb": 500},
+    "ingest": {"max_file_size_mb": 500, "max_concurrent": 7},
     "search": {"max_concurrent": 42, "timeout_ms": 30000},
     "server": {"timeout_keep_alive": 75},
 }
