@@ -16,7 +16,7 @@ from typing import Any
 from starlette.background import BackgroundTask
 
 from pave.config import get_cfg, get_logger
-from pave.auth import AuthContext, auth_ctx, authorize_tenant, \
+from pave.auth import AuthContext, auth_ctx, tenant_rate_limit, \
     enforce_policy, resolve_bind
 from pave.metrics import inc, set_error, snapshot, to_prometheus, \
     reset as metrics_reset, set_data_dir as metrics_set_data_dir, \
@@ -94,6 +94,23 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     )
     app.state.max_ingests = _max_iconc
     app.state.active_ingests = 0
+
+    # Per-tenant concurrency limits
+    _tenants_cfg = cfg.get("tenants") or {}
+    _raw_def = (
+        _tenants_cfg.get("default_max_concurrent")
+        if isinstance(_tenants_cfg, dict) else None
+    )
+    app.state.tenant_default_limit = int(_raw_def) if _raw_def is not None else 0
+    app.state.tenant_limits = {}
+    app.state.tenant_active = {}
+    for _t, _tcfg in (_tenants_cfg.items() if isinstance(_tenants_cfg, dict) else []):
+        if _t == "default_max_concurrent" or not isinstance(_tcfg, dict):
+            continue
+        _lim = _tcfg.get("max_concurrent")
+        if _lim is not None:
+            app.state.tenant_limits[_t] = int(_lim)
+            app.state.tenant_active[_t] = 0
 
     async def _do_search(fn):
         """Concurrency gate + timeout wrapper for all search handlers."""
@@ -362,11 +379,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @app.get(
         "/collections/{tenant}",
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 429, 500),
     )
     def list_collections(
         tenant: str,
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
@@ -382,12 +399,12 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post(
         "/collections/{tenant}/{name}",
         status_code=201,
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 429, 500),
     )
     def create_collection(
         tenant: str,
         name: str,
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
@@ -402,12 +419,12 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @app.delete(
         "/collections/{tenant}/{name}",
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 429, 500),
     )
     def delete_collection(
         tenant: str,
         name: str,
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
@@ -422,13 +439,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @app.put(
         "/collections/{tenant}/{name}",
-        responses=_resp(400, 401, 403, 404, 409, 500),
+        responses=_resp(400, 401, 403, 404, 409, 429, 500),
     )
     def rename_collection(
         tenant: str,
         name: str,
         body: RenameCollectionBody,
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
@@ -452,7 +469,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post(
         "/collections/{tenant}/{collection}/documents",
         status_code=201,
-        responses=_resp(400, 401, 403, 413, 500, 503),
+        responses=_resp(400, 401, 403, 413, 429, 500, 503),
     )
     async def ingest_document(
         tenant: str,
@@ -465,7 +482,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         csv_has_header: str | None = Query(None, pattern="^(auto|yes|no)$"),
         csv_meta_cols: str | None = Query(None),
         csv_include_cols: str | None = Query(None),
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         meta_obj = None
@@ -544,13 +561,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @app.delete(
         "/collections/{tenant}/{collection}/documents/{docid}",
-        responses=_resp(401, 403, 500),
+        responses=_resp(401, 403, 429, 500),
     )
     def delete_document(
         tenant: str,
         collection: str,
         docid: str,
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
@@ -567,14 +584,14 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.post(
         "/collections/{tenant}/{name}/search",
         response_model=SearchResponse,
-        responses=_resp(401, 403, 500, 503),
+        responses=_resp(401, 403, 429, 500, 503),
     )
     async def search_post(
         tenant: str,
         name: str,
         body: SearchBody,
         x_request_id: str | None = Header(None, alias="X-Request-ID"),
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
@@ -593,7 +610,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     # GET search (no filters)
     @app.get(
         "/collections/{tenant}/{name}/search",
-        responses=_resp(401, 403, 500, 503),
+        responses=_resp(401, 403, 429, 500, 503),
     )
     async def search_get(
         tenant: str,
@@ -601,7 +618,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         q: str = Query(...),
         k: int = Query(5, ge=1),
         x_request_id: str | None = Header(None, alias="X-Request-ID"),
-        ctx: AuthContext = Depends(authorize_tenant),
+        ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")

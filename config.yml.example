@@ -62,6 +62,13 @@ search:
                           # 0 = unlimited (not recommended in production)
   timeout_ms: 30000       # per-search timeout in ms; 503 on expiry; 0 = no timeout
 
+# Per-tenant concurrency limits
+# Applies to all tenant-scoped routes (search, ingest, collection ops).
+# Admin requests and global-key requests bypass limits.
+# Moving-window limits (max_rpm, max_rph) require SQLite (post-v0.5.8).
+tenants:
+  default_max_concurrent: 10  # global default for every tenant; 0 = unlimited
+
 # Text preprocessing
 preprocess:
   txt_chunk_size: 1000

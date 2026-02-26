@@ -6,7 +6,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 # typing imports removed
-from fastapi import HTTPException, Depends, Security
+from fastapi import HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from . import config as cfg
 
@@ -79,6 +79,49 @@ def authorize_tenant(tenant: str, ctx: AuthContext = Depends(auth_ctx)) -> AuthC
     if ctx.is_admin or ctx.tenant == tenant:
         return ctx
     _raise_403()
+
+
+async def tenant_rate_limit(
+    request: Request,
+    response: Response,
+    ctx: AuthContext = Depends(authorize_tenant),
+):
+    """Per-tenant concurrent cap. Admin and unconfigured tenants bypass."""
+    tenant = ctx.tenant
+    if ctx.is_admin or tenant is None:
+        yield ctx
+        return
+
+    # per-tenant override → global default → 0 (unlimited)
+    max_c = request.app.state.tenant_limits.get(
+        tenant, request.app.state.tenant_default_limit
+    )
+    if max_c <= 0:
+        yield ctx
+        return
+
+    active = request.app.state.tenant_active
+    if active.get(tenant, 0) >= max_c:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "tenant_rate_limited",
+                "error": "too many concurrent requests for this tenant",
+            },
+            headers={
+                "Retry-After": "1",
+                "X-RateLimit-Limit": str(max_c),
+                "X-RateLimit-Remaining": "0",
+            },
+        )
+    active[tenant] = active.get(tenant, 0) + 1
+    remaining = max(0, max_c - active[tenant])
+    response.headers["X-RateLimit-Limit"] = str(max_c)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    try:
+        yield ctx
+    finally:
+        active[tenant] = max(0, active[tenant] - 1)
 
 
 # --- Startup security policy -------------------------------------------------
