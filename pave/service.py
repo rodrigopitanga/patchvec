@@ -24,7 +24,7 @@ from pave.metrics import (
 from pave.preprocess import preprocess
 from pave.stores.base import BaseStore, SearchResult
 
-_log = get_logger()
+log = get_logger()
 
 # Pure-ish service functions operating on a store adapter
 class ServiceError(RuntimeError):
@@ -153,6 +153,7 @@ def _default_docid(filename: str) -> str:
 def ingest_document(store, tenant: str, collection: str, filename: str, content: bytes,
                     docid: str | None, metadata: dict[str, Any] | None,
                     csv_options: dict[str, Any] | None = None) -> dict[str, Any]:
+    _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
             baseid = docid or _default_docid(filename)
@@ -180,6 +181,11 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             count = store.index_records(tenant, collection, baseid, records)
             m_inc("documents_indexed_total", 1.0)
             m_inc("chunks_indexed_total", float(count or 0))
+            latency_ms = round((_time.perf_counter() - _t0) * 1000, 2)
+            log.info(
+                f"ingest tenant={tenant} coll={collection} "
+                f"docid={baseid} chunks={count} ms={latency_ms:.2f}"
+            )
             return {
                 "ok": True,
                 "tenant": tenant,
@@ -218,9 +224,10 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             m_inc("matches_total", float(len(top) or 0))
             latency_ms = round((_time.perf_counter() - start) * 1000, 2)
             m_record_latency("search", latency_ms)
-            _log.info(
-                "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
-                tenant, collection, k, len(top), latency_ms, request_id)
+            log.info(
+                f"search tenant={tenant} coll={collection} k={k} "
+                f"hits={len(top)} ms={latency_ms:.2f}"
+                + (f" req={request_id}" if request_id else ""))
             return {
                 "matches": [r.to_dict() for r in top],
                 "latency_ms": latency_ms,
@@ -230,9 +237,10 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
         m_inc("matches_total", float(len(top) or 0))
         latency_ms = round((_time.perf_counter() - start) * 1000, 2)
         m_record_latency("search", latency_ms)
-        _log.info(
-            "search tenant=%s coll=%s k=%d hits=%d ms=%.2f req=%s",
-            tenant, collection, k, len(top), latency_ms, request_id)
+        log.info(
+            f"search tenant={tenant} coll={collection} k={k} "
+            f"hits={len(top)} ms={latency_ms:.2f}"
+            + (f" req={request_id}" if request_id else ""))
         return {
             "matches": [r.to_dict() for r in top],
             "latency_ms": latency_ms,

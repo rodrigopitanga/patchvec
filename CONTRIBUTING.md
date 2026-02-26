@@ -1,4 +1,4 @@
-<!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
+<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 # 👾 Contributing to PatchVec
@@ -90,10 +90,18 @@ breakdown:
 | `[pkg]` | Packaging | PyPI/Docker packaging |
 | `[doc]` | Documentation | README, docstrings, guides |
 | `[test]` | Testing | Test suite changes |
+| `[log]` | Logging | Log streams, observability, metrics |
 | `[ui]` | UI | Web UI changes |
 | `[infra]` | Infrastructure | CI/CD, deployment scripts |
 
 **Two tags max**, most relevant first: `[api][cli] Add delete document endpoint`
+
+**Feature plan reference:** when a commit implements work tracked in `docs/`,
+include the plan ID in parentheses at the end of the first line:
+
+```
+[log] dev stream cleanup (P2-28)
+```
 
 **Chores** use `chore:` for maintenance that doesn't affect functionality:
 
@@ -112,6 +120,20 @@ commits (`chore(release): vX.Y.Z`) are auto-skipped.
 approach.
 - Good first issues live under the `bite-sized` label. Submit a draft PR
 within a few days of claiming.
+
+## Feature plans
+
+Substantial features are designed in `docs/` before implementation. Read the
+relevant plan before picking up a task.
+
+| File | Plan ID | Feature |
+|---|---|---|
+| `docs/PLAN-OPS-LOG.md` | P2-28 | Structured log emission — ops JSON stream |
+| `docs/PLAN-SQLITE.md` | P1-09 | Internal SQLite metadata store |
+
+When writing a new plan, follow the structure in existing documents: objectives,
+config schema, ops event schema or data model, implementation notes, files
+changed, not-in-scope list.
 
 ## Pull request checklist
 
@@ -159,6 +181,30 @@ sentence-transformers, OpenAI, etc.).
 `app.state`.
 - CLI entrypoints are defined in `pave/cli.py`; shell shims `pavecli.sh`/`pavesrv.sh`
   wrap the same commands for repo contributors.
+
+## Logging conventions
+
+All modules use `log = get_logger()` at module level (no underscore prefix).
+Never use `%s` format strings — use f-strings.
+
+**Debug internals** (`log.debug`) — `AREA-EVENT: payload`, all-caps, dash-separated:
+
+```
+SEARCH-SQL: query='foo' sql='SELECT ...'
+SEARCH-FILTER-POST: {'docid': ['doc1']}
+INGEST-PREPARED: 3 chunks ['DOC1::0', 'DOC1::1'] ...
+SEARCH-OUT: 5 hits [('DOC1::0', 0.923), ...] ...
+```
+
+**Info summaries** (`log.info`) — natural language with `key=value` pairs:
+
+```
+search tenant=acme coll=books k=5 hits=3 ms=12.34 req=abc123
+ingest tenant=acme coll=books docid=DOC1 chunks=4 ms=234.56
+```
+
+**Warnings** (`log.warning`) — full English sentences describing what went wrong and
+what action was taken (e.g. "starting fresh", "skipping record").
 
 ## Testing
 

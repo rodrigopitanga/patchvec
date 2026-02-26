@@ -114,6 +114,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v0.8 |
 | P2-27 | Image ingest + embeddings | 🧱 | Multimodal adoption | v0.8 |
 | P2-28 | Structured log emission | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
+| P2-40 | Error logging at service layer | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.8 |
 | P2-29 | Multilingual relevance fixtures | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | Benchmark CI gate + p99 SLO | 🧩 | Latency contract | v0.5.9 |

@@ -56,7 +56,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             app.state.store.load_or_init("_system", "health")
             log.info("Embedding model warm-up complete")
         except Exception as e:
-            log.warning("Embedding model warm-up failed: %s", e)
+            log.warning(f"Embedding model warm-up failed: {e}")
         yield
         metrics_flush()
         for _exec in (app.state.search_executor, app.state.ingest_executor):
@@ -695,7 +695,6 @@ def main_srv():
     """
     cfg = get_cfg()
     log = get_logger()
-    log.info("Welcome to PatchVEC 🍰")
     # Policy:
     # - fail fast without auth in prod;
     # - auth=none only in dev with loopback;
@@ -717,6 +716,28 @@ def main_srv():
         log_level = "debug"
         cfg.set("server.log_level", log_level)
         log.setLevel(logging.DEBUG)
+
+    _s_cap = int(cfg.get("search.max_concurrent") or 42)
+    _s_to = int(cfg.get("search.timeout_ms") or 30_000)
+    _i_cap = int(cfg.get("ingest.max_concurrent") or 7)
+    _tc = cfg.get("tenants") or {}
+    _tcap = (
+        int(_tc.get("default_max_concurrent") or 0)
+        if isinstance(_tc, dict) else 0
+    )
+    log.info(f"┌─ Welcome to PatchVEC 🍰 v{VERSION}")
+    log.info(
+        f"│  auth={cfg.get('auth.mode','none')} "
+        f"store={cfg.get('vector_store.type','default')} "
+        f"data_dir={cfg.get('data_dir')} "
+        f"bind={host}:{port} workers={workers}"
+    )
+    log.info(
+        f"│  search_cap={_s_cap} search_to={_s_to}ms "
+        f"ingest_cap={_i_cap} "
+        f"tenant_cap={'unlimited' if _tcap == 0 else _tcap}"
+    )
+    log.info("└" + "─" * 40)
 
     # run server
     uvicorn.run("pave.main:app",

@@ -16,7 +16,9 @@ from threading import Lock
 from contextlib import contextmanager
 from txtai.embeddings import Embeddings
 from pave.stores.base import BaseStore, Record, SearchResult
-from pave.config import CFG as c, LOG as log
+from pave.config import CFG as c, get_logger
+
+log = get_logger()
 
 _LOCKS: dict[str, Lock] = {}
 _LOCKS_GUARD = Lock()  # Protects _LOCKS dictionary creation
@@ -139,8 +141,10 @@ class TxtaiStore(BaseStore):
             try:
                 em.load(idxpath)
             except Exception:
-                log.warning("Corrupt or unreadable index at %s for %s/%s, starting fresh",
-                            idxpath, tenant, collection)
+                log.warning(
+                    f"Corrupt or unreadable index at {idxpath} "
+                    f"for {tenant}/{collection}, starting fresh"
+                )
                 em = Embeddings(self._config(), models=self._models)
 
         self._emb[key] = em
@@ -373,7 +377,9 @@ class TxtaiStore(BaseStore):
             self._save_meta(tenant, collection, meta_side)
             em.upsert(prepared)
             self.save(tenant, collection)
-            log.debug(f"PREPARED {len(prepared)} upserts: {prepared}")
+            _rids = [r[0] for r in prepared[:3]]
+            _sfx = " ..." if len(prepared) > 3 else ""
+            log.debug(f"INGEST-PREPARED: {len(prepared)} chunks {_rids}{_sfx}")
             return len(prepared)
 
     @staticmethod
@@ -387,7 +393,6 @@ class TxtaiStore(BaseStore):
           - datetime comparisons (ISO 8601)
         Multiple values in the same key act as OR; multiple keys act as AND.
         """
-        log.debug(f"POS FILTERS: {filters}")
         if not filters:
             return True
 
@@ -470,7 +475,8 @@ class TxtaiStore(BaseStore):
                 pre_f[safe_key] = exacts
             if extended:
                 pos_f[safe_key] = extended
-        log.debug(f"after split: PRE {pre_f} POS {pos_f}")
+        if pre_f or pos_f:
+            log.debug(f"SEARCH-FILTER-SPLIT: pre={pre_f} post={pos_f}")
         return pre_f, pos_f
 
     @staticmethod
@@ -577,7 +583,7 @@ class TxtaiStore(BaseStore):
         if k is not None:
             sql += f" LIMIT {int(k)}"
 
-        log.debug(f"debug:: QUERY: {query} SQL: {sql}")
+        log.debug(f"SEARCH-SQL: query={query!r} sql={sql!r}")
         return sql
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
@@ -615,6 +621,8 @@ class TxtaiStore(BaseStore):
             kept: list[tuple[str, float, Any]] = []
             need_lookup_ids: list[str] = []
 
+            if pos_f:
+                log.debug(f"SEARCH-FILTER-POST: {pos_f}")
             for rid, score, txt in triples:
                 if not rid:
                     continue
@@ -646,7 +654,9 @@ class TxtaiStore(BaseStore):
                     query, score, filters, meta.get(rid)
                 ),
             ))
-        log.info(f"SEARCH-OUT: {out}")
+        _hits = [(r.id, round(r.score, 3)) for r in out[:3]]
+        _sfx = " ..." if len(out) > 3 else ""
+        log.debug(f"SEARCH-OUT: {len(out)} hits {_hits}{_sfx}")
         return out
 
     def _build_match_reason(self, query: str, score: float,
