@@ -29,10 +29,12 @@ These are non-negotiable constraints that apply across all versions.
   are orthogonal concerns. No layer forces coupling to another. A tenant can exist
   without a profile; a collection can exist without a custom embedding config.
 - **Optional tenant groupings ("syndicates").** When tenant grouping is needed (e.g.
-  for org-level quotas or shared collections), it is expressed as a lightweight syndicate
+  for org-level quotas or shared collections), it is expressed as a lightweight
+  syndicate
   — an opt-in overlay, not a mandatory hierarchy. No boilerplate orgs/workspaces.
 - **Server and library are the same thing.** PatchVec must run equally well as an HTTP
-  microservice and as an in-process Python library (embedded, single-tenant, no uvicorn).
+  microservice and as an in-process Python library (embedded, single-tenant, no
+  uvicorn).
   The service layer is the API; HTTP is just one transport.
 - **Media types are progressive, not baked in.** Text is the baseline. Every additional
   media type (images, audio, video, and beyond) is added through a stable ingest plugin
@@ -67,7 +69,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 |---|---|---|---|---|
 | P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
 | P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.5.9 |
-| P1-08 | Per-tenant rate limiting |  | Abuse protection | v0.5.8 |
+| P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | Metadata store (SQLite) | 🧱 | ACID + concurrency | v0.5.8 |
 | P1-10 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
 | P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.6 |
@@ -79,11 +81,19 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-17 | Get document by ID | 🧩 | Visibility, library mode | v0.7 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
-| P1-20 | Search timeout + concurrency cap | 🔧 | Graceful degradation | v0.5.8 |
-| P1-21 | Serve listings + metrics from store | 🧩 | Internal store query layer | v0.5.8 |
+| P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation
+  | v0.5.8 |
+| P1-21 | Serve listings + metrics from store | 🧩 | Internal store query layer
+  | v0.5.8 |
 | P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v0.6 |
 | P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.6 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v0.7 |
+| P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v0.6 |
+| P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v0.6 |
+| P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v0.6 |
+| P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs
+  `rate_limit_buckets` table (Phase 3); seeded from `tenants.max_rpm` config field
+  | post-SQLite |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -147,7 +157,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-47 | Additional media types: graphic/geom | 🧱 | v1.0 |
 | P3-48 | Additional media types: AV | 🧱 | v1.0 |
 | P3-49 | Additional media types: georeferenced | 🧱 | v1.0 |
-| P3-50 | Split main.py routes into APIRouter modules (health, admin, collections, documents, search) | 🧩 | v0.5.9 |
+| P3-50 | Split main.py routes into APIRouter modules (health, admin,
+collections, documents, search) | 🧩 | v0.5.9 |
 
 ---
 
@@ -255,6 +266,10 @@ tenant/collection.
 - Global `request_id` echo across all endpoints and responses.
 - Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`).
 - Response envelope standardization (consistent success/error shape).
+- Dev vs prod config defaults: dev `./data` + auth=none; prod `~/.patchvec/data`
+  + auth required.
+- Admin key auto-generate if missing; persist with strict perms; warn user.
+- Config reference doc + CI check for coverage and drift.
 - Collection version tagging (PatchVec version + schema version baked into collection
   metadata at creation/write time — foundation for portability and migration).
 - Formalize collection independence from tenant: tenant is a namespace, not an owner;
