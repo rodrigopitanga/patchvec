@@ -22,16 +22,26 @@ except ImportError:
     raise SystemExit("httpx required: pip install httpx")
 
 SAMPLE_DOCS = [
-    ("doc1", "Machine learning is a subset of artificial intelligence that enables systems to learn from data."),
-    ("doc2", "Natural language processing helps computers understand human language and text."),
-    ("doc3", "Deep learning uses neural networks with many layers to model complex patterns."),
-    ("doc4", "Vector databases store embeddings for efficient similarity search operations."),
-    ("doc5", "Semantic search finds results based on meaning rather than exact keyword matches."),
-    ("doc6", "Transformers revolutionized NLP with attention mechanisms and parallel processing."),
-    ("doc7", "Embeddings represent text as dense vectors in high-dimensional space."),
-    ("doc8", "Retrieval augmented generation combines search with language model outputs."),
-    ("doc9", "Cosine similarity measures the angle between two vectors for comparison."),
-    ("doc10", "Fine-tuning adapts pre-trained models to specific domains and tasks."),
+    ("doc1", "Machine learning is a subset of artificial intelligence that "
+     "enables systems to learn from data."),
+    ("doc2", "Natural language processing helps computers understand human "
+     "language and text."),
+    ("doc3", "Deep learning uses neural networks with many layers to model "
+     "complex patterns."),
+    ("doc4", "Vector databases store embeddings for efficient similarity "
+     "search operations."),
+    ("doc5", "Semantic search finds results based on meaning rather than "
+     "exact keyword matches."),
+    ("doc6", "Transformers revolutionized NLP with attention mechanisms and "
+     "parallel processing."),
+    ("doc7", "Embeddings represent text as dense vectors in high-dimensional "
+     "space."),
+    ("doc8", "Retrieval augmented generation combines search with language "
+     "model outputs."),
+    ("doc9", "Cosine similarity measures the angle between two vectors for "
+     "comparison."),
+    ("doc10", "Fine-tuning adapts pre-trained models to specific domains and "
+     "tasks."),
 ]
 
 QUERIES = [
@@ -69,16 +79,35 @@ async def setup_collection(client: httpx.AsyncClient, tenant: str, collection: s
         )
 
 
-async def search(client: httpx.AsyncClient, tenant: str, collection: str, query: str) -> float:
-    """Perform a search and return latency in ms."""
+def _parse_error(resp: httpx.Response) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        code = payload.get("code")
+        error = payload.get("error")
+        if code or error:
+            return f"{code or 'error'}: {error or 'request failed'}"
+    return f"http_{resp.status_code}"
+
+
+async def search(
+    client: httpx.AsyncClient,
+    tenant: str,
+    collection: str,
+    query: str,
+) -> tuple[float, bool, str]:
+    """Perform a search and return latency, ok flag, and detail."""
     start = time.perf_counter()
     r = await client.post(
         f"/collections/{tenant}/{collection}/search",
         json={"q": query, "k": 5},
     )
     latency_ms = (time.perf_counter() - start) * 1000
-    r.raise_for_status()
-    return latency_ms
+    if r.status_code >= 400:
+        return latency_ms, False, _parse_error(r)
+    return latency_ms, True, ""
 
 
 async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
@@ -92,9 +121,10 @@ async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
 
         print(f"Running {num_queries} queries with concurrency={concurrency}...")
         latencies: list[float] = []
+        errors: list[str] = []
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def bounded_search(query: str) -> float:
+        async def bounded_search(query: str) -> tuple[float, bool, str]:
             async with semaphore:
                 return await search(client, tenant, collection, query)
 
@@ -103,18 +133,32 @@ async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
             query = QUERIES[i % len(QUERIES)]
             tasks.append(bounded_search(query))
 
-        latencies = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+        for latency_ms, ok, detail in results:
+            if ok:
+                latencies.append(latency_ms)
+            else:
+                errors.append(detail)
 
         # Report results
         print("\n--- Results ---")
-        print(f"Total queries: {len(latencies)}")
+        print(f"Total queries: {len(results)}")
         print(f"Concurrency:   {concurrency}")
-        print(f"Min:           {min(latencies):.2f} ms")
-        print(f"Max:           {max(latencies):.2f} ms")
-        print(f"Mean:          {statistics.mean(latencies):.2f} ms")
-        print(f"Median (p50):  {percentile(latencies, 50):.2f} ms")
-        print(f"p95:           {percentile(latencies, 95):.2f} ms")
-        print(f"p99:           {percentile(latencies, 99):.2f} ms")
+        err_rate = 100 * len(errors) / max(len(results), 1)
+        print(f"Errors:        {len(errors)} ({err_rate:.1f}%)")
+        if latencies:
+            print(f"Min:           {min(latencies):.2f} ms")
+            print(f"Max:           {max(latencies):.2f} ms")
+            print(f"Mean:          {statistics.mean(latencies):.2f} ms")
+            print(f"Median (p50):  {percentile(latencies, 50):.2f} ms")
+            print(f"p95:           {percentile(latencies, 95):.2f} ms")
+            print(f"p99:           {percentile(latencies, 99):.2f} ms")
+        else:
+            print("No successful queries to report latencies.")
+        if errors:
+            print("Sample errors:")
+            for detail in errors[:5]:
+                print(f"  - {detail}")
 
         # Cleanup
         await client.delete(f"/collections/{tenant}/{collection}")
@@ -124,10 +168,26 @@ async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PatchVec search latency benchmark")
-    parser.add_argument("--url", default="http://localhost:8086", help="PatchVec base URL")
-    parser.add_argument("--queries", type=int, default=100, help="Number of queries to run")
-    parser.add_argument("--concurrency", type=int, default=10, help="Concurrent requests")
+    parser = argparse.ArgumentParser(
+        description="PatchVec search latency benchmark"
+    )
+    parser.add_argument(
+        "--url",
+        default="http://localhost:8086",
+        help="PatchVec base URL",
+    )
+    parser.add_argument(
+        "--queries",
+        type=int,
+        default=100,
+        help="Number of queries to run",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=10,
+        help="Concurrent requests",
+    )
     args = parser.parse_args()
 
     asyncio.run(run_benchmark(args.url, args.queries, args.concurrency))

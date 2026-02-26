@@ -30,20 +30,31 @@ except ImportError:
 # Corpus of sample documents for ingestion
 # ---------------------------------------------------------------------------
 SAMPLE_TEXTS = [
-    "Machine learning is a subset of artificial intelligence that enables systems to learn from data.",
-    "Natural language processing helps computers understand human language and text.",
-    "Deep learning uses neural networks with many layers to model complex patterns.",
-    "Vector databases store embeddings for efficient similarity search operations.",
-    "Semantic search finds results based on meaning rather than exact keyword matches.",
-    "Transformers revolutionized NLP with attention mechanisms and parallel processing.",
+    "Machine learning is a subset of artificial intelligence that enables "
+    "systems to learn from data.",
+    "Natural language processing helps computers understand human language "
+    "and text.",
+    "Deep learning uses neural networks with many layers to model complex "
+    "patterns.",
+    "Vector databases store embeddings for efficient similarity search "
+    "operations.",
+    "Semantic search finds results based on meaning rather than exact keyword "
+    "matches.",
+    "Transformers revolutionized NLP with attention mechanisms and parallel "
+    "processing.",
     "Embeddings represent text as dense vectors in high-dimensional space.",
-    "Retrieval augmented generation combines search with language model outputs.",
+    "Retrieval augmented generation combines search with language model "
+    "outputs.",
     "Cosine similarity measures the angle between two vectors for comparison.",
     "Fine-tuning adapts pre-trained models to specific domains and tasks.",
-    "Convolutional neural networks excel at image recognition and computer vision tasks.",
-    "Recurrent neural networks process sequential data like time series and text.",
-    "Generative adversarial networks create realistic synthetic data through competition.",
-    "Reinforcement learning trains agents through reward signals in environments.",
+    "Convolutional neural networks excel at image recognition and computer "
+    "vision tasks.",
+    "Recurrent neural networks process sequential data like time series and "
+    "text.",
+    "Generative adversarial networks create realistic synthetic data through "
+    "competition.",
+    "Reinforcement learning trains agents through reward signals in "
+    "environments.",
     "Transfer learning leverages knowledge from one task to improve another.",
 ]
 
@@ -95,7 +106,7 @@ class Stats:
     def record(self, r: OpResult):
         self.results.append(r)
 
-    def summary(self) -> Dict:
+    def summary(self) -> dict:
         by_op: dict[str, list[OpResult]] = defaultdict(list)
         for r in self.results:
             by_op[r.op].append(r)
@@ -126,6 +137,28 @@ def _percentile(sorted_data: list[float], p: float) -> float:
     f = int(k)
     c = min(f + 1, len(sorted_data) - 1)
     return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
+
+def _parse_error(resp: httpx.Response) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        code = payload.get("code")
+        error = payload.get("error")
+        if code or error:
+            return f"{code or 'error'}: {error or 'request failed'}"
+    return f"http_{resp.status_code}"
+
+
+def _ok_response(resp: httpx.Response) -> bool:
+    return resp.status_code < 400
+
+
+def _ensure_ok(resp: httpx.Response, label: str) -> None:
+    if _ok_response(resp):
+        return
+    raise RuntimeError(f"{label} failed: {_parse_error(resp)}")
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +224,10 @@ async def op_create_collection(client: httpx.AsyncClient, world: World, stats: S
     try:
         r = await client.post(f"/collections/{TENANT}/{name}")
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("collection_create", lat, False,
+                                  _parse_error(r)))
+            return
         await world.add_collection(name)
         stats.record(OpResult("collection_create", lat, True))
     except Exception as e:
@@ -208,7 +244,10 @@ async def op_delete_collection(client: httpx.AsyncClient, world: World, stats: S
     try:
         r = await client.delete(f"/collections/{TENANT}/{name}")
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("collection_delete", lat, False,
+                                  _parse_error(r)))
+            return
         stats.record(OpResult("collection_delete", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
@@ -230,7 +269,9 @@ async def op_ingest_small(client: httpx.AsyncClient, world: World, stats: Stats)
             data={"docid": docid},
         )
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("ingest_small", lat, False, _parse_error(r)))
+            return
         await world.add_doc(coll, docid)
         stats.record(OpResult("ingest_small", lat, True))
     except Exception as e:
@@ -252,7 +293,10 @@ async def op_ingest_large(client: httpx.AsyncClient, world: World, stats: Stats)
             data={"docid": docid},
         )
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("ingest_chunked", lat, False,
+                                  _parse_error(r)))
+            return
         await world.add_doc(coll, docid)
         stats.record(OpResult("ingest_chunked", lat, True))
     except Exception as e:
@@ -272,7 +316,9 @@ async def op_delete_document(client: httpx.AsyncClient, world: World, stats: Sta
             f"/collections/{TENANT}/{coll}/documents/{docid}"
         )
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("doc_delete", lat, False, _parse_error(r)))
+            return
         stats.record(OpResult("doc_delete", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
@@ -291,19 +337,24 @@ async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
             json={"q": query, "k": 5},
         )
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("search", lat, False, _parse_error(r)))
+            return
         stats.record(OpResult("search", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
         stats.record(OpResult("search", lat, False, str(e)))
 
 
-async def op_archive_download(client: httpx.AsyncClient, world: World, stats: Stats):
+async def op_archive_download(client: httpx.AsyncClient, _: World, stats: Stats):
     t0 = time.perf_counter()
     try:
         r = await client.get("/admin/archive")
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("archive_download", lat, False,
+                                  _parse_error(r)))
+            return
         size_kb = len(r.content) / 1024
         stats.record(OpResult("archive_download", lat, True, f"{size_kb:.1f}KB"))
     except Exception as e:
@@ -311,24 +362,26 @@ async def op_archive_download(client: httpx.AsyncClient, world: World, stats: St
         stats.record(OpResult("archive_download", lat, False, str(e)))
 
 
-async def op_health(client: httpx.AsyncClient, world: World, stats: Stats):
+async def op_health(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health — triggers .writetest write+delete and metrics inc."""
     t0 = time.perf_counter()
     try:
         r = await client.get("/health")
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("health", lat, False, _parse_error(r)))
+            return
         stats.record(OpResult("health", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
         stats.record(OpResult("health", lat, False, str(e)))
 
 
-async def op_health_ready(client: httpx.AsyncClient, world: World, stats: Stats):
+async def op_health_ready(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health/ready — same .writetest race plus vector backend init."""
     t0 = time.perf_counter()
     try:
-        r = await client.get("/health/ready")
+        await client.get("/health/ready")
         lat = (time.perf_counter() - t0) * 1000
         # 503 is valid (degraded), only network errors are failures
         stats.record(OpResult("health_ready", lat, True))
@@ -337,37 +390,43 @@ async def op_health_ready(client: httpx.AsyncClient, world: World, stats: Stats)
         stats.record(OpResult("health_ready", lat, False, str(e)))
 
 
-async def op_health_live(client: httpx.AsyncClient, world: World, stats: Stats):
+async def op_health_live(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health/live — no I/O, but still triggers metrics inc+save."""
     t0 = time.perf_counter()
     try:
         r = await client.get("/health/live")
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("health_live", lat, False, _parse_error(r)))
+            return
         stats.record(OpResult("health_live", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
         stats.record(OpResult("health_live", lat, False, str(e)))
 
 
-async def op_health_metrics(client: httpx.AsyncClient, world: World, stats: Stats):
+async def op_health_metrics(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health/metrics — reads counters+latencies, triggers metrics save."""
     t0 = time.perf_counter()
     try:
         r = await client.get("/health/metrics")
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("health_metrics", lat, False,
+                                  _parse_error(r)))
+            return
         stats.record(OpResult("health_metrics", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
         stats.record(OpResult("health_metrics", lat, False, str(e)))
 
 
-async def op_archive_restore(client: httpx.AsyncClient, world: World, stats: Stats):
+async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
     # First download an archive, then restore it
     try:
         dl = await client.get("/admin/archive")
-        dl.raise_for_status()
+        if not _ok_response(dl):
+            return
         archive_bytes = dl.content
     except Exception:
         return  # skip if download fails
@@ -379,7 +438,10 @@ async def op_archive_restore(client: httpx.AsyncClient, world: World, stats: Sta
             files={"file": ("archive.zip", archive_bytes, "application/zip")},
         )
         lat = (time.perf_counter() - t0) * 1000
-        r.raise_for_status()
+        if not _ok_response(r):
+            stats.record(OpResult("archive_restore", lat, False,
+                                  _parse_error(r)))
+            return
         stats.record(OpResult("archive_restore", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
@@ -391,18 +453,19 @@ async def op_archive_restore(client: httpx.AsyncClient, world: World, stats: Sta
 # ---------------------------------------------------------------------------
 # Weights control how often each operation is chosen.
 OPERATIONS = [
-    (op_search,              40),  # searches dominate
-    (op_ingest_small,        20),  # frequent small ingestions
-    (op_ingest_large,         8),  # occasional chunked ingestions
-    (op_create_collection,   10),  # create collections
-    (op_delete_collection,    5),  # delete collections less often
-    (op_delete_document,      8),  # purge individual docs
-    (op_health,              10),  # health check (.writetest + metrics race)
-    (op_health_ready,         6),  # readiness (.writetest + vector init)
-    (op_health_live,          8),  # liveness (metrics save race only)
-    (op_health_metrics,       6),  # metrics snapshot (counter + latency reads)
-    (op_archive_download,     5),  # archive downloads
-    (op_archive_restore,      4),  # archive restores (heaviest)
+    # Read-heavy production shape, biased toward write pressure for stress.
+    (op_search,              60),  # ~59% — dominant in every real deployment
+    (op_ingest_small,        14),  # ~14% — steady write pressure, lock contention
+    (op_ingest_large,         5),  # ~5%  — chunking path (CPU-heavy)
+    (op_delete_document,      6),  # ~6%  — moderate purge rate
+    (op_create_collection,    4),  # ~4%  — low-frequency admin
+    (op_delete_collection,    2),  # ~2%  — rarer than create
+    (op_health_live,          4),  # ~4%  — simulates load-balancer probe interval
+    (op_health,               2),  # ~2%  — monitoring scrape
+    (op_health_ready,         1),  # ~1%
+    (op_health_metrics,       1),  # ~1%
+    (op_archive_download,     1),  # ~1%  — rare admin/backup op
+    (op_archive_restore,      1),  # ~1%  — keep for coverage, not realism
 ]
 
 
@@ -424,7 +487,7 @@ async def run_stress(base_url: str, duration_secs: int, concurrency: int):
         for i in range(3):
             name = f"s_seed{i}"
             r = await client.post(f"/collections/{TENANT}/{name}")
-            r.raise_for_status()
+            _ensure_ok(r, "seed collection")
             await world.add_collection(name)
             # Ingest a few docs into each
             for j in range(3):
@@ -435,11 +498,14 @@ async def run_stress(base_url: str, duration_secs: int, concurrency: int):
                     files={"file": (f"{docid}.txt", text.encode(), "text/plain")},
                     data={"docid": docid},
                 )
-                r.raise_for_status()
+                _ensure_ok(r, "seed ingest")
                 await world.add_doc(name, docid)
 
         print(f"Seeded 3 collections with 3 docs each.")
-        print(f"Running stress test for {duration_secs}s with concurrency={concurrency}...")
+        print(
+            f"Running stress test for {duration_secs}s with "
+            f"concurrency={concurrency}..."
+        )
         print()
 
         sem = asyncio.Semaphore(concurrency)
@@ -466,7 +532,7 @@ async def run_stress(base_url: str, duration_secs: int, concurrency: int):
         stop.set()
 
         # Let in-flight operations finish (up to 30s grace)
-        done, pending = await asyncio.wait(tasks, timeout=30)
+        _, pending = await asyncio.wait(tasks, timeout=30)
         for t in pending:
             t.cancel()
 
@@ -493,16 +559,21 @@ async def run_stress(base_url: str, duration_secs: int, concurrency: int):
     print("=" * 78)
     print(f"  Total operations : {total_ops}")
     print(f"  Throughput       : {total_ops / elapsed:.1f} ops/s")
-    print(f"  Total errors     : {total_errs}  ({100 * total_errs / max(total_ops, 1):.1f}%)")
+    err_rate = 100 * total_errs / max(total_ops, 1)
+    print(f"  Total errors     : {total_errs}  ({err_rate:.1f}%)")
     print()
 
-    header = f"{'Operation':<22} {'Count':>6} {'OK':>6} {'Err':>5} {'p50':>9} {'p95':>9} {'p99':>9} {'Max':>9}"
+    header = (
+        f"{'Operation':<22} {'Count':>6} {'OK':>6} {'Err':>5} "
+        f"{'p50':>9} {'p95':>9} {'p99':>9} {'Max':>9}"
+    )
     print(header)
     print("-" * len(header))
     for op, s in summary.items():
         print(
             f"{op:<22} {s['count']:>6} {s['ok']:>6} {s['errors']:>5} "
-            f"{s['p50_ms']:>8.1f}ms {s['p95_ms']:>8.1f}ms {s['p99_ms']:>8.1f}ms {s['max_ms']:>8.1f}ms"
+            f"{s['p50_ms']:>8.1f}ms {s['p95_ms']:>8.1f}ms "
+            f"{s['p99_ms']:>8.1f}ms {s['max_ms']:>8.1f}ms"
         )
     print("-" * len(header))
     print()
@@ -521,9 +592,23 @@ async def run_stress(base_url: str, duration_secs: int, concurrency: int):
 
 def main():
     parser = argparse.ArgumentParser(description="PatchVec stress test")
-    parser.add_argument("--url", default="http://localhost:8086", help="PatchVec base URL")
-    parser.add_argument("--duration", type=int, default=30, help="Test duration in seconds")
-    parser.add_argument("--concurrency", type=int, default=15, help="Max concurrent operations")
+    parser.add_argument(
+        "--url",
+        default="http://localhost:8086",
+        help="PatchVec base URL",
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=30,
+        help="Test duration in seconds",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=15,
+        help="Max concurrent operations",
+    )
     args = parser.parse_args()
 
     asyncio.run(run_stress(args.url, args.duration, args.concurrency))
