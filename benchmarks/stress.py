@@ -155,10 +155,19 @@ def _ok_response(resp: httpx.Response) -> bool:
     return resp.status_code < 400
 
 
+def _is_rate_limited(resp: httpx.Response) -> bool:
+    return resp.status_code == 429
+
+
 def _ensure_ok(resp: httpx.Response, label: str) -> None:
     if _ok_response(resp):
         return
     raise RuntimeError(f"{label} failed: {_parse_error(resp)}")
+
+
+def _record_rate_limited(stats: Stats, lat: float) -> None:
+    """Record a 429 response as its own category, not as an op error."""
+    stats.record(OpResult("rate_limited", lat, True))
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +233,9 @@ async def op_create_collection(client: httpx.AsyncClient, world: World, stats: S
     try:
         r = await client.post(f"/collections/{TENANT}/{name}")
         lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
         if not _ok_response(r):
             stats.record(OpResult("collection_create", lat, False,
                                   _parse_error(r)))
@@ -244,6 +256,9 @@ async def op_delete_collection(client: httpx.AsyncClient, world: World, stats: S
     try:
         r = await client.delete(f"/collections/{TENANT}/{name}")
         lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
         if not _ok_response(r):
             stats.record(OpResult("collection_delete", lat, False,
                                   _parse_error(r)))
@@ -269,6 +284,9 @@ async def op_ingest_small(client: httpx.AsyncClient, world: World, stats: Stats)
             data={"docid": docid},
         )
         lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
         if not _ok_response(r):
             stats.record(OpResult("ingest_small", lat, False, _parse_error(r)))
             return
@@ -293,6 +311,9 @@ async def op_ingest_large(client: httpx.AsyncClient, world: World, stats: Stats)
             data={"docid": docid},
         )
         lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
         if not _ok_response(r):
             stats.record(OpResult("ingest_chunked", lat, False,
                                   _parse_error(r)))
@@ -316,6 +337,9 @@ async def op_delete_document(client: httpx.AsyncClient, world: World, stats: Sta
             f"/collections/{TENANT}/{coll}/documents/{docid}"
         )
         lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
         if not _ok_response(r):
             stats.record(OpResult("doc_delete", lat, False, _parse_error(r)))
             return
@@ -337,6 +361,9 @@ async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
             json={"q": query, "k": 5},
         )
         lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
         if not _ok_response(r):
             stats.record(OpResult("search", lat, False, _parse_error(r)))
             return
@@ -477,11 +504,20 @@ def _pick_operation():
 # ---------------------------------------------------------------------------
 # Main driver
 # ---------------------------------------------------------------------------
-async def run_stress(base_url: str, duration_secs: int, concurrency: int):
+async def run_stress(
+    base_url: str,
+    duration_secs: int,
+    concurrency: int,
+    api_key: str | None = None,
+):
+    print("==> Benchmark: stress")
     stats = Stats()
     world = World()
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    async with httpx.AsyncClient(base_url=base_url, timeout=60.0) as client:
+    async with httpx.AsyncClient(
+        base_url=base_url, timeout=60.0, headers=headers
+    ) as client:
         # Seed a few collections so workers have something to target
         print(f"Seeding initial collections...")
         for i in range(3):
@@ -609,9 +645,18 @@ def main():
         default=15,
         help="Max concurrent operations",
     )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help=(
+            "Bearer token for the 'stress' tenant "
+            "(omit when server uses auth.mode=none)"
+        ),
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_stress(args.url, args.duration, args.concurrency))
+    asyncio.run(run_stress(args.url, args.duration, args.concurrency,
+                           api_key=args.api_key))
 
 
 if __name__ == "__main__":

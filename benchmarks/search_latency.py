@@ -68,7 +68,9 @@ def percentile(data: list[float], p: float) -> float:
     return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
 
 
-async def setup_collection(client: httpx.AsyncClient, tenant: str, collection: str):
+async def setup_collection(
+    client: httpx.AsyncClient, tenant: str, collection: str
+):
     """Create collection and index sample documents."""
     await client.post(f"/collections/{tenant}/{collection}")
     for docid, text in SAMPLE_DOCS:
@@ -97,24 +99,40 @@ async def search(
     tenant: str,
     collection: str,
     query: str,
-) -> tuple[float, bool, str]:
-    """Perform a search and return latency, ok flag, and detail."""
+) -> tuple[float, bool | None, str]:
+    """Perform a search and return latency, ok flag, and detail.
+
+    Returns ok=None for 429 rate-limited responses so callers can track them
+    separately from genuine errors.
+    """
     start = time.perf_counter()
     r = await client.post(
         f"/collections/{tenant}/{collection}/search",
         json={"q": query, "k": 5},
     )
     latency_ms = (time.perf_counter() - start) * 1000
+    if r.status_code == 429:
+        return latency_ms, None, "rate_limited"
     if r.status_code >= 400:
         return latency_ms, False, _parse_error(r)
     return latency_ms, True, ""
 
 
-async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
+async def run_benchmark(
+    base_url: str,
+    num_queries: int,
+    concurrency: int,
+    api_key: str | None = None,
+):
+    print("==> Benchmark: search_latency")
+    bench_start = time.perf_counter()
     tenant = "bench"
     collection = f"lat_{int(time.time())}"
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        base_url=base_url, timeout=30.0, headers=headers
+    ) as client:
         print(f"Setting up collection {tenant}/{collection}...")
         await setup_collection(client, tenant, collection)
         print(f"Indexed {len(SAMPLE_DOCS)} documents.")
@@ -122,9 +140,10 @@ async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
         print(f"Running {num_queries} queries with concurrency={concurrency}...")
         latencies: list[float] = []
         errors: list[str] = []
+        rate_limited: int = 0
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def bounded_search(query: str) -> tuple[float, bool, str]:
+        async def bounded_search(query: str) -> tuple[float, bool | None, str]:
             async with semaphore:
                 return await search(client, tenant, collection, query)
 
@@ -135,15 +154,25 @@ async def run_benchmark(base_url: str, num_queries: int, concurrency: int):
 
         results = await asyncio.gather(*tasks)
         for latency_ms, ok, detail in results:
-            if ok:
+            if ok is True:
                 latencies.append(latency_ms)
+            elif ok is None:
+                rate_limited += 1
             else:
                 errors.append(detail)
 
         # Report results
         print("\n--- Results ---")
+        elapsed = time.perf_counter() - bench_start
         print(f"Total queries: {len(results)}")
         print(f"Concurrency:   {concurrency}")
+        print(f"Elapsed:       {elapsed:.1f}s")
+        if rate_limited:
+            print(
+                f"Rate limited:  {rate_limited} "
+                f"({100 * rate_limited / max(len(results), 1):.1f}%) "
+                f"— raise tenants.default_max_concurrent or use auth.mode=none"
+            )
         err_rate = 100 * len(errors) / max(len(results), 1)
         print(f"Errors:        {len(errors)} ({err_rate:.1f}%)")
         if latencies:
@@ -188,9 +217,18 @@ def main():
         default=10,
         help="Concurrent requests",
     )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help=(
+            "Bearer token for the 'bench' tenant "
+            "(omit when server uses auth.mode=none)"
+        ),
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(args.url, args.queries, args.concurrency))
+    asyncio.run(run_benchmark(args.url, args.queries, args.concurrency,
+                              api_key=args.api_key))
 
 
 if __name__ == "__main__":

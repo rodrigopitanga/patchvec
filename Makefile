@@ -90,6 +90,8 @@ help:
 	@echo "  benchmark       Run all benchmarks (latency + stress)"
 	@echo "  benchmark-latency  Search latency benchmark"
 	@echo "  benchmark-stress   Concurrent stress test"
+	@echo "  BENCH_SAVE=1 to save outputs in benchmarks/results/"
+	@echo "  BENCH_TAG=<tag> adds suffix to saved filenames"
 	@echo "  check           Run end-to-end demo inside Docker container"
 	@echo "  changelog       Preview changelog entry for VERSION (no write)"
 	@echo "  changelog-write Update CHANGELOG.md for VERSION and print new entry"
@@ -494,23 +496,68 @@ check: install
 
 # -------- benchmarks --------
 BENCH_URL       ?= http://localhost:8086
-BENCH_QUERIES   ?= 100
-BENCH_CONCUR    ?= 10
-STRESS_DURATION ?= 30
-STRESS_CONCUR   ?= 15
+BENCH_QUERIES   ?= 1200
+BENCH_CONCUR    ?= 42
+STRESS_DURATION ?= 300
+STRESS_CONCUR   ?= 24
+BENCH_TAG       ?=
+BENCH_TS        ?= $(shell date -u +%Y-%m-%d_%H%M%S)
+BENCH_RESULTS_DIR ?= benchmarks/results
+BENCH_SAVE      ?= 0
 
 .PHONY: benchmark-latency
 benchmark-latency:
-	PYTHONPATH=. $(PYTHON) benchmarks/search_latency.py \
-	  --url $(BENCH_URL) --queries $(BENCH_QUERIES) --concurrency $(BENCH_CONCUR)
+	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
+	tag="$(BENCH_TAG)"; \
+	if [ -z "$$tag" ]; then \
+	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
+	  tag="$$branch-$$sha"; \
+	else \
+	  tag="$$tag-$$sha"; \
+	fi; \
+	if [ "$(BENCH_SAVE)" = "1" ]; then \
+	  echo "==> Saving: yes (ts=$(BENCH_TS), tag=$$tag)"; \
+	  mkdir -p $(BENCH_RESULTS_DIR); \
+	  PYTHONPATH=. $(PYTHON) benchmarks/search_latency.py \
+	    --url $(BENCH_URL) --queries $(BENCH_QUERIES) \
+	    --concurrency $(BENCH_CONCUR) \
+	    | tee $(BENCH_RESULTS_DIR)/latency-$(BENCH_TS)_$$tag.txt; \
+	else \
+	  echo "==> Saving: no (ts=$(BENCH_TS), tag=$$tag)"; \
+	  PYTHONPATH=. $(PYTHON) benchmarks/search_latency.py \
+	    --url $(BENCH_URL) --queries $(BENCH_QUERIES) \
+	    --concurrency $(BENCH_CONCUR); \
+	fi
 
 .PHONY: benchmark-stress
 benchmark-stress:
-	PYTHONPATH=. $(PYTHON) benchmarks/stress.py \
-	  --url $(BENCH_URL) --duration $(STRESS_DURATION) --concurrency $(STRESS_CONCUR)
+	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
+	tag="$(BENCH_TAG)"; \
+	if [ -z "$$tag" ]; then \
+	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
+	  tag="$$branch-$$sha"; \
+	else \
+	  tag="$$tag-$$sha"; \
+	fi; \
+	if [ "$(BENCH_SAVE)" = "1" ]; then \
+	  echo "==> Saving: yes (ts=$(BENCH_TS), tag=$$tag)"; \
+	  mkdir -p $(BENCH_RESULTS_DIR); \
+	  PYTHONPATH=. $(PYTHON) benchmarks/stress.py \
+	    --url $(BENCH_URL) --duration $(STRESS_DURATION) \
+	    --concurrency $(STRESS_CONCUR) \
+	    | tee $(BENCH_RESULTS_DIR)/stress-$(BENCH_TS)_$$tag.txt; \
+	else \
+	  echo "==> Saving: no (ts=$(BENCH_TS), tag=$$tag)"; \
+	  PYTHONPATH=. $(PYTHON) benchmarks/stress.py \
+	    --url $(BENCH_URL) --duration $(STRESS_DURATION) \
+	    --concurrency $(STRESS_CONCUR); \
+	fi
 
 .PHONY: benchmark
-benchmark: benchmark-latency benchmark-stress
+benchmark:
+	@ts=$$(date -u +%Y-%m-%d_%H%M%S); \
+	$(MAKE) benchmark-latency BENCH_TS=$$ts; \
+	$(MAKE) benchmark-stress BENCH_TS=$$ts
 
 .PHONY: publish-test publish
 

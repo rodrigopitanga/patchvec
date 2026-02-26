@@ -28,7 +28,7 @@ Measures search latency under concurrent load.
 ### Developer workflow
 
 ```bash
-# run with defaults (100 queries, 10 concurrent)
+# run with defaults (1200 queries, 42 concurrent)
 make benchmark-latency
 
 # or customize
@@ -40,14 +40,14 @@ make benchmark-latency BENCH_QUERIES=500 BENCH_CONCUR=20
 ```bash
 pip install httpx
 python benchmarks/search_latency.py --url http://localhost:8086 \
-  --queries 100 --concurrency 10
+  --queries 1200 --concurrency 42
 ```
 
 ### Options
 
 * `--url` - PatchVec base URL (default: http://localhost:8086)
-* `--queries` - Number of queries to run (default: 100)
-* `--concurrency` - Concurrent requests (default: 10)
+* `--queries` - Number of queries to run (default: 1200)
+* `--concurrency` - Concurrent requests (default: 42)
 
 ### Output
 
@@ -64,7 +64,7 @@ percentiles plus error rates.
 ### Developer workflow
 
 ```bash
-# run with defaults (30s duration, 15 concurrent)
+# run with defaults (300s duration, 24 concurrent)
 make benchmark-stress
 
 # or customize
@@ -75,15 +75,31 @@ make benchmark-stress STRESS_DURATION=60 STRESS_CONCUR=30
 
 ```bash
 pip install httpx
-python benchmarks/stress.py --url http://localhost:8086 --duration 30 --concurrency 15
+python benchmarks/stress.py --url http://localhost:8086 --duration 300 \
+  --concurrency 24
 ```
 
 ### Options
 
-* `--url` - PatchVec base URL (default: http://localhost:8086) * `--duration` - Test
-duration in seconds (default: 30) * `--concurrency` - Max concurrent operations
-(default: 15)
+* `--url` - PatchVec base URL (default: http://localhost:8086)
+* `--duration` - Test duration in seconds (default: 300)
+* `--concurrency` - Max concurrent operations (default: 24)
 
 ### Output
 
 Reports per-operation counts, error rates, and p50/p95/p99/max latencies.
+
+## Saving results
+
+To save outputs with a UTC timestamp and tag:
+
+```bash
+make benchmark BENCH_SAVE=1 BENCH_TAG=baseline
+```
+
+If `BENCH_TAG` is omitted, a `<branch>-<shortsha>` tag is used. Outputs are saved
+under `benchmarks/results/` as:
+
+```
+{latency,stress}-YYYY-MM-DD_HHmmss[_tag].txt
+```

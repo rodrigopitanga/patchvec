@@ -124,6 +124,14 @@ without it if you have a properly configured GPU).
 - [ ] If it closes an issue, mention it; if it closes a [ROADMAP.md] item, strike it
   through.
 
+## Benchmarks
+
+- `make benchmark` runs latency + stress benchmarks with tuned defaults.
+- Save outputs with `BENCH_SAVE=1` and an optional tag:
+  `make benchmark BENCH_SAVE=1 BENCH_TAG=sqlite-phase1-before`
+- If no tag is provided, a `<branch>-<shortsha>` tag is used.
+- Results are saved under `benchmarks/results/` with a UTC timestamp.
+
 Ship code, not questions. If you need help, post logs and the failing command instead of
 asking for permission to ask.
 
