@@ -38,7 +38,7 @@ from pave.schemas import SearchBody, RenameCollectionBody, SearchResponse, \
     ErrorResponse
 from pave.ui import attach_ui
 
-VERSION = "0.5.8a0"
+VERSION = "0.5.8a1"
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
