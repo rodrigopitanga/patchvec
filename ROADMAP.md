@@ -113,7 +113,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-25 | Collection version tagging | 🧩 | Portability, migration | v0.6 |
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v0.8 |
 | P2-27 | Image ingest + embeddings | 🧱 | Multimodal adoption | v0.8 |
-| P2-28 | Structured log emission + retention | 🧩 | Analytics foundation | v0.5.8 |
+| P2-28 | Structured log emission | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
+| P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.8 |
 | P2-29 | Multilingual relevance fixtures | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | Benchmark CI gate + p99 SLO | 🧩 | Latency contract | v0.5.9 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v0.6 |
@@ -239,8 +240,8 @@ practice §5).
 - Per-tenant and per-operation API rate limits (market practice §8 — quota governance).
 - Ship internal metadata/content store (SQLite) with migrations.
 - Serve `/metrics` and `/collections` from the internal store.
-- Emit structured logs with `request_id`, tenant, and latency; rolling retention per
-tenant/collection.
+- Emit structured logs (JSON lines) with `request_id`, tenant, collection, and
+latency on every search/ingest/delete.
 - ~~Support renaming collections through the API and CLI.~~
 
 ### v0.5.9 — Relevance
@@ -311,6 +312,8 @@ tenant/collection.
   cloud-native and infrastructure consumers.
 - Document versioning, rebuild tooling.
 - Persistent metrics in the UI.
+- Structured log retention: rolling window + purge via `operation_log` table
+  (SQLite Phase 3); powers P2-13 collection log export.
 - Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
   `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml` into SQL on
   first boot; SQL becomes source of truth for keys and limits thereafter.
