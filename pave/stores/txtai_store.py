@@ -47,6 +47,47 @@ def collection_lock(tenant: str, collection: str):
     finally:
         lock.release()
 
+def _migrate_schema(em, tenant: str, collection: str) -> None:
+    """
+    Applies missing-table migrations for indexes created before txtai added
+    the documents/objects/sections tables (txtai >=9.x). No-op if all present.
+    """
+    db = getattr(em, "database", None)
+    conn = getattr(db, "connection", None)
+    if conn is None:
+        return
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    existing = {row[0] for row in cur.fetchall()}
+    missing = {"documents", "objects", "sections"} - existing
+    if not missing:
+        return
+    log.warning(
+        f"Legacy index {tenant}/{collection}: adding missing tables "
+        f"{missing} (txtai schema migration)"
+    )
+    if "documents" in missing:
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS documents "
+            "(id TEXT PRIMARY KEY, data JSON, tags TEXT, entry DATETIME)"
+        )
+    if "objects" in missing:
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS objects "
+            "(id TEXT PRIMARY KEY, object BLOB, tags TEXT, entry DATETIME)"
+        )
+    if "sections" in missing:
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS sections "
+            "(indexid INTEGER PRIMARY KEY, id TEXT, text TEXT, "
+            "tags TEXT, entry DATETIME)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS section_id ON sections(id)"
+        )
+    conn.commit()
+
+
 class TxtaiStore(BaseStore):
     # Maximum depth for recursive collection traversal in filter matching
     _FILTER_MATCH_MAX_DEPTH = 10
@@ -140,6 +181,7 @@ class TxtaiStore(BaseStore):
         if os.path.isfile(embeddings_file):
             try:
                 em.load(idxpath)
+                _migrate_schema(em, tenant, collection)
             except Exception:
                 log.warning(
                     f"Corrupt or unreadable index at {idxpath} "
