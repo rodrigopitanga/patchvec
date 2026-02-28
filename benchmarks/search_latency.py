@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import statistics
 import time
+import traceback
 
 try:
     import httpx
@@ -68,17 +69,49 @@ def percentile(data: list[float], p: float) -> float:
     return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
 
 
+async def _post_with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    attempts: int = 3,
+    sleep_s: float = 0.5,
+    **kwargs,
+) -> httpx.Response:
+    last_resp: httpx.Response | None = None
+    for i in range(attempts):
+        resp = await client.post(url, **kwargs)
+        last_resp = resp
+        if resp.status_code < 400:
+            return resp
+        if i < attempts - 1:
+            await asyncio.sleep(sleep_s * (i + 1))
+    assert last_resp is not None
+    return last_resp
+
+
 async def setup_collection(
-    client: httpx.AsyncClient, tenant: str, collection: str
+    client: httpx.AsyncClient,
+    tenant: str,
+    collection: str,
+    attempts: int = 3,
 ):
     """Create collection and index sample documents."""
-    await client.post(f"/collections/{tenant}/{collection}")
+    resp = await _post_with_retries(
+        client,
+        f"/collections/{tenant}/{collection}",
+        attempts=attempts,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"create collection failed: {_parse_error(resp)}")
     for docid, text in SAMPLE_DOCS:
-        await client.post(
+        resp = await _post_with_retries(
+            client,
             f"/collections/{tenant}/{collection}/documents",
+            attempts=attempts,
             files={"file": (f"{docid}.txt", text.encode(), "text/plain")},
             data={"docid": docid},
         )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"seed ingest failed: {_parse_error(resp)}")
 
 
 def _parse_error(resp: httpx.Response) -> str:
@@ -123,6 +156,7 @@ async def run_benchmark(
     num_queries: int,
     concurrency: int,
     api_key: str | None = None,
+    debug: bool = False,
 ):
     print("==> Benchmark: search_latency")
     bench_start = time.perf_counter()
@@ -134,7 +168,13 @@ async def run_benchmark(
         base_url=base_url, timeout=30.0, headers=headers
     ) as client:
         print(f"Setting up collection {tenant}/{collection}...")
-        await setup_collection(client, tenant, collection)
+        try:
+            await setup_collection(client, tenant, collection)
+        except RuntimeError as exc:
+            print(f"Setup failed: {exc}")
+            if debug:
+                print(traceback.format_exc())
+            return []
         print(f"Indexed {len(SAMPLE_DOCS)} documents.")
 
         print(f"Running {num_queries} queries with concurrency={concurrency}...")
@@ -225,10 +265,20 @@ def main():
             "(omit when server uses auth.mode=none)"
         ),
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print stack traces for setup failures",
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(args.url, args.queries, args.concurrency,
-                              api_key=args.api_key))
+    asyncio.run(run_benchmark(
+        args.url,
+        args.queries,
+        args.concurrency,
+        api_key=args.api_key,
+        debug=args.debug,
+    ))
 
 
 if __name__ == "__main__":

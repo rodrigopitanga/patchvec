@@ -18,6 +18,7 @@ import asyncio
 import random
 import string
 import time
+import traceback
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -163,6 +164,25 @@ def _ensure_ok(resp: httpx.Response, label: str) -> None:
     if _ok_response(resp):
         return
     raise RuntimeError(f"{label} failed: {_parse_error(resp)}")
+
+
+async def _post_with_retries(
+    client: httpx.AsyncClient,
+    url: str,
+    attempts: int = 3,
+    sleep_s: float = 0.5,
+    **kwargs,
+) -> httpx.Response:
+    last_resp: httpx.Response | None = None
+    for i in range(attempts):
+        resp = await client.post(url, **kwargs)
+        last_resp = resp
+        if _ok_response(resp):
+            return resp
+        if i < attempts - 1:
+            await asyncio.sleep(sleep_s * (i + 1))
+    assert last_resp is not None
+    return last_resp
 
 
 def _record_rate_limited(stats: Stats, lat: float) -> None:
@@ -509,6 +529,7 @@ async def run_stress(
     duration_secs: int,
     concurrency: int,
     api_key: str | None = None,
+    debug: bool = False,
 ):
     print("==> Benchmark: stress")
     stats = Stats()
@@ -522,14 +543,18 @@ async def run_stress(
         print(f"Seeding initial collections...")
         for i in range(3):
             name = f"s_seed{i}"
-            r = await client.post(f"/collections/{TENANT}/{name}")
+            r = await _post_with_retries(
+                client,
+                f"/collections/{TENANT}/{name}",
+            )
             _ensure_ok(r, "seed collection")
             await world.add_collection(name)
             # Ingest a few docs into each
             for j in range(3):
                 docid = f"seed_{i}_{j}"
                 text = SAMPLE_TEXTS[j % len(SAMPLE_TEXTS)]
-                r = await client.post(
+                r = await _post_with_retries(
+                    client,
                     f"/collections/{TENANT}/{name}/documents",
                     files={"file": (f"{docid}.txt", text.encode(), "text/plain")},
                     data={"docid": docid},
@@ -653,10 +678,25 @@ def main():
             "(omit when server uses auth.mode=none)"
         ),
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print stack traces for setup failures",
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_stress(args.url, args.duration, args.concurrency,
-                           api_key=args.api_key))
+    try:
+        asyncio.run(run_stress(
+            args.url,
+            args.duration,
+            args.concurrency,
+            api_key=args.api_key,
+            debug=args.debug,
+        ))
+    except Exception:
+        if args.debug:
+            print(traceback.format_exc())
+        raise
 
 
 if __name__ == "__main__":

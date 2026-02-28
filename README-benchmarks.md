@@ -48,10 +48,13 @@ python benchmarks/search_latency.py --url http://localhost:8086 \
 * `--url` - PatchVec base URL (default: http://localhost:8086)
 * `--queries` - Number of queries to run (default: 1200)
 * `--concurrency` - Concurrent requests (default: 42)
+* `--debug` - Print stack traces for setup failures
 
 ### Output
 
 Reports min, max, mean, p50, p95, p99 latencies in milliseconds.
+Setup requests (collection create + seed ingest) retry a few times before
+failing. Timed queries are not retried.
 
 ---
 
@@ -84,10 +87,13 @@ python benchmarks/stress.py --url http://localhost:8086 --duration 300 \
 * `--url` - PatchVec base URL (default: http://localhost:8086)
 * `--duration` - Test duration in seconds (default: 300)
 * `--concurrency` - Max concurrent operations (default: 24)
+* `--debug` - Print stack traces for setup failures
 
 ### Output
 
 Reports per-operation counts, error rates, and p50/p95/p99/max latencies.
+Seed collection + ingest steps retry a few times before aborting. Timed
+ingest/search operations during the run are not retried.
 
 ## Saving results
 
