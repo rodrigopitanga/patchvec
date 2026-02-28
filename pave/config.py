@@ -49,6 +49,7 @@ _DEFAULTS = {
     "ingest": {"max_file_size_mb": 500, "max_concurrent": 7},
     "search": {"max_concurrent": 42, "timeout_ms": 30000},
     "server": {"timeout_keep_alive": 75},
+    "log": {"ops_log": None, "access_log": None},
 }
 
 _ENV_PATTERN = re.compile(r"\$\{([^}:|]+)(?:\|([^}]*))?\}")

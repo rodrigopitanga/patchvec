@@ -96,6 +96,17 @@ server:
 #
 # HTTP client read timeout should also be at least 300 s for ingest calls.
 
+# Logging
+log:
+  # Ops/business log — one JSON line per operation (search, ingest, …).
+  # null (off) | stdout | /path/to/ops.jsonl
+  # stdout is recommended for Docker/12-factor (pave uses stderr for dev log).
+  # File paths are for traditional deployments; no rotation provided.
+  ops_log: null
+
+  # Uvicorn access log: null (keep uvicorn default) | stdout | /path/to/access.log
+  access_log: null
+
 # Optional instance customization
 instance:
   name: PatchVec

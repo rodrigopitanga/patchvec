@@ -174,6 +174,33 @@ make serve`, `make test`, etc.). The full contributor workflow, target reference
 task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks
 are documented in [README-benchmarks.md](README-benchmarks.md).
 
+## Logging
+
+PatchVec emits two independent log streams.
+
+**Dev stream** (stderr, always on): human-readable text, colored in TTY.
+Controlled by `loglevel` in `config.yml` (`DEBUG`, `INFO`, `WARNING`; default
+`INFO`). Namespace-level overrides:
+
+```yaml
+loglevel: INFO
+log:
+  debug: [pave.stores]   # force DEBUG for specific namespaces
+  watch: [txtai]         # one level more verbose than base
+  quiet: [uvicorn]       # one level quieter (uvicorn is quieted by default)
+```
+
+**Ops stream**: one JSON line per operation —
+search, ingest, delete, rename — written to a configurable destination. Off by
+default; `stdout` is recommended for Docker/12-factor deployments (PatchVec
+already uses `stderr` for the dev stream):
+
+```yaml
+log:
+  ops_log: null          # null (off) | stdout | /path/to/ops.jsonl
+  access_log: null       # uvicorn access log: null (off) | stdout | /path
+```
+
 ## 🗺️ Roadmap
 
 Short & mid-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one, open an

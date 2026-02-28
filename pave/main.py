@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import asyncio, functools, json, os, logging, shutil
+import asyncio, functools, json, os, logging, shutil, time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import uvicorn
@@ -37,8 +37,11 @@ from pave.service import \
 from pave.schemas import SearchBody, RenameCollectionBody, SearchResponse, \
     ErrorResponse
 from pave.ui import attach_ui
+import pave.log as ops_log
+from pave.log import ops_event
 
 VERSION = "0.5.8a1"
+
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
@@ -59,6 +62,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             log.warning(f"Embedding model warm-up failed: {e}")
         yield
         metrics_flush()
+        ops_log.close()
         for _exec in (app.state.search_executor, app.state.ingest_executor):
             if _exec is not None:
                 _exec.shutdown(wait=False)
@@ -111,6 +115,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         if _lim is not None:
             app.state.tenant_limits[_t] = int(_lim)
             app.state.tenant_active[_t] = 0
+
+    ops_log.configure(cfg.get("log.ops_log"))
 
     async def _do_search(fn):
         """Concurrency gate + timeout wrapper for all search handlers."""
@@ -381,6 +387,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         "/collections/{tenant}",
         responses=_resp(401, 403, 429, 500),
     )
+    @ops_event("list_collections", coll=None)
     def list_collections(
         tenant: str,
         ctx: AuthContext = Depends(tenant_rate_limit),
@@ -401,6 +408,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         status_code=201,
         responses=_resp(401, 403, 429, 500),
     )
+    @ops_event("create_collection")
     def create_collection(
         tenant: str,
         name: str,
@@ -421,6 +429,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         "/collections/{tenant}/{name}",
         responses=_resp(401, 403, 429, 500),
     )
+    @ops_event("delete_collection")
     def delete_collection(
         tenant: str,
         name: str,
@@ -440,6 +449,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.put(
         "/collections/{tenant}/{name}",
         responses=_resp(400, 401, 403, 404, 409, 429, 500),
+    )
+    @ops_event(
+        "rename_collection",
+        new_name=lambda kw, r: kw["body"].new_name,
     )
     def rename_collection(
         tenant: str,
@@ -471,6 +484,15 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         status_code=201,
         responses=_resp(400, 401, 403, 413, 429, 500, 503),
     )
+    @ops_event(
+        "ingest", coll="collection",
+        docid=lambda kw, r: (
+            kw.get("docid") or getattr(kw.get("file"), "filename", None)
+        ),
+        chunks=lambda kw, r: (
+            r.get("chunks") if isinstance(r, dict) and r.get("ok") else None
+        ),
+    )
     async def ingest_document(
         tenant: str,
         collection: str,
@@ -485,6 +507,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
+        inc("requests_total")
         meta_obj = None
         if metadata:
             try:
@@ -549,7 +572,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 return result
             except ServiceError as exc:
                 code = exc.code
-                status_map = {"invalid_csv_options": 400, "ingest_failed": 500}
+                status_map = {
+                    "invalid_csv_options": 400,
+                    "ingest_failed": 500,
+                }
                 return _error(
                     status_map.get(code, 500),
                     code,
@@ -563,6 +589,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         "/collections/{tenant}/{collection}/documents/{docid}",
         responses=_resp(401, 403, 429, 500),
     )
+    @ops_event("delete_doc", coll="collection", docid="docid")
     def delete_document(
         tenant: str,
         collection: str,
@@ -585,6 +612,17 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         "/collections/{tenant}/{name}/search",
         response_model=SearchResponse,
         responses=_resp(401, 403, 429, 500, 503),
+    )
+    @ops_event(
+        "search", coll="name",
+        k=lambda kw, r: kw["body"].k,
+        hits=lambda kw, r: (
+            len(json.loads(r.body).get("matches", []))
+            if getattr(r, "status_code", 400) < 400 else None
+        ),
+        request_id=lambda kw, r: (
+            kw["body"].request_id or kw.get("x_request_id")
+        ),
     )
     async def search_post(
         tenant: str,
@@ -611,6 +649,15 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @app.get(
         "/collections/{tenant}/{name}/search",
         responses=_resp(401, 403, 429, 500, 503),
+    )
+    @ops_event(
+        "search", coll="name",
+        k="k",
+        hits=lambda kw, r: (
+            len(json.loads(r.body).get("matches", []))
+            if getattr(r, "status_code", 400) < 400 else None
+        ),
+        request_id="x_request_id",
     )
     async def search_get(
         tenant: str,
@@ -725,6 +772,8 @@ def main_srv():
         int(_tc.get("default_max_concurrent") or 0)
         if isinstance(_tc, dict) else 0
     )
+    _ops_dest = cfg.get("log.ops_log") or "null"
+    _acc_dest = cfg.get("log.access_log")
     log.info(f"┌─ Welcome to PatchVEC 🍰 v{VERSION}")
     log.info(
         f"│  auth={cfg.get('auth.mode','none')} "
@@ -735,9 +784,19 @@ def main_srv():
     log.info(
         f"│  search_cap={_s_cap} search_to={_s_to}ms "
         f"ingest_cap={_i_cap} "
-        f"tenant_cap={'unlimited' if _tcap == 0 else _tcap}"
+        f"tenant_cap={'unlimited' if _tcap == 0 else _tcap} "
+        f"ops_log={_ops_dest}"
     )
     log.info("└" + "─" * 40)
+
+    # Access log routing
+    _acc_val = str(_acc_dest).strip().lower() if _acc_dest else ""
+    if _acc_val and _acc_val not in ("null", "none"):
+        if _acc_val != "stdout":
+            logging.getLogger("uvicorn.access").addHandler(
+                logging.FileHandler(_acc_dest)
+            )
+    _access_log = True
 
     # run server
     uvicorn.run("pave.main:app",
@@ -747,6 +806,7 @@ def main_srv():
                 workers=workers,
                 log_level=log_level,
                 timeout_keep_alive=timeout_keep_alive,
+                access_log=_access_log,
                 )
 
 # Lazy module-level `app` — only built when first accessed (e.g. by uvicorn).

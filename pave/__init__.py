@@ -2,5 +2,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 __all__ = [
     "config", "auth", "preprocess", "metrics", "service", "main", "cli",
-    "embedders", "stores"
+    "embedders", "stores", "log",
 ]

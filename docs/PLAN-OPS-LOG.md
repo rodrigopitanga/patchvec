@@ -97,21 +97,16 @@ instrumented — they are infrastructure ops, not business events.
 
 ## Uvicorn access log
 
-`uvicorn.access` is reconfigured by uvicorn at startup, overriding `log.quiet`.
-When `log.ops_log` is set, the ops stream replaces the access log for all
-instrumented routes. Non-instrumented routes (health, admin) are low-frequency
-enough that losing their access log line is acceptable.
-
-Config knob — same pattern as `ops_log`:
+Independent of the ops stream. Uvicorn's access log defaults to on; configure
+it separately from `ops_log`.
 
 ```yaml
 log:
-  access_log: null     # null (off) | stdout | /path/to/access.log
+  access_log: null     # null (default, keep uvicorn default) | stdout | /path
 ```
 
-`null` (default): pass `access_log=False` to `uvicorn.run()` when `ops_log`
-is set; keep uvicorn default otherwise.
-`stdout`: keep uvicorn's default handler (it already goes to stdout).
+`null` / not set: leave uvicorn's access log at its default (on).
+`stdout`: no change — uvicorn already writes access log to stdout.
 `/path`: attach a `FileHandler` to the `uvicorn.access` logger.
 
 ---
@@ -191,7 +186,7 @@ limits: search_cap=<n> search_to=<n>ms ingest_cap=<n> tenant_cap=<n|unlimited> o
 
 ---
 
-## New module: `pave/ops_log.py`
+## New module: `pave/log.py`
 
 ```python
 def configure(dest: str | None) -> None:
@@ -224,21 +219,39 @@ Route handlers in `main.py`, **not** service layer. Rationale: `request_id`
 and wall-clock timing (including serialisation overhead) are only available at
 the HTTP layer. The service layer has no HTTP context.
 
-Timing pattern (same as ingest concurrency gate):
+All 8 instrumented routes use the `@ops_event` decorator from `pave/log.py`.
+The decorator handles timing, `try/finally` emission, and both sync and async
+handlers via `asyncio.iscoroutinefunction`.
 
 ```python
-_t0 = time.perf_counter()
-result = svc_search(...)
-latency_ms = round((time.perf_counter() - _t0) * 1000, 2)
-ops_log.emit(op="search", tenant=tenant, collection=name,
-             k=body.k, hits=len(result["matches"]),
-             latency_ms=latency_ms, status="ok",
-             request_id=request_id or None)
+@app.delete("/collections/{tenant}/{name}")
+@ops_event("delete_collection")
+def delete_collection(tenant, name, ctx, store):
+    ...
+
+@app.post("/collections/{tenant}/{name}/search")
+@ops_event(
+    "search", coll="name",
+    k=lambda kw, r: kw["body"].k,
+    hits=lambda kw, r: (
+        len(json.loads(r.body).get("matches", []))
+        if getattr(r, "status_code", 400) < 400 else None
+    ),
+    request_id=lambda kw, r: kw["body"].request_id or kw.get("x_request_id"),
+)
+async def search_post(tenant, name, body, ...):
+    ...
 ```
 
-For `_do_search()` (which wraps search in executor + timeout), timing is already
-done inside; the emit call moves to after the result is resolved, with the
-latency extracted from the response dict or measured around `_do_search()`.
+`ops_event(op, *, coll="name", **extra_keys)` parameters:
+- `coll`: kwargs key for the collection path parameter (`None` to omit).
+- `**extra_keys`: additional emit fields.
+  - `str` value → `kwargs[key]` (direct kwarg lookup)
+  - `callable` → `fn(kwargs, result)` called after the handler returns;
+    `result` is the return value (JSONResponse or dict)
+
+`_result_status(result)` duck-types the return value: checks `status_code`
+attribute (JSONResponse-like) for HTTP errors, or `ok` key for dict returns.
 
 ---
 
@@ -246,13 +259,13 @@ latency extracted from the response dict or measured around `_do_search()`.
 
 | File | Change |
 |---|---|
-| `pave/ops_log.py` | New — `configure()`, `emit()`, `close()` |
-| `pave/main.py` | Call `ops_log.configure()` in `build_app()`; call `ops_log.emit()` in each instrumented route; `access_log=False` in `uvicorn.run()` when suppression active; `ops_log.close()` in lifespan shutdown |
+| `pave/log.py` | New — `configure()`, `emit()`, `close()`, `ops_event()` decorator |
+| `pave/main.py` | `ops_log.configure()` in `build_app()`; `@ops_event(...)` on all 8 instrumented routes; `access_log` routing in `uvicorn.run()`; `ops_log.close()` in lifespan |
 | `pave/service.py` | Demote `SEARCH-OUT` to DEBUG; omit `req=` token when None |
 | `pave/stores/txtai_store.py` | Fix `POS FILTERS` log (once per search, skip if empty) |
 | `pave/config.py` | Add `log.ops_log` and `log.access_log` to `_DEFAULTS` (deferred to implementation) |
 | `config.yml.example` | Document both new keys |
-| `tests/test_ops_log.py` | New — configure/emit/close; field omission; None dropping |
+| `tests/test_log.py` | New — configure/emit/close; field omission; None dropping |
 
 ---
 
