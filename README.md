@@ -179,12 +179,12 @@ are documented in [README-benchmarks.md](README-benchmarks.md).
 PatchVec emits two independent log streams.
 
 **Dev stream** (stderr, always on): human-readable text, colored in TTY.
-Controlled by `loglevel` in `config.yml` (`DEBUG`, `INFO`, `WARNING`; default
+Controlled by `log.level` in `config.yml` (`DEBUG`, `INFO`, `WARNING`; default
 `INFO`). Namespace-level overrides:
 
 ```yaml
-loglevel: INFO
 log:
+  level: INFO
   debug: [pave.stores]   # force DEBUG for specific namespaces
   watch: [txtai]         # one level more verbose than base
   quiet: [uvicorn]       # one level quieter (uvicorn is quieted by default)

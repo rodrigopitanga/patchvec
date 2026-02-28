@@ -49,7 +49,7 @@ _DEFAULTS = {
     "ingest": {"max_file_size_mb": 500, "max_concurrent": 7},
     "search": {"max_concurrent": 42, "timeout_ms": 30000},
     "server": {"timeout_keep_alive": 75},
-    "log": {"ops_log": None, "access_log": None},
+    "log": {"level": "INFO", "ops_log": None, "access_log": None},
 }
 
 _ENV_PATTERN = re.compile(r"\$\{([^}:|]+)(?:\|([^}]*))?\}")
@@ -252,7 +252,7 @@ def _init_logger() -> logging.Logger:
     """
     import sys
     cfg = get_cfg()
-    base_level = getattr(logging, cfg.get("loglevel", "INFO").upper(), logging.INFO)
+    base_level = getattr(logging, str(cfg.get("log.level")).upper(), logging.INFO)
 
     def shift(level: int, delta: int) -> int:
         """Moves numeric loglevel by ±10 per step."""

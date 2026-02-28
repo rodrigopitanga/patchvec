@@ -81,7 +81,6 @@ server:
   port: 8086
   reload: false
   workers: 1
-  log_level: info
   # Keep-alive timeout in seconds (passed to uvicorn --timeout-keep-alive).
   # Should be lower than your reverse proxy's keepalive_timeout.
   # nginx default: 75 s — set this to 65 when behind nginx.
@@ -98,6 +97,10 @@ server:
 
 # Logging
 log:
+  # Log level: DEBUG | INFO | WARNING | ERROR  — default INFO.
+  # dev: true forces DEBUG regardless of this setting.
+  # Use log.debug / log.watch / log.quiet for per-namespace overrides.
+  level: INFO
   # Ops/business log — one JSON line per operation (search, ingest, …).
   # null (off) | stdout | /path/to/ops.jsonl
   # stdout is recommended for Docker/12-factor (pave uses stderr for dev log).

@@ -756,12 +756,11 @@ def main_srv():
     # flags from CFG
     reload = bool(cfg.get("server.reload", False))
     workers = int(cfg.get("server.workers", 1))
-    log_level = str(cfg.get("server.log_level", "info"))
+    log_level = str(cfg.get("log.level")).lower()
     timeout_keep_alive = int(cfg.get("server.timeout_keep_alive") or 75)
 
     if cfg.get("dev",0):
         log_level = "debug"
-        cfg.set("server.log_level", log_level)
         log.setLevel(logging.DEBUG)
 
     _s_cap = int(cfg.get("search.max_concurrent") or 42)
