@@ -224,9 +224,11 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             m_inc("matches_total", float(len(top) or 0))
             latency_ms = round((_time.perf_counter() - start) * 1000, 2)
             m_record_latency("search", latency_ms)
+            _t = top[0] if top else None
             log.info(
                 f"search tenant={tenant} coll={collection} k={k} "
                 f"hits={len(top)} ms={latency_ms:.2f}"
+                + (f" top=[{_t.id} {_t.score:.3f}] \"{(_t.text or '')[:60]}{'...' if len(_t.text or '') > 60 else ''}\"" if _t else "")
                 + (f" req={request_id}" if request_id else ""))
             return {
                 "matches": [r.to_dict() for r in top],
@@ -237,9 +239,11 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
         m_inc("matches_total", float(len(top) or 0))
         latency_ms = round((_time.perf_counter() - start) * 1000, 2)
         m_record_latency("search", latency_ms)
+        _t = top[0] if top else None
         log.info(
             f"search tenant={tenant} coll={collection} k={k} "
             f"hits={len(top)} ms={latency_ms:.2f}"
+            + (f" top=[{_t.id} {_t.score:.3f}] \"{(_t.text or '')[:60]}{'...' if len(_t.text or '') > 60 else ''}\"" if _t else "")
             + (f" req={request_id}" if request_id else ""))
         return {
             "matches": [r.to_dict() for r in top],
