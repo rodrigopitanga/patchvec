@@ -1,120 +1,218 @@
-# Patchvec sample configuration (commit this file as config.yml.example)
-# Copy to config.yml and adjust. Secrets should live in a separate, untracked file (see tenants.yml.example).
+# PatchVec sample configuration
+# Copy to config.yml and adjust.
+# Secrets (API keys) should live in a separate untracked file — see tenants.yml.example.
+#
+# Config file location (default: ~/patchvec/config.yml):
+#   PATCHVEC_CONFIG=/etc/patchvec/config.yml
+#
+# In Docker/systemd deployments always set PATCHVEC_CONFIG explicitly — the
+# default path expands ~ relative to the process user, which may not be what
+# you expect inside a container. Example compose snippet:
+#
+#   environment:
+#     PATCHVEC_CONFIG: /etc/patchvec/config.yml
+#   volumes:
+#     - ./config.yml:/etc/patchvec/config.yml:ro
+#
+# All keys can also be overridden inline via environment variables:
+#   PATCHVEC_<KEY>=value          (top-level, e.g. PATCHVEC_DATA_DIR)
+#   PATCHVEC_<SECTION>__<KEY>=val (nested,    e.g. PATCHVEC_LOG__LEVEL=debug)
 
-# Data directory — ~ is expanded.
-# For Docker/systemd set an absolute path, e.g. /var/lib/patchvec/data
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+
+# Data directory — ~ is expanded at startup.
+# Default (library/dev): ~/patchvec/data
+# For Docker/systemd use an absolute path:
 #   mkdir -p /var/lib/patchvec/data && chown patchvec:patchvec /var/lib/patchvec/data
 data_dir: ~/patchvec/data
 
-# Optional "common" collection included in searches when enabled
-common_enabled: true
-common_tenant: global
-common_collection: common
+# ---------------------------------------------------------------------------
+# Common collection
+# ---------------------------------------------------------------------------
+# When enabled, every tenant search also queries a shared "common" collection
+# and merges the results. Useful for org-wide reference data (e.g. a shared
+# code/term dictionary) that should be visible to all tenants.
+# The common collection is owned by common_tenant and is never rate-limited.
 
+common_enabled: false
+common_tenant: global        # tenant that owns the common collection
+common_collection: common    # collection name within that tenant
+
+# ---------------------------------------------------------------------------
 # Authentication
+# ---------------------------------------------------------------------------
+
 auth:
-  # Modes: none | static
+  # none   — no auth; all requests accepted. Dev/private deployments only.
+  #          enforce_policy() will reject auth=none on non-loopback interfaces.
+  # static — Bearer token per tenant; keys defined below or in tenants_file.
   mode: static
-  # Default admin user when auth=none
+
+  # Default tenant name when auth.mode=none (no key required).
   default_access_tenant: public
-  # Global admin key (read from env; forced NOT hardcode in committed files)
+
+  # Global admin key — grants access to all tenants and admin routes.
+  # Always read from the environment; never hardcode in committed files.
   global_key: ${PATCHVEC_GLOBAL_KEY}
-  # External tenants→keys mapping file (untracked). If present, it
-  # will be merged and override duplicates.
+
+  # External tenant→key mapping file (untracked, merged at startup).
+  # Keys in this file override any inline api_keys entries with the same name.
   tenants_file: ./tenants.yml
-  # Inline mapping (fallback; keep empty in repo)
+
+  # Inline tenant→key mapping (fallback; keep empty in the repo).
   api_keys: {}
 
-# Vector store selection
+# ---------------------------------------------------------------------------
+# Vector store
+# ---------------------------------------------------------------------------
+
 vector_store:
-  type: default           # default | qdrant
+  # default — txtai + FAISS (built-in, no extra services required).
+  # qdrant  — Qdrant server (requires a running Qdrant instance).
+  type: default
+
+  # Options for type=default (txtai-backed FAISS store).
   txtai:
     embed_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
     backend: faiss
+
+  # Options for type=qdrant.
+  # NOTE: QdrantStore is currently a stub — all methods raise NotImplementedError.
+  # Contributions welcome! See pave/stores/qdrant_store.py.
   qdrant:
     url: http://localhost:6333
     api_key: ${PATCHVEC_QDRANT_API_KEY}
     prefer_payload_filters: true
     collection_prefix: patchvec_
 
-# Embedder selection
+# ---------------------------------------------------------------------------
+# Embedder
+# ---------------------------------------------------------------------------
+# Controls how text is converted to vectors before indexing and querying.
+# The embedder is shared across all collections (per-collection config: v0.6).
+#
+# NOTE: the sbert and openai embedder types are currently stubs — the factory
+# exists but is not wired into the default store. Only type=default (txtai) is
+# fully functional today. Per-collection embedder selection lands in v0.6.
+# Contributions welcome! See pave/embedders/ and pave/stores/factory.py.
+
 embedder:
-  type: default           # default | sbert | openai
-  # default (txtai-backed)
+  # default — txtai-managed sentence-transformers model (recommended).
+  # sbert   — direct sentence-transformers, more control over batching/device.
+  # openai  — OpenAI text-embedding-ada-002 (requires API key, adds latency).
+  type: default
+
   txtai:
     path: sentence-transformers/paraphrase-MiniLM-L3-v2
+
   sbert:
     model: sentence-transformers/all-MiniLM-L6-v2
     batch_size: 64
-    device: auto            # cpu | cuda | auto
+    device: auto   # cpu | cuda | auto (auto detects CUDA at runtime)
+
   openai:
     api_key: ${PATCHVEC_OPENAI_API_KEY}
     dim: 1536
 
+# ---------------------------------------------------------------------------
 # Ingest limits
+# ---------------------------------------------------------------------------
+
 ingest:
-  max_file_size_mb: 500   # reject uploads larger than this (MB); 0 = unlimited
-                          # ensure your reverse proxy (e.g. nginx client_max_body_size)
-                          # is set to at least the same value
-  max_concurrent: 7       # max parallel ingests; excess requests get 503 immediately
-                          # ingest is CPU/memory heavy; 0 = unlimited
+  # Reject uploads larger than this (MB). 0 = unlimited.
+  # Also set your reverse proxy: e.g. nginx client_max_body_size >= this value.
+  max_file_size_mb: 500
 
+  # Max parallel ingests; excess requests get 503 immediately.
+  # Ingest is CPU/memory heavy — keep this well below your core count.
+  # 0 = unlimited (not recommended in production).
+  max_concurrent: 7
+
+# Reverse-proxy timeout guidance for ingest endpoints:
+# Ingest embeds the entire document before responding; large files can take
+# tens of seconds. Raise these nginx directives accordingly:
+#
+#   proxy_read_timeout   300;  # wait up to 5 min for upstream response
+#   client_body_timeout  120;  # wait up to 2 min for client to send body
+#
+# Your HTTP client read timeout should also be at least 300 s for ingest.
+
+# ---------------------------------------------------------------------------
 # Search limits
+# ---------------------------------------------------------------------------
+
 search:
-  max_concurrent: 42      # max parallel searches; excess requests get 503 immediately
-                          # 0 = unlimited (not recommended in production)
-  timeout_ms: 30000       # per-search timeout in ms; 503 on expiry; 0 = no timeout
+  # Max parallel searches; excess requests get 503 immediately.
+  # 0 = unlimited (not recommended in production).
+  max_concurrent: 42
 
+  # Per-search timeout in ms; returns 503 on expiry. 0 = no timeout.
+  timeout_ms: 30000
+
+# ---------------------------------------------------------------------------
 # Per-tenant concurrency limits
+# ---------------------------------------------------------------------------
 # Applies to all tenant-scoped routes (search, ingest, collection ops).
-# Admin requests and global-key requests bypass limits.
-# Moving-window limits (max_rpm, max_rph) require SQLite (post-v0.5.8).
+# Admin requests and global-key requests bypass these limits.
+# Per-tenant overrides can be set in tenants.yml (see tenants.yml.example).
+# Moving-window limits (max_rpm, max_rph) require SQLite — post-v0.5.8.
+
 tenants:
-  default_max_concurrent: 10  # global default for every tenant; 0 = unlimited
+  default_max_concurrent: 10  # applies to every tenant; 0 = unlimited
 
+# ---------------------------------------------------------------------------
 # Text preprocessing
-preprocess:
-  txt_chunk_size: 1000
-  txt_chunk_overlap: 200
+# ---------------------------------------------------------------------------
+# Controls how plain-text (.txt) files are split into chunks before embedding.
+# Overlap ensures context is preserved across chunk boundaries.
 
-# Optional server defaults
-# (env HOST/PORT/RELOAD/WORKERS/LOG_LEVEL always override)
+preprocess:
+  txt_chunk_size: 1000     # characters per chunk
+  txt_chunk_overlap: 200   # characters of overlap between adjacent chunks
+
+# ---------------------------------------------------------------------------
+# Server
+# ---------------------------------------------------------------------------
+# These defaults are overridden by env vars HOST / PORT / RELOAD / WORKERS.
+
 server:
   host: 0.0.0.0
   port: 8086
   reload: false
   workers: 1
+
   # Keep-alive timeout in seconds (passed to uvicorn --timeout-keep-alive).
-  # Should be lower than your reverse proxy's keepalive_timeout.
-  # nginx default: 75 s — set this to 65 when behind nginx.
+  # Must be lower than your reverse proxy's keepalive_timeout.
+  # nginx default is 75 s — set this to 65 when behind nginx.
   timeout_keep_alive: 75
 
-# Reverse-proxy timeout guidance for ingest endpoints
-# Ingest embeds the entire document before responding; for large files this
-# can take tens of seconds.  Raise these nginx directives accordingly:
-#
-#   proxy_read_timeout   300;  # wait up to 5 min for upstream response
-#   client_body_timeout  120;  # wait up to 2 min for client to send body
-#
-# HTTP client read timeout should also be at least 300 s for ingest calls.
-
+# ---------------------------------------------------------------------------
 # Logging
+# ---------------------------------------------------------------------------
+
 log:
-  # Log level: DEBUG | INFO | WARNING | ERROR  — default INFO.
-  # dev: true forces DEBUG regardless of this setting.
-  # Use log.debug / log.watch / log.quiet for per-namespace overrides.
+  # Dev log level (stderr). DEBUG | INFO | WARNING | ERROR — default INFO.
+  # Overridden by PATCHVEC_LOG__LEVEL env var (e.g. in Makefile: debug).
+  # Per-namespace overrides: log.debug / log.watch / log.quiet (list of loggers).
   level: INFO
-  # Ops/business log — one JSON line per operation (search, ingest, …).
+
+  # Ops log — one structured JSON line per operation (search, ingest, delete…).
+  # Fields: ts, op, tenant, collection, latency_ms, status, error_code, hits.
   # null (off) | stdout | /path/to/ops.jsonl
-  # stdout is recommended for Docker/12-factor (pave uses stderr for dev log).
-  # File paths are for traditional deployments; no rotation provided.
+  # stdout is recommended for Docker/12-factor; pave uses stderr for the dev log.
+  # File paths suit traditional deployments; no rotation is provided here.
   ops_log: null
 
-  # Uvicorn access log: null (keep uvicorn default) | stdout | /path/to/access.log
+  # Uvicorn access log destination.
+  # null (use uvicorn default) | stdout | /path/to/access.log
   access_log: null
 
-# Optional instance customization
+# ---------------------------------------------------------------------------
+# Instance branding (optional)
+# ---------------------------------------------------------------------------
+
 instance:
   name: PatchVec
   desc: Vector Search Microservice (pluggable, functional)
-
