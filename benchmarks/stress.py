@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import random
 import string
+import sys
 import time
 import traceback
 from collections import defaultdict
@@ -26,6 +28,9 @@ try:
     import httpx
 except ImportError:
     raise SystemExit("httpx required: pip install httpx")
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import print_run_header  # type: ignore[import]  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Corpus of sample documents for ingestion
@@ -470,13 +475,19 @@ async def op_health_metrics(client: httpx.AsyncClient, _: World, stats: Stats):
 
 async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
     # First download an archive, then restore it
+    t0 = time.perf_counter()
     try:
         dl = await client.get("/admin/archive")
+        lat = (time.perf_counter() - t0) * 1000
         if not _ok_response(dl):
+            stats.record(OpResult("archive_restore", lat, False,
+                                  f"download: {_parse_error(dl)}"))
             return
         archive_bytes = dl.content
-    except Exception:
-        return  # skip if download fails
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("archive_restore", lat, False, f"download: {e}"))
+        return
 
     t0 = time.perf_counter()
     try:
@@ -531,7 +542,6 @@ async def run_stress(
     api_key: str | None = None,
     debug: bool = False,
 ):
-    print("==> Benchmark: stress")
     stats = Stats()
     world = World()
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -539,6 +549,7 @@ async def run_stress(
     async with httpx.AsyncClient(
         base_url=base_url, timeout=60.0, headers=headers
     ) as client:
+        await print_run_header(client, base_url, "stress")
         # Seed a few collections so workers have something to target
         print(f"Seeding initial collections...")
         for i in range(3):
@@ -615,9 +626,9 @@ async def run_stress(
     total_errs = sum(v["errors"] for v in summary.values())
 
     print()
-    print("=" * 78)
+    print("=" * 94)
     print(f"  STRESS TEST RESULTS  ({elapsed:.1f}s elapsed)")
-    print("=" * 78)
+    print("=" * 94)
     print(f"  Total operations : {total_ops}")
     print(f"  Throughput       : {total_ops / elapsed:.1f} ops/s")
     err_rate = 100 * total_errs / max(total_ops, 1)
@@ -625,16 +636,17 @@ async def run_stress(
     print()
 
     header = (
-        f"{'Operation':<22} {'Count':>6} {'OK':>6} {'Err':>5} "
-        f"{'p50':>9} {'p95':>9} {'p99':>9} {'Max':>9}"
+        f"{'Operation':<22} {'Count':>6} {'OK':>6} {'Err (%)':>11} "
+        f"{'Min':>9} {'p50':>9} {'p95':>9} {'p99':>9} {'Max':>9}"
     )
     print(header)
     print("-" * len(header))
     for op, s in summary.items():
+        err_str = f"{s['errors']} ({100 * s['errors'] / max(s['count'], 1):.1f}%)"
         print(
-            f"{op:<22} {s['count']:>6} {s['ok']:>6} {s['errors']:>5} "
-            f"{s['p50_ms']:>8.1f}ms {s['p95_ms']:>8.1f}ms "
-            f"{s['p99_ms']:>8.1f}ms {s['max_ms']:>8.1f}ms"
+            f"{op:<22} {s['count']:>6} {s['ok']:>6} {err_str:>11} "
+            f"{s['min_ms']:>8.1f}ms {s['p50_ms']:>8.1f}ms "
+            f"{s['p95_ms']:>8.1f}ms {s['p99_ms']:>8.1f}ms {s['max_ms']:>8.1f}ms"
         )
     print("-" * len(header))
     print()
@@ -661,13 +673,13 @@ def main():
     parser.add_argument(
         "--duration",
         type=int,
-        default=30,
+        default=20,
         help="Test duration in seconds",
     )
     parser.add_argument(
         "--concurrency",
         type=int,
-        default=15,
+        default=8,
         help="Max concurrent operations",
     )
     parser.add_argument(

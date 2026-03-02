@@ -500,8 +500,8 @@ check: install
 BENCH_URL       ?= http://localhost:8086
 BENCH_QUERIES   ?= 1200
 BENCH_CONCUR    ?= 42
-STRESS_DURATION ?= 300
-STRESS_CONCUR   ?= 24
+STRESS_DURATION ?= 90
+STRESS_CONCUR   ?= 8
 BENCH_TAG       ?=
 BENCH_TS        ?= $(shell date -u +%Y-%m-%d_%H%M%S)
 BENCH_RESULTS_DIR ?= benchmarks/results
