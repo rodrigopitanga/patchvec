@@ -43,6 +43,32 @@ from pave.log import ops_event
 VERSION = "0.5.8a1"
 
 
+def _hw_info() -> dict:
+    """Collect server hardware info once at startup (stdlib-only, multiplatform)."""
+    import platform, sys
+    info: dict = {
+        "hw_cpu":   platform.processor() or platform.machine(),
+        "hw_cores": os.cpu_count(),
+        "hw_os":    f"{platform.system()} {platform.release()}",
+    }
+    try:
+        if sys.platform == "linux":
+            with open("/proc/meminfo", encoding="ascii") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        info["hw_ram_gb"] = round(int(line.split()[1]) / 1_000_000, 1)
+                        break
+        elif sys.platform == "darwin":
+            import subprocess
+            out = subprocess.check_output(
+                ["sysctl", "-n", "hw.memsize"], text=True, timeout=2
+            )
+            info["hw_ram_gb"] = round(int(out.strip()) / 1_000_000_000, 1)
+    except Exception:
+        pass
+    return info
+
+
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
 
@@ -75,6 +101,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.store = get_store(cfg)
     app.state.cfg = cfg
     app.state.version = VERSION
+    app.state.hw_info = _hw_info()
 
     # Search limits
     _max_conc = int(cfg.get("search.max_concurrent"))
@@ -233,7 +260,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         extra = {
             "version": VERSION,
             "vector_store": cfg.get("vector_store.type"),
-            "auth": cfg.get("auth.mode")
+            "auth": cfg.get("auth.mode"),
+            **app.state.hw_info,
         }
         return snapshot(extra)
 
