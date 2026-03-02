@@ -40,7 +40,7 @@ from pave.ui import attach_ui
 import pave.log as ops_log
 from pave.log import ops_event
 
-VERSION = "0.5.8a1"
+VERSION = "0.5.8a2"
 
 
 def _hw_info() -> dict:

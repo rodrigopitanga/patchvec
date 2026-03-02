@@ -113,7 +113,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-25 | Collection version tagging | 🧩 | Portability, migration | v0.6 |
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v0.8 |
 | P2-27 | Image ingest + embeddings | 🧱 | Multimodal adoption | v0.8 |
-| ~~P2-28~~ | ~~Structured log emission~~ | ~~🧩~~ | ~~JSON lines per operation with request_id, tenant, latency~~ | ~~v0.5.8~~ |
+| P2-28 | ~~Structured log emission~~ | 🧩 | ~~JSON lines per operation with request_id, tenant, latency~~ | v0.5.8 |
 | P2-40 | Error logging at service layer | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.8 |
 | P2-29 | Multilingual relevance fixtures | 🧩 | Recall validation | v0.5.9 |
@@ -144,7 +144,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-30 | Retain original uploaded files (opt-in) | 🧱 | v0.9 |
 | P3-31 | Async ingest jobs + job status API | 🧱 | v0.9 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v0.9 |
-| P3-34 | Relicensing (AGPLv3 candidate) | 🧱 | v0.5.9 |
+| P3-34 | ~~Relicensing (AGPLv3 candidate)~~ | 🧱 | v0.5.9 |
 | P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.6 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | v1.0+ |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
@@ -236,13 +236,13 @@ and logs (market practice §7).~~
 - ~~Add ingest size limits with clear errors.~~
 - ~~Document ingest timeout guidance (client/proxy/uvicorn).~~
 - ~~Make `build_app()` lazy; avoid eager app creation at import time.~~
-- Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market
-practice §5).
-- Per-tenant and per-operation API rate limits (market practice §8 — quota governance).
+- ~~Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market
+practice §5).~~
+- ~~Per-tenant and per-operation API rate limits (market practice §8 — quota governance).~~
 - Ship internal metadata/content store (SQLite) with migrations.
 - Serve `/metrics` and `/collections` from the internal store.
-- Emit structured logs (JSON lines) with `request_id`, tenant, collection, and
-latency on every search/ingest/delete.
+- ~~Emit structured logs (JSON lines) with `request_id`, tenant, collection, and
+latency on every search/ingest/delete.~~
 - ~~Support renaming collections through the API and CLI.~~
 
 ### v0.5.9 — Relevance
@@ -253,7 +253,7 @@ latency on every search/ingest/delete.
 - Multilingual relevance evaluation fixtures (non-English test corpus).
 - Run benchmark suite in CI; publish results as artifacts; define p99
   latency SLO gate (closes Market Practice §2 gap).
-- Relicensing review (AGPLv3 candidate).
+- ~~Relicensing review (AGPLv3 candidate).~~
 - Response envelope standardization (v0.6 prep).
 
 ### 0.6 — Stability
@@ -559,13 +559,12 @@ HTTP handler to store for thread-safety. (done v0.5.7)
 | Latency SLO + benchmarks | p99 <50ms | No CI gate | **Missing** |
 | Hot-reload without downtime | Hot reload | Model swap needs restart | **Partial** |
 | Pre-computation / indexing | Precompute | Negation pre-filter | **DONE** |
-| Graceful degradation | Shed load | No backpressure | **Missing** |
+| Graceful degradation | Shed load | Search timeout + concurrency cap | **DONE** |
 | Request ID propagation | `request_id` | Echoed in responses | **DONE** |
 | Concurrency safety | Thread-safe | Lock dict guarded | **DONE** |
-| Budget / quota governance | Quotas | No rate limits | **Missing** |
+| Budget / quota governance | Quotas | Per-tenant concurrent cap | **DONE** |
 
-Five of eight practices are completely missing. Three are partial. None are fully
-implemented. All are standard expectations for production decisioning APIs.
+Two of eight practices are still missing or partial (latency SLO CI gate, hot-reload).
 
 ---
 
