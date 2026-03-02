@@ -5,6 +5,7 @@ from __future__ import annotations
 import os, json, operator, tempfile, sqlite3
 from datetime import datetime, date
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 # Python 3.12 deprecated the default sqlite3 datetime adapters.
@@ -15,6 +16,7 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 from threading import Lock
 from contextlib import contextmanager
 from txtai.embeddings import Embeddings
+from pave.meta_store import CollectionDB, LegacyMetadataError
 from pave.stores.base import BaseStore, Record, SearchResult
 from pave.config import CFG as c, get_logger
 
@@ -94,16 +96,14 @@ class TxtaiStore(BaseStore):
 
     def __init__(self):
         self._emb: dict[tuple[str, str], Embeddings] = {}
+        self._dbs: dict[tuple[str, str], CollectionDB] = {}
         self._models: dict = {}  # shared model cache across all Embeddings instances
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(c.get("data_dir"), f"t_{tenant}", f"c_{collection}")
 
-    def _catalog_path(self, tenant: str, collection: str) -> str:
-        return os.path.join(self._base_path(tenant, collection), "catalog.json")
-
-    def _meta_path(self, tenant: str, collection: str) -> str:
-        return os.path.join(self._base_path(tenant, collection), "meta.json")
+    def _db_path(self, tenant: str, collection: str) -> Path:
+        return Path(self._base_path(tenant, collection)) / "meta.db"
 
     def _load_json(self, path: str):
         if os.path.isfile(path):
@@ -130,20 +130,6 @@ class TxtaiStore(BaseStore):
             except OSError:
                 pass
             raise
-
-    def _load_catalog(self, tenant: str, collection: str) -> dict[str, list[str]]:
-        return self._load_json(self._catalog_path(tenant, collection))
-
-    def _save_catalog(self, tenant: str, collection: str,
-                      cat: dict[str, list[str]]) -> None:
-        self._save_json(self._catalog_path(tenant, collection), cat)
-
-    def _load_meta(self, tenant: str, collection: str) -> dict[str, dict[str, Any]]:
-        return self._load_json(self._meta_path(tenant, collection))
-
-    def _save_meta(self, tenant: str, collection: str,
-                   meta: dict[str, dict[str, Any]]) -> None:
-        self._save_json(self._meta_path(tenant, collection), meta)
 
     @staticmethod
     def _config():
@@ -191,6 +177,12 @@ class TxtaiStore(BaseStore):
 
         self._emb[key] = em
 
+        # Open CollectionDB if not already open
+        if key not in self._dbs:
+            col_db = CollectionDB()
+            col_db.open(self._db_path(tenant, collection))
+            self._dbs[key] = col_db
+
     def save(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
         em = self._emb.get(key)
@@ -206,13 +198,18 @@ class TxtaiStore(BaseStore):
             key = (tenant, collection)
             if key in self._emb:
                 del self._emb[key]
+            if key in self._dbs:
+                self._dbs[key].close()
+                del self._dbs[key]
             p = self._base_path(tenant, collection)
             if os.path.isdir(p):
                 shutil.rmtree(p)
 
     def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
-            raise ValueError(f"old and new collection names are the same: {old_name}")
+            raise ValueError(
+                f"old and new collection names are the same: {old_name}"
+            )
 
         old_key = (tenant, old_name)
         new_key = (tenant, new_name)
@@ -232,12 +229,22 @@ class TxtaiStore(BaseStore):
             if os.path.exists(new_path):
                 raise ValueError(f"collection '{new_name}' already exists")
 
+            # Close DB for old collection before rename
+            if old_key in self._dbs:
+                self._dbs[old_key].close()
+                del self._dbs[old_key]
+
             # Atomic directory rename
             os.rename(old_path, new_path)
 
-            # Update in-memory cache
+            # Update in-memory cache for Embeddings
             if old_key in self._emb:
                 self._emb[new_key] = self._emb.pop(old_key)
+
+            # Re-open CollectionDB at new path
+            col_db = CollectionDB()
+            col_db.open(self._db_path(tenant, new_name))
+            self._dbs[new_key] = col_db
         finally:
             locks[1].release()
             locks[0].release()
@@ -253,9 +260,11 @@ class TxtaiStore(BaseStore):
             collection = entry[2:]
             if not collection:
                 continue
-            # Check for catalog.json existence (data layer, not just directory)
-            catalog_path = os.path.join(tenant_path, entry, "catalog.json")
-            if os.path.isfile(catalog_path):
+            coll_dir = os.path.join(tenant_path, entry)
+            # Phase 1: meta.db is the primary signal; fall back to
+            # catalog.json for backward compat with existing data.
+            if os.path.isfile(os.path.join(coll_dir, "meta.db")) or \
+               os.path.isfile(os.path.join(coll_dir, "catalog.json")):
                 collections.append(collection)
         return collections
 
@@ -277,21 +286,31 @@ class TxtaiStore(BaseStore):
         return tenants
 
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
-        cat = self._load_catalog(tenant, collection)
-        ids = cat.get(docid)
-        return bool(ids)
+        key = (tenant, collection)
+        if key in self._dbs:
+            return self._dbs[key].has_doc(docid)
+        # Fallback: open DB read-only style (no lock needed for WAL read)
+        db_path = self._db_path(tenant, collection)
+        if not db_path.exists():
+            return False
+        col_db = CollectionDB()
+        col_db.open(db_path)
+        try:
+            return col_db.has_doc(docid)
+        finally:
+            col_db.close()
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         with collection_lock(tenant, collection):
-            cat = self._load_catalog(tenant, collection)
-            meta = self._load_meta(tenant, collection)
-            ids = cat.get(docid, [])
+            self.load_or_init(tenant, collection)
+            key = (tenant, collection)
+            col_db = self._dbs[key]
+            ids = col_db.get_rids_for_doc(docid)
             if not ids:
                 return 0
 
-            # remove only this docid's metadata and sidecars
+            # remove sidecar .txt files
             for urid in ids:
-                meta.pop(urid, None)
                 p = os.path.join(
                     self._chunks_dir(tenant, collection),
                     self._urid_to_fname(urid)
@@ -301,15 +320,12 @@ class TxtaiStore(BaseStore):
                         os.remove(p)
                     except Exception:
                         pass
-            # remove docid from catalog.json
-            del cat[docid]
 
-            self._save_meta(tenant, collection, meta)
-            self._save_catalog(tenant, collection, cat)
+            # delete from SQLite (chunks + documents rows)
+            col_db.delete_doc(docid)
 
             # delete vectors for these chunk ids
-            self.load_or_init(tenant, collection)
-            em = self._emb.get((tenant, collection))
+            em = self._emb.get(key)
             if em and ids:
                 try:
                     em.delete(ids)  # txtai embeddings supports deleting by ids
@@ -326,7 +342,34 @@ class TxtaiStore(BaseStore):
         return os.path.join(self._base_path(tenant, collection), "chunks")
 
     def _urid_to_fname(self, urid: str) -> str:
-        return urid.replace("/", "_").replace("\\", "_").replace(":", "_") + ".txt"
+        return (
+            urid.replace("/", "_").replace("\\", "_").replace(":", "_") + ".txt"
+        )
+
+    def _load_meta(
+        self, tenant: str, collection: str
+    ) -> dict[str, dict[str, Any]]:
+        """Backward-compat helper: load all chunk metadata from CollectionDB.
+
+        Returns a dict keyed by rid. Retained so existing tests that
+        access this method continue to work after JSON files were replaced
+        by SQLite.
+        """
+        key = (tenant, collection)
+        col_db = self._dbs.get(key)
+        if col_db is None:
+            return {}
+        conn = col_db._conn
+        if conn is None:
+            return {}
+        cur = conn.execute("SELECT rid, meta_json FROM chunks")
+        out: dict[str, dict[str, Any]] = {}
+        for rid, meta_json in cur.fetchall():
+            try:
+                out[rid] = json.loads(meta_json) if meta_json else {}
+            except Exception:
+                out[rid] = {}
+        return out
 
     def _save_chunk_text(self, tenant: str, collection: str,
                          urid: str, t: str) -> None:
@@ -338,7 +381,8 @@ class TxtaiStore(BaseStore):
             f.write(data)
             f.flush()
 
-    def _load_chunk_text(self, tenant: str, collection: str, urid: str) -> str | None:
+    def _load_chunk_text(self, tenant: str, collection: str,
+                         urid: str) -> str | None:
         p = os.path.join(self._chunks_dir(tenant, collection),
                          self._urid_to_fname(urid))
         if os.path.isfile(p):
@@ -350,22 +394,25 @@ class TxtaiStore(BaseStore):
                       records: Iterable[Record]) -> int:
         """
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
-        dict-records, updates catalog/meta, saves index, and verifies content
-        storage via a quick lookup. Thread critical.
+        dict-records, updates SQLite metadata, saves index. Thread critical.
         """
         with collection_lock(tenant, collection):
             self.load_or_init(tenant, collection)
-            catalog = self._load_catalog(tenant, collection)
-            meta_side = self._load_meta(tenant, collection)
-            em = self._emb[(tenant, collection)]
+            key = (tenant, collection)
+            col_db = self._dbs[key]
+            em = self._emb[key]
             prepared: list[tuple[str, Any, str]] = []
-            record_ids: list[str] = []
+            chunk_rows: list[tuple[str, str | None, dict[str, Any]]] = []
+            doc_meta: dict[str, Any] = {}
 
             for r in records:
                 if isinstance(r, dict):
                     rid = r.get("rid") or r.get("id") or r.get("uid")
                     txt = r.get("text") or r.get("content")
-                    md = r.get("meta") or r.get("metadata") or r.get("tags") or {}
+                    md = (
+                        r.get("meta") or r.get("metadata") or
+                        r.get("tags") or {}
+                    )
                 else:
                     try:
                         rid, txt, md = r
@@ -388,6 +435,13 @@ class TxtaiStore(BaseStore):
                             md = {}
 
                 md["docid"] = docid
+                # Capture first occurrence of doc-level meta fields
+                if not doc_meta:
+                    doc_meta = {
+                        k: v for k, v in md.items()
+                        if k not in ("chunk", "page", "position", "section")
+                    }
+
                 try:
                     safe_meta = self._sanit_meta_dict(md)
                     meta_json = json.dumps(safe_meta, ensure_ascii=False)
@@ -400,28 +454,34 @@ class TxtaiStore(BaseStore):
                 if not rid.startswith(f"{docid}::"):
                     rid = f"{docid}::{rid}"
 
-                md_for_index = {k: v for k, v in safe_meta.items() if k != "text"}
-
-                meta_side[rid] = safe_meta
-                record_ids.append(rid)
+                md_for_index = {k: v for k, v in safe_meta.items()
+                                if k != "text"}
+                chunk_path = os.path.join(
+                    "chunks", self._urid_to_fname(rid)
+                )
+                chunk_rows.append((rid, chunk_path, safe_meta))
                 prepared.append((rid, {"text": txt, **md_for_index}, meta_json))
 
                 self._save_chunk_text(tenant, collection, rid, txt)
                 loaded = self._load_chunk_text(tenant, collection, rid) or ""
                 if txt != loaded:
-                    log.warning(f"Chunk text round-trip mismatch for {rid}: saved {len(txt)} chars, loaded {len(loaded)} chars")
+                    log.warning(
+                        f"Chunk text round-trip mismatch for {rid}: "
+                        f"saved {len(txt)} chars, loaded {len(loaded)} chars"
+                    )
 
             if not prepared:
                 return 0
 
-            catalog[docid] = record_ids
-            self._save_catalog(tenant, collection, catalog)
-            self._save_meta(tenant, collection, meta_side)
+            # Write metadata to SQLite (inside collection_lock)
+            col_db.upsert_chunks(docid, chunk_rows, doc_meta=doc_meta)
             em.upsert(prepared)
             self.save(tenant, collection)
             _rids = [r[0] for r in prepared[:3]]
             _sfx = " ..." if len(prepared) > 3 else ""
-            log.debug(f"INGEST-PREPARED: {len(prepared)} chunks {_rids}{_sfx}")
+            log.debug(
+                f"INGEST-PREPARED: {len(prepared)} chunks {_rids}{_sfx}"
+            )
             return len(prepared)
 
     @staticmethod
@@ -441,7 +501,11 @@ class TxtaiStore(BaseStore):
         def match(have: Any, cond: Any, depth: int = 0) -> bool:
             # Prevent infinite recursion with deeply nested collections
             if depth >= TxtaiStore._FILTER_MATCH_MAX_DEPTH:
-                log.warning(f"Filter match depth limit ({TxtaiStore._FILTER_MATCH_MAX_DEPTH}) exceeded for value: {type(have)}")
+                log.warning(
+                    f"Filter match depth limit "
+                    f"({TxtaiStore._FILTER_MATCH_MAX_DEPTH}) "
+                    f"exceeded for value: {type(have)}"
+                )
                 return False
 
             if have is None:
@@ -454,7 +518,8 @@ class TxtaiStore(BaseStore):
                 s = str(cond)
             hv = str(have)
             # Numeric/date ops
-            _OPS = {">=": operator.ge, "<=": operator.le, "!=": operator.ne,
+            _OPS = {">=": operator.ge, "<=": operator.le,
+                    "!=": operator.ne,
                     ">": operator.gt, "<": operator.lt}
             for op_str, op_fn in _OPS.items():
                 if s.startswith(op_str):
@@ -478,18 +543,21 @@ class TxtaiStore(BaseStore):
                 return True
             if s.endswith("*") and hv.startswith(s[:-1]):
                 return True
-            if s.startswith("!") and len(s)>1:
+            if s.startswith("!") and len(s) > 1:
                 return hv != s[1:]
             return hv == s
 
         for k, vals in filters.items():
-            if not any(match(TxtaiStore._lookup_meta(m, k), v) for v in vals):
+            if not any(
+                match(TxtaiStore._lookup_meta(m, k), v) for v in vals
+            ):
                 return False
         return True
 
     @staticmethod
     def _split_filters(filters: dict[str, Any] | None) -> tuple[dict, dict]:
-        """Split filters into pre (handled by txtai) and post (handled in Python)."""
+        """Split filters into pre (handled by txtai) and post (handled in
+        Python)."""
         if not filters:
             return {}, {}
 
@@ -505,7 +573,8 @@ class TxtaiStore(BaseStore):
                 # Wildcards and comparison ops => post-filter (Python)
                 if isinstance(v, str) and (
                     v.startswith("*") or v.endswith("*") or
-                    any(v.startswith(op) for op in (">=", "<=", ">", "<", "!="))
+                    any(v.startswith(op)
+                        for op in (">=", "<=", ">", "<", "!="))
                 ):
                     extended.append(v)
                 # Simple negation !value => pre-filter (SQL <>)
@@ -578,11 +647,14 @@ class TxtaiStore(BaseStore):
         return "".join(safe)
 
     @staticmethod
-    def _build_sql(query: str, k: int, filters: dict[str, Any], columns: list[str],
-                   with_similarity: bool = True, avoid_duplicates = True) -> str:
+    def _build_sql(query: str, k: int, filters: dict[str, Any],
+                   columns: list[str],
+                   with_similarity: bool = True,
+                   avoid_duplicates=True) -> str:
         """
         Builds a generic txtai >=8 query
-        Eg SELECT id, text, score FROM txtai WHERE similar('foo') AND (t1='x' OR t1='y')
+        Eg SELECT id, text, score FROM txtai WHERE similar('foo')
+        AND (t1='x' OR t1='y')
         """
         cols = ", ".join(columns or ["id", "docid", "text", "score"])
         sql = f"SELECT {cols} FROM txtai"
@@ -631,8 +703,12 @@ class TxtaiStore(BaseStore):
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> list[SearchResult]:
         """
-        Queries txtai for top-k, keeps overfetch inside the store, preserves text
-        from em.search when present, and falls back to lookup if missing.
+        Queries txtai for top-k, keeps overfetch inside the store, preserves
+        text from em.search when present, and falls back to lookup if missing.
+
+        Key concurrency improvement (Phase 1):
+        - FAISS search runs inside collection_lock
+        - Meta read (get_meta_batch) runs OUTSIDE lock — WAL concurrent reads
         """
         kk = max(1, int(k))
 
@@ -643,7 +719,8 @@ class TxtaiStore(BaseStore):
 
         with collection_lock(tenant, collection):
             self.load_or_init(tenant, collection)
-            em = self._emb[(tenant, collection)]
+            key = (tenant, collection)
+            em = self._emb[key]
             raw = em.search(sql)
 
             # Normalize to (id, score, maybe_text)
@@ -652,32 +729,41 @@ class TxtaiStore(BaseStore):
                     (r.get("id"), float(r.get("score", 0.0)), r.get("text"))
                     for r in raw
                 ]
-            else: # if raw is a tuple:
+            else:  # if raw is a tuple:
                 triples = [
                     (rid, float(score), None)
                     for rid, score in (raw or [])
                 ]
 
-            meta = self._load_meta(tenant, collection)
-
-            kept: list[tuple[str, float, Any]] = []
-            need_lookup_ids: list[str] = []
-
-            if pos_f:
-                log.debug(f"SEARCH-FILTER-POST: {pos_f}")
-            for rid, score, txt in triples:
-                if not rid:
-                    continue
-                if self._matches_filters(meta.get(rid, {}), pos_f):
-                    kept.append((rid, score, txt))
-                    if txt is None:
-                        need_lookup_ids.append(rid)
-                    if len(kept) >= kk:
-                        break
+            # Extract candidate rids for meta lookup (outside lock)
+            candidate_rids = [rid for rid, _, _ in triples if rid]
 
             lookup: dict[str, Any] = {}
-            if need_lookup_ids and hasattr(em, "lookup"):
-                lookup = em.lookup(need_lookup_ids) or {}
+            # Collect which rids need text lookup (txt is None)
+            _need_txt = {
+                rid for rid, _, txt in triples if rid and txt is None
+            }
+            if _need_txt and hasattr(em, "lookup"):
+                lookup = em.lookup(list(_need_txt)) or {}
+
+        # --- OUTSIDE lock: WAL meta read is concurrent ---
+        col_db = self._dbs.get((tenant, collection))
+        if col_db is not None:
+            meta_batch = col_db.get_meta_batch(candidate_rids)
+        else:
+            meta_batch = {}
+
+        kept: list[tuple[str, float, Any]] = []
+        if pos_f:
+            log.debug(f"SEARCH-FILTER-POST: {pos_f}")
+        for rid, score, txt in triples:
+            if not rid:
+                continue
+            rid_meta = meta_batch.get(rid, {})
+            if self._matches_filters(rid_meta, pos_f):
+                kept.append((rid, score, txt))
+                if len(kept) >= kk:
+                    break
 
         out: list[SearchResult] = []
         for rid, score, txt in kept:
@@ -685,15 +771,16 @@ class TxtaiStore(BaseStore):
                 txt = lookup.get(rid)
             if txt is None:
                 txt = self._load_chunk_text(tenant, collection, rid)
+            rid_meta = meta_batch.get(rid, {})
             out.append(SearchResult(
                 id=rid,
                 score=score,
                 text=txt.get("text") if isinstance(txt, dict) else txt,
                 tenant=tenant,
                 collection=collection,
-                meta=meta.get(rid) or {},
+                meta=rid_meta,
                 match_reason=self._build_match_reason(
-                    query, score, filters, meta.get(rid)
+                    query, score, filters, rid_meta
                 ),
             ))
         _hits = [(r.id, round(r.score, 3)) for r in out[:3]]
