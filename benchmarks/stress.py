@@ -511,24 +511,25 @@ async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
 # ---------------------------------------------------------------------------
 # Weights control how often each operation is chosen.
 OPERATIONS = [
+    # (func, op_name, weight)
     # Read-heavy production shape, biased toward write pressure for stress.
-    (op_search,              60),  # ~59% — dominant in every real deployment
-    (op_ingest_small,        14),  # ~14% — steady write pressure, lock contention
-    (op_ingest_large,         5),  # ~5%  — chunking path (CPU-heavy)
-    (op_delete_document,      6),  # ~6%  — moderate purge rate
-    (op_create_collection,    4),  # ~4%  — low-frequency admin
-    (op_delete_collection,    2),  # ~2%  — rarer than create
-    (op_health_live,          4),  # ~4%  — simulates load-balancer probe interval
-    (op_health,               2),  # ~2%  — monitoring scrape
-    (op_health_ready,         1),  # ~1%
-    (op_health_metrics,       1),  # ~1%
-    (op_archive_download,     1),  # ~1%  — rare admin/backup op
-    (op_archive_restore,      1),  # ~1%  — keep for coverage, not realism
+    (op_search,              "search",            60),  # ~59%
+    (op_ingest_small,        "ingest_small",      14),  # ~14%
+    (op_ingest_large,        "ingest_chunked",     5),  # ~5%
+    (op_delete_document,     "doc_delete",         6),  # ~6%
+    (op_create_collection,   "collection_create",  4),  # ~4%
+    (op_delete_collection,   "collection_delete",  2),  # ~2%
+    (op_health_live,         "health_live",        4),  # ~4%
+    (op_health,              "health",             2),  # ~2%
+    (op_health_ready,        "health_ready",       1),  # ~1%
+    (op_health_metrics,      "health_metrics",     1),  # ~1%
+    (op_archive_download,    "archive_download",   1),  # ~1%
+    (op_archive_restore,     "archive_restore",    1),  # ~1%
 ]
 
 
 def _pick_operation():
-    ops, weights = zip(*OPERATIONS)
+    ops, _, weights = zip(*OPERATIONS)
     return random.choices(ops, weights=weights, k=1)[0]
 
 
@@ -609,6 +610,14 @@ async def run_stress(
             t.cancel()
 
         elapsed = time.perf_counter() - t_start
+
+        # Coverage pass: run any op that was never picked during the timed phase.
+        seen_ops = {r.op for r in stats.results}
+        missed = [(op, name) for op, name, _ in OPERATIONS if name not in seen_ops]
+        if missed:
+            print(f"Coverage pass ({len(missed)} op(s) not seen)...")
+            for op, _ in missed:
+                await op(client, world, stats)
 
         # Cleanup: delete all test collections
         print("Cleaning up...")
