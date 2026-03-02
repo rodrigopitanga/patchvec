@@ -40,7 +40,11 @@ load_dotenv()
 
 _ENV_PREFIX = "PATCHVEC_"
 
-_DEFAULT_CONFIG_PATH = os.environ.get(_ENV_PREFIX + "CONFIG", "./config.yml")
+_DEFAULT_CONFIG_PATH = str(
+    Path(
+        os.environ.get(_ENV_PREFIX + "CONFIG", "~/patchvec/config.yml")
+    ).expanduser()
+)
 
 _DEFAULTS = {
     "data_dir": "~/patchvec/data",
