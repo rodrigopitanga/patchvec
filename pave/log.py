@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import asyncio, functools, json, sys, threading, time
+import asyncio, functools, json, logging, sys, threading, time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -72,6 +72,92 @@ def close() -> None:
             finally:
                 _handle = None
 
+
+# --------------- dev stream (stderr) ---------------
+
+class _ColorFormatter(logging.Formatter):
+    """Formatter with ANSI colors for terminal output."""
+    COLORS = {
+        logging.DEBUG:    "\033[36m",   # cyan
+        logging.INFO:     "\033[32m",   # green
+        logging.WARNING:  "\033[33m",   # yellow
+        logging.ERROR:    "\033[31m",   # red
+        logging.CRITICAL: "\033[35m",   # magenta
+    }
+    RESET = "\033[0m"
+    BOLD  = "\033[1m"
+
+    def __init__(self, fmt: str, datefmt: str, use_color: bool = True):
+        super().__init__(fmt, datefmt)
+        self.use_color = use_color
+
+    def format(self, record: logging.LogRecord) -> str:
+        if self.use_color:
+            color = self.COLORS.get(record.levelno, "")
+            if record.name.startswith("pave"):
+                record.name = f"{self.BOLD}pave{self.RESET}{color}"
+            record.levelname = f"{color}{record.levelname}{self.RESET}"
+            record.msg = f"{color}{record.msg}{self.RESET}"
+        return super().format(record)
+
+
+def _init_logger() -> logging.Logger:
+    """
+    Initializes hierarchical logging levels:
+      - pave (base) → bold + colored, to stderr
+      - watch namespaces (base -1 → more verbose)
+      - quiet namespaces (base +1 → less verbose)
+      - all others (base +2)
+    Lazy import of get_cfg avoids a circular import with config.py.
+    """
+    from pave.config import get_cfg
+    cfg = get_cfg()
+    base_level = getattr(logging, str(cfg.get("log.level")).upper(), logging.INFO)
+
+    def shift(level: int, delta: int) -> int:
+        return min(logging.CRITICAL, max(logging.DEBUG, level + 10 * delta))
+
+    root = logging.getLogger()
+    root.setLevel(shift(base_level, +2))
+    root.handlers.clear()
+
+    use_color = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(_ColorFormatter(
+        "%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+        "%H:%M:%S",
+        use_color=use_color,
+    ))
+    root.addHandler(handler)
+
+    pave_log = logging.getLogger("pave")
+    pave_log.setLevel(logging.DEBUG if cfg.get("dev", 0) else base_level)
+
+    for ns in cfg.get("log.debug", []):
+        logging.getLogger(ns).setLevel(logging.DEBUG)
+
+    for ns in cfg.get("log.watch", []):
+        logging.getLogger(ns).setLevel(shift(base_level, -1))
+
+    for ns in cfg.get("log.quiet", ["uvicorn", "uvicorn.access", "uvicorn.error",
+                                     "fastapi", "sqlalchemy", "urllib3", "httpx"]):
+        logging.getLogger(ns).setLevel(shift(base_level, +1))
+
+    return pave_log
+
+
+_LOGGER_SINGLETON = _init_logger()
+
+
+def get_logger() -> logging.Logger:
+    """Returns the global PatchVec logger."""
+    return _LOGGER_SINGLETON
+
+
+LOG = _LOGGER_SINGLETON
+
+# --------------- ops stream ---------------
 
 def _result_status(result: Any) -> tuple[str, str | None]:
     """Return (status, error_code) from a handler return value."""
