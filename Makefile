@@ -23,6 +23,7 @@ PYTHON_BIN      ?= $(VENV)/bin/python
 PIP_BIN         ?= $(VENV)/bin/pip
 
 DEV		?= 1
+DATA_DIR	?= ./data
 AUTH_MODE	?= none
 HOST            ?= 0.0.0.0
 PORT            ?= 8086
@@ -146,11 +147,12 @@ serve: install
 	@echo "Starting 🍰 server on $(HOST):$(PORT) [auth.mode=$(AUTH_MODE)]"
 	PYTHONPATH=. \
 	PATCHVEC_DEV=$(DEV) \
+	PATCHVEC_DATA_DIR=$(DATA_DIR) \
 	PATCHVEC_AUTH__MODE=$(AUTH_MODE) \
 	PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
-	PATCHVEC_SERVER__LOG_LEVEL=$(LOG_LEVEL) \
-	PATCHVEC_SERVER_HOST=$(HOST) \
-	PATCHVEC_SERVER_PORT=$(PORT) \
+	PATCHVEC_LOG__LEVEL=$(LOG_LEVEL) \
+	PATCHVEC_SERVER__HOST=$(HOST) \
+	PATCHVEC_SERVER__PORT=$(PORT) \
 	$(PYTHON_BIN) -m $(PKG_INTERNAL).main
 
 .PHONY: cli

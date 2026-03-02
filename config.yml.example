@@ -1,7 +1,10 @@
 # Patchvec sample configuration (commit this file as config.yml.example)
 # Copy to config.yml and adjust. Secrets should live in a separate, untracked file (see tenants.yml.example).
 
-data_dir: ./data
+# Data directory — ~ is expanded.
+# For Docker/systemd set an absolute path, e.g. /var/lib/patchvec/data
+#   mkdir -p /var/lib/patchvec/data && chown patchvec:patchvec /var/lib/patchvec/data
+data_dir: ~/patchvec/data
 
 # Optional "common" collection included in searches when enabled
 common_enabled: true

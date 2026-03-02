@@ -77,10 +77,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.version = VERSION
 
     # Search limits
-    _raw_conc = cfg.get("search.max_concurrent")
-    _max_conc = int(_raw_conc) if _raw_conc is not None else 42
-    _raw_to = cfg.get("search.timeout_ms")
-    _to_ms = int(_raw_to) if _raw_to is not None else 30_000
+    _max_conc = int(cfg.get("search.max_concurrent"))
+    _to_ms = int(cfg.get("search.timeout_ms"))
     # Dedicated executor: threads == max_concurrent so work starts immediately.
     app.state.search_executor = (
         ThreadPoolExecutor(max_workers=_max_conc) if _max_conc > 0 else None
@@ -91,8 +89,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.active_searches = 0
     app.state.search_timeout_s = _to_ms / 1000.0 if _to_ms > 0 else 0.0
 
-    _raw_iconc = cfg.get("ingest.max_concurrent")
-    _max_iconc = int(_raw_iconc) if _raw_iconc is not None else 7
+    _max_iconc = int(cfg.get("ingest.max_concurrent"))
     app.state.ingest_executor = (
         ThreadPoolExecutor(max_workers=_max_iconc) if _max_iconc > 0 else None
     )
@@ -521,8 +518,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
         content = await file.read()
 
-        _raw_mb = cfg.get("ingest.max_file_size_mb")
-        max_mb = float(_raw_mb) if _raw_mb is not None else 500.0
+        max_mb = float(cfg.get("ingest.max_file_size_mb"))
         max_bytes = int(max_mb * 1024 * 1024)
         if max_bytes > 0 and len(content) > max_bytes:
             return _error(
@@ -757,15 +753,15 @@ def main_srv():
     reload = bool(cfg.get("server.reload", False))
     workers = int(cfg.get("server.workers", 1))
     log_level = str(cfg.get("log.level")).lower()
-    timeout_keep_alive = int(cfg.get("server.timeout_keep_alive") or 75)
+    timeout_keep_alive = int(cfg.get("server.timeout_keep_alive"))
 
     if cfg.get("dev",0):
         log_level = "debug"
         log.setLevel(logging.DEBUG)
 
-    _s_cap = int(cfg.get("search.max_concurrent") or 42)
-    _s_to = int(cfg.get("search.timeout_ms") or 30_000)
-    _i_cap = int(cfg.get("ingest.max_concurrent") or 7)
+    _s_cap = int(cfg.get("search.max_concurrent"))
+    _s_to = int(cfg.get("search.timeout_ms"))
+    _i_cap = int(cfg.get("ingest.max_concurrent"))
     _tc = cfg.get("tenants") or {}
     _tcap = (
         int(_tc.get("default_max_concurrent") or 0)

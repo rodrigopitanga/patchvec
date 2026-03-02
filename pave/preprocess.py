@@ -8,8 +8,8 @@ from collections.abc import Iterable, Iterator
 from typing import Any
 from pypdf import PdfReader
 
-TXT_CHUNK_SIZE = int(CFG.get("preprocess.txt_chunk_size", 1000))
-TXT_CHUNK_OVERLAP = int(CFG.get("preprocess.txt_chunk_overlap", 200))
+TXT_CHUNK_SIZE = int(CFG.get("preprocess.txt_chunk_size"))
+TXT_CHUNK_OVERLAP = int(CFG.get("preprocess.txt_chunk_overlap"))
 
 def _chunks(text: str, size: int = TXT_CHUNK_SIZE, overlap: int = TXT_CHUNK_OVERLAP):
     text = text or ""

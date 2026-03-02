@@ -43,14 +43,23 @@ _ENV_PREFIX = "PATCHVEC_"
 _DEFAULT_CONFIG_PATH = os.environ.get(_ENV_PREFIX + "CONFIG", "./config.yml")
 
 _DEFAULTS = {
-    "data_dir": "./data",
+    "data_dir": "~/patchvec/data",
+    "common_enabled": False,
+    "common_tenant": "global",
+    "common_collection": "common",
     "auth": {"mode": "none", "api_keys": {}, "tenants_file": None},
     "vector_store": {"type": "default"},
     "ingest": {"max_file_size_mb": 500, "max_concurrent": 7},
     "search": {"max_concurrent": 42, "timeout_ms": 30000},
+    "preprocess": {"txt_chunk_size": 1000, "txt_chunk_overlap": 200},
+    "tenants": {"default_max_concurrent": 0},
     "server": {"timeout_keep_alive": 75},
     "log": {"level": "INFO", "ops_log": None, "access_log": None},
 }
+
+# Path-type config keys: ~ is expanded after the full config merge.
+# Add keys here when new path configs land (e.g. log.ops_log).
+_PATH_KEYS: tuple[str, ...] = ("data_dir",)
 
 _ENV_PATTERN = re.compile(r"\$\{([^}:|]+)(?:\|([^}]*))?\}")
 
@@ -138,7 +147,12 @@ class Config:
             tcfg = _resolve_env_in_obj(_load_yaml(tenants_file))
             file_cfg = _deep_merge(file_cfg, tcfg)
         env_cfg = _env_to_dict()
-        return _deep_merge(_deep_merge(_DEFAULTS, file_cfg), env_cfg)
+        merged = _deep_merge(_deep_merge(_DEFAULTS, file_cfg), env_cfg)
+        for key in _PATH_KEYS:
+            val = merged.get(key)
+            if isinstance(val, str) and val:
+                merged[key] = str(Path(val).expanduser())
+        return merged
 
     # -------- path ops --------
     def _get_from(self, store: dict[str, Any], path: str):
