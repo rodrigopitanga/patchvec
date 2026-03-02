@@ -1,5 +1,5 @@
-<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
-<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
 # Roadmap
 
@@ -733,7 +733,7 @@ workloads under 10M vectors.
 | File preprocessing | CSV/PDF/TXT | No | No | No |
 | Embedding choice | Pluggable | BYO | BYO | BYO |
 | Filtering | Expressive | Basic | Rich | Basic |
-| License | GPL-3.0 | Apache-2.0 | Apache-2.0 | Proprietary |
+| License | AGPL-3.0 | Apache-2.0 | Apache-2.0 | Proprietary |
 
 The **built-in preprocessing** and **multi-tenancy** are real differentiators. ChromaDB,
 the closest lightweight competitor, has neither.

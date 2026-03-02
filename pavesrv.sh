@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
-# SPDX-License-Identifier: GPL-3.0-or-later
+# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 # simple server wrapper: prefer project venv; fallback to system python
 set -euo pipefail

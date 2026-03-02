@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# (C) 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
-# SPDX-License-Identifier: GPL-3.0-or-later
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Shared helpers for PatchVec benchmark scripts.
 """

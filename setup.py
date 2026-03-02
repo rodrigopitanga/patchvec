@@ -1,5 +1,5 @@
-# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
-# SPDX-License-Identifier: GPL-3.0-or-later
+# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 from setuptools import setup, find_packages
 from pathlib import Path
@@ -22,8 +22,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Rodrigo Rodrigues da Silva",
-    author_email="rodrigopitanga@posteo.net",
-    license="GPL-3.0-or-later",
+    author_email="rodrigo@flowlexi.com",
+    license="AGPL-3.0-or-later",
     python_requires=">=3.10,<3.15",
     packages=find_packages(include=["pave", "pave.*"]),  # internal package
     include_package_data=True,

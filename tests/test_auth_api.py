@@ -1,5 +1,5 @@
-# (C) 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
-# SPDX-License-Identifier: GPL-3.0-or-later
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 
 def test_auth_missing_token_returns_code(client, cfg):

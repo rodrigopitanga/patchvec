@@ -1,5 +1,5 @@
-<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net> -->
-<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
 # PatchVec — A lightweight, pluggable vector search microservice.
 
@@ -97,4 +97,4 @@ curl -X POST http://localhost:8086/collections/demo/books/search \
 ```
 
 ## License
-GPL-3.0-or-later — (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
+AGPL-3.0-or-later — (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>

@@ -1,5 +1,5 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigopitanga@posteo.net>
-# SPDX-License-Identifier: GPL-3.0-or-later
+# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
 # pave/ui.py — minimal, crash-proof UI wiring
 from fastapi import FastAPI
@@ -50,8 +50,8 @@ def attach_ui(app: FastAPI):
 
     # footer links
     repo_url = "https://gitlab.com/flowlexi/patchvec"
-    license_name = "GPL-3.0-or-later"
-    license_url = "https://www.gnu.org/licenses/gpl-3.0-standalone.html"
+    license_name = "AGPL-3.0-or-later"
+    license_url = "https://www.gnu.org/licenses/agpl-3.0-standalone.html"
 
     # static + favicon (hardcoded path relative to this file)
     # never crash if dir missing.
