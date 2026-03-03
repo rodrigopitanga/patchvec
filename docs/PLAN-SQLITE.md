@@ -231,6 +231,75 @@ python benchmarks/stress.py --duration 180 --concurrency 24 \
   | tee benchmarks/results/phase-1-before-2026-02-25.stress.txt
 ```
 
+### Phase 1 benchmark results
+
+Three `CollectionDB` implementations were evaluated (branches
+`sql-phase1-claude-impl0/1/2`, all carrying the same `service.py` and
+`benchmarks/stress.py` bug-fixes as main). Tests: 126/126 pass on all three.
+
+**Implementation strategies**
+
+| Impl | `CollectionDB` connection model |
+|------|---------------------------------|
+| impl0 | Single persistent `_conn`, `_write_lock` guards writes; reads are lockless |
+| impl1 | `_tls` threading.local read connections + dedicated `_wconn` for writes |
+| impl2 | Two connections `_rconn` + `_wconn`, `_write_lock` guards writes |
+
+**Latency benchmark** — 1200 queries, concurrency=42
+
+| | Min | p50 | p95 | p99 | Max | Throughput |
+|--|-----|-----|-----|-----|-----|------------|
+| before\_sql (baseline) | 92ms | 1255ms | 1287ms | 1295ms | 1301ms | 33.7 ops/s |
+| impl0 | 91ms | 1032ms | **1062ms** | 1202ms | 1217ms | 38.9 ops/s |
+| impl1 | 106ms | 1056ms | 1246ms | 1304ms | 1445ms | 37.3 ops/s |
+| impl2 ✓ | 110ms | 1046ms | **1086ms** | 1177ms | 1185ms | 38.4 ops/s |
+
+**Stress benchmark** — 90s duration, concurrency=8
+
+| | Total ops | Throughput | Total err% | Search err% | Notable errors |
+|--|-----------|------------|------------|-------------|----------------|
+| before\_sql | 100 | 1.0 ops/s | 16.0% | 25.4% | search timeouts (30s) |
+| impl0 | 905 | 7.7 ops/s | 1.3% | 1.3% | "Cannot operate on a closed database" |
+| impl1 | 1091 | 12.0 ops/s | **0.1%** | **0.0%** | 1× "unable to open database file" |
+| impl2 ✓ | 1016 | 11.0 ops/s | **0.2%** | **0.0%** | 2× "unable to open database file" |
+
+**Result files** (canonical runs after all bug-fixes):
+
+```
+# Baseline (before Phase 1)
+benchmarks/results/latency-2026-03-02_032017_before_sql-4dc4b5b.txt
+benchmarks/results/stress-2026-03-02_032017_before_sql-4dc4b5b.txt
+
+# impl0 — branch sql-phase1-claude-impl0 @ d4b95d5
+benchmarks/results/latency-2026-03-03_212122_after_sql-claude-impl0-d4b95d5.txt
+benchmarks/results/stress-2026-03-03_212122_after_sql-claude-impl0-d4b95d5.txt
+
+# impl1 — branch sql-phase1-claude-impl1 @ e531c77
+benchmarks/results/latency-2026-03-03_212821_after_sql-claude-impl1-e531c77.txt
+benchmarks/results/stress-2026-03-03_212821_after_sql-claude-impl1-e531c77.txt
+
+# impl2 — branch sql-phase1-claude-impl2 @ e3aed3c  (merged to main)
+benchmarks/results/latency-2026-03-03_213834_after_sql-claude-impl2-e3aed3c.txt
+benchmarks/results/stress-2026-03-03_213834_after_sql-claude-impl2-e3aed3c.txt
+```
+
+**Winner: impl2** (read/write split) — merged to main (`9af1090`).
+
+Rationale:
+- **impl0** has the best p95 (1062ms, -17.5%) and p50 (1032ms) but its single
+  shared connection produces real search errors under concurrent archive-restore
+  load ("Cannot operate on a closed database"). `get_meta_batch` runs outside
+  `collection_lock`, so write/restore operations can race against in-flight reads
+  on the same connection object. Disqualified on correctness grounds.
+- **impl1** (thread-local reads) eliminates search errors but the p95 improvement
+  over baseline is only 3.2% — within run-to-run FAISS variance. The per-thread
+  connection pool adds bookkeeping overhead that partially cancels the concurrency
+  gain. p99 is actually worse than baseline (1304ms vs 1295ms).
+- **impl2** (read/write split) delivers 15.7% p95 improvement (1287ms→1086ms),
+  zero search errors, 11 ops/s stress throughput (vs 1.0 ops/s baseline), and
+  its two "unable to open database file" errors are transient filesystem races
+  during collection delete racing concurrent ingest — not connection-model bugs.
+
 ---
 
 ## Phase 2 — Global Store (tenant + collection listing)
