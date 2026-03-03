@@ -294,6 +294,34 @@ def _validate_zip_members(zf: zipfile.ZipFile) -> None:
             raise ValueError(f"invalid archive member: {name}")
 
 
+
+
+def _flush_store_caches(store: "BaseStore | None") -> None:
+    """Drop all in-memory CollectionDB and Embeddings references.
+
+    Called after restore_archive replaces files on disk so that the next
+    access re-opens fresh connections from the restored files.
+
+    We intentionally do NOT call col_db.close() here: get_meta_batch runs
+    outside collection_lock, so a thread may already hold a reference to a
+    CollectionDB that _lock_indexes cannot block.  Calling close() on those
+    objects would corrupt in-flight reads.  Instead we just remove them from
+    the shared dicts; threads that already hold a reference finish on the old
+    (pre-restore) connection safely.
+    """
+    base_store = _unwrap_store(store)
+    if base_store is None:
+        return
+    try:
+        from pave.stores.txtai_store import TxtaiStore  # type: ignore
+    except Exception:
+        return
+    if not isinstance(base_store, TxtaiStore):
+        return
+    # Drop dict references only — do NOT close the connections.
+    base_store._dbs.clear()
+    base_store._emb.clear()
+
 def _unwrap_store(store: BaseStore | None) -> BaseStore | None:
     """Follow ``impl`` attributes to reach the concrete store implementation."""
 
@@ -439,6 +467,10 @@ def restore_archive(
 
             for entry in extract_dir.iterdir():
                 shutil.move(str(entry), data_dir_path / entry.name)
+
+            # Drop stale CollectionDB/Embeddings refs so next access
+            # re-opens from the restored files.
+            _flush_store_caches(store)
 
     return {"ok": True, "data_dir": str(data_dir_path)}
 
