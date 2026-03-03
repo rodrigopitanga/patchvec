@@ -287,8 +287,9 @@ class TxtaiStore(BaseStore):
 
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
         key = (tenant, collection)
-        if key in self._dbs:
-            return self._dbs[key].has_doc(docid)
+        col_db = self._dbs.get(key)
+        if col_db is not None:
+            return col_db.has_doc(docid)
         # Fallback: open DB read-only style (no lock needed for WAL read)
         db_path = self._db_path(tenant, collection)
         if not db_path.exists():
