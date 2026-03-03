@@ -276,7 +276,8 @@ async def op_delete_collection(client: httpx.AsyncClient, world: World, stats: S
     name = await world.pick_collection()
     if name is None:
         return  # nothing to delete
-    await world.remove_collection(name)
+    # Remove from world only after a successful HTTP delete so that world
+    # does not empty out prematurely when the request fails or is slow.
     t0 = time.perf_counter()
     try:
         r = await client.delete(f"/collections/{TENANT}/{name}")
@@ -288,6 +289,7 @@ async def op_delete_collection(client: httpx.AsyncClient, world: World, stats: S
             stats.record(OpResult("collection_delete", lat, False,
                                   _parse_error(r)))
             return
+        await world.remove_collection(name)
         stats.record(OpResult("collection_delete", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
