@@ -738,6 +738,13 @@ class TxtaiStore(BaseStore):
 
             # Extract candidate rids for meta lookup (outside lock)
             candidate_rids = [rid for rid, _, _ in triples if rid]
+            # We only need top-k metadata when there is no post-filter.
+            # With post-filters, we need metadata for all candidates to
+            # evaluate predicates before truncating to k.
+            meta_rids = (
+                candidate_rids if pos_f
+                else [rid for rid, _, _ in triples if rid][:kk]
+            )
 
             lookup: dict[str, Any] = {}
             # Collect which rids need text lookup (txt is None)
@@ -750,7 +757,7 @@ class TxtaiStore(BaseStore):
         # --- OUTSIDE lock: WAL meta read is concurrent ---
         col_db = self._dbs.get((tenant, collection))
         if col_db is not None:
-            meta_batch = col_db.get_meta_batch(candidate_rids)
+            meta_batch = col_db.get_meta_batch(meta_rids)
         else:
             meta_batch = {}
 
