@@ -30,10 +30,11 @@ def test_open_creates_schema(tmp_path):
     db.close()
 
 
-def test_legacy_json_detection(tmp_path):
+@pytest.mark.parametrize("legacy_name", ["catalog.json", "meta.json"])
+def test_legacy_json_detection(tmp_path, legacy_name):
     base = _meta_db(tmp_path).parent
     base.mkdir(parents=True, exist_ok=True)
-    (base / "catalog.json").write_text("{}", encoding="utf-8")
+    (base / legacy_name).write_text("{}", encoding="utf-8")
     db = CollectionDB()
     with pytest.raises(LegacyMetadataError):
         db.open(base / "meta.db")
@@ -67,4 +68,24 @@ def test_delete_doc(tmp_path):
     deleted = db.delete_doc("doc2")
     assert deleted == ["doc2::c0"]
     assert db.has_doc("doc2") is False
+    db.close()
+
+
+def test_get_doc_chunk_counts(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc3",
+        [
+            ("doc3::c0", "chunks/doc3::c0.txt", {"docid": "doc3"}),
+            ("doc3::c1", "chunks/doc3::c1.txt", {"docid": "doc3"}),
+        ],
+        doc_meta={"docid": "doc3"},
+    )
+    db.upsert_chunks(
+        "doc4",
+        [("doc4::c0", "chunks/doc4::c0.txt", {"docid": "doc4"})],
+        doc_meta={"docid": "doc4"},
+    )
+    assert db.get_doc_chunk_counts() == (2, 3)
     db.close()

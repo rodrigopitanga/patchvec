@@ -35,6 +35,40 @@ def test_metrics_exposes_build_labels(client):
     txt = r.text
     assert "version" in txt and VERSION in txt
 
+
+def test_health_metrics_include_store_catalog_counts(client):
+    client.post("/collections/acme/c1")
+    client.post("/collections/acme/c2")
+    client.post("/collections/beta/c1")
+
+    client.post(
+        "/collections/acme/c1/documents",
+        files={"file": ("a.txt", b"alpha", "text/plain")},
+        data={"docid": "A1"},
+    )
+    client.post(
+        "/collections/beta/c1/documents",
+        files={"file": ("b.txt", b"beta", "text/plain")},
+        data={"docid": "B1"},
+    )
+
+    snap = client.get("/health/metrics").json()
+    assert snap["tenant_count"] >= 2
+    assert snap["collection_count"] >= 3
+    assert snap["doc_count"] >= 2
+    assert snap["chunk_count"] >= 2
+
+
+def test_metrics_prometheus_includes_store_catalog_counts(client):
+    client.post("/collections/acme/promc")
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    txt = r.text
+    assert "patchvec_tenant_count" in txt
+    assert "patchvec_collection_count" in txt
+    assert "patchvec_doc_count" in txt
+    assert "patchvec_chunk_count" in txt
+
 def test_latency_percentiles_in_snapshot(client):
     """After search and ingest, latency percentiles should appear in metrics."""
     # create collection and ingest a document

@@ -8,21 +8,19 @@ from pave import cli as pvcli
 from pave.config import get_cfg
 
 
-def _mk_collection_dirs(base: Path, tenant: str, *collections: str) -> None:
-    tenant_dir = base / f"t_{tenant}"
-    tenant_dir.mkdir(parents=True, exist_ok=True)
-    for c in collections:
-        coll_dir = tenant_dir / f"c_{c}"
-        coll_dir.mkdir(parents=True, exist_ok=True)
-        # Create catalog.json so the collection is recognized
-        (coll_dir / "catalog.json").write_text("{}")
+def _mk_collections_with_store(store, tenant: str, *collections: str) -> None:
+    for collection in collections:
+        store.load_or_init(tenant, collection)
+        store.save(tenant, collection)
 
 
 def test_list_collections_api_sorted(client, tmp_path, monkeypatch):
     cfg = get_cfg()
     monkeypatch.setattr(cfg, "_cfg", {**cfg._cfg, "data_dir": str(tmp_path)})
 
-    _mk_collection_dirs(tmp_path, "acme", "invoices", "contracts", "reports")
+    client.post("/collections/acme/invoices")
+    client.post("/collections/acme/contracts")
+    client.post("/collections/acme/reports")
 
     r = client.get("/collections/acme")
     assert r.status_code == 200
@@ -41,6 +39,21 @@ def test_list_collections_api_empty_tenant(client, tmp_path, monkeypatch):
     (tmp_path / "t_empty").mkdir(parents=True, exist_ok=True)
 
     r = client.get("/collections/empty")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["collections"] == []
+    assert data["count"] == 0
+
+
+def test_list_collections_ignores_legacy_catalog_only(client, tmp_path, monkeypatch):
+    cfg = get_cfg()
+    monkeypatch.setattr(cfg, "_cfg", {**cfg._cfg, "data_dir": str(tmp_path)})
+    coll_dir = tmp_path / "t_acme" / "c_legacy"
+    coll_dir.mkdir(parents=True, exist_ok=True)
+    (coll_dir / "catalog.json").write_text("{}", encoding="utf-8")
+
+    r = client.get("/collections/acme")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
@@ -70,7 +83,7 @@ def test_list_collections_cli(tmp_path, capsys, monkeypatch):
     store = get_store(cfg)
     monkeypatch.setattr(pvcli, "store", store)
 
-    _mk_collection_dirs(tmp_path, "demo", "books", "articles")
+    _mk_collections_with_store(store, "demo", "books", "articles")
 
     pvcli.main_cli(["list-collections", "demo"])
     out = json.loads(capsys.readouterr().out)

@@ -254,8 +254,18 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         code = 200 if d.get("ok") else 503
         return JSONResponse(d, status_code=code)
 
+    def _store_metrics(store: BaseStore) -> dict[str, int]:
+        data_dir = cfg.get("data_dir")
+        if not data_dir:
+            return {}
+        try:
+            return store.catalog_metrics(str(data_dir))
+        except Exception as e:
+            set_error(f"store_metrics: {e}")
+            return {}
+
     @app.get("/health/metrics")
-    def health_metrics():
+    def health_metrics(store: BaseStore = Depends(current_store)):
         inc("requests_total")
         extra = {
             "version": VERSION,
@@ -263,16 +273,18 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             "auth": cfg.get("auth.mode"),
             **app.state.hw_info,
         }
+        extra.update(_store_metrics(store))
         return snapshot(extra)
 
     @app.get("/metrics")
-    def metrics_prom():
+    def metrics_prom(store: BaseStore = Depends(current_store)):
         inc("requests_total")
+        extra = _store_metrics(store)
         txt = to_prometheus(build={
             "version": VERSION,
             "vector_store": cfg.get("vector_store.type"),
             "auth":cfg.get("auth.mode")
-        })
+        }, extra=extra)
         return PlainTextResponse(txt, media_type="text/plain; version=0.0.4")
 
 

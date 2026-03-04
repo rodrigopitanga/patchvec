@@ -300,6 +300,27 @@ Rationale:
   its two "unable to open database file" errors are transient filesystem races
   during collection delete racing concurrent ingest — not connection-model bugs.
 
+### Post-merge hardening (2026-03-04)
+
+After `impl2` landed, a close/read race was hardened:
+
+- `CollectionDB.close()` now waits for in-flight readers before closing.
+- `TxtaiStore` now evicts cache entries before close during delete/rename.
+- `has_doc`/search metadata reads now recover from transient closed/closing DB handles.
+
+One sanitized benchmark pass was run with a fresh `data_dir` and fresh server process
+(`v0.5.8a3`) using the same parameters (latency: 1200/42, stress: 90s/8):
+
+| | Throughput | p50 | p95 | p99 | Total err% | Search err% |
+|--|------------|-----|-----|-----|------------|-------------|
+| impl2 canonical (`e3aed3c`) | 38.4 ops/s (lat), 11.0 ops/s (stress) | 1046ms | 1086ms | 1177ms | 0.2% | 0.0% |
+| hardened sanitized pass (`91328b4`) | 40.0 ops/s (lat), 15.6 ops/s (stress) | 1012ms | 1083ms | 1190ms | 0.0% | 0.0% |
+
+Notes:
+- p99 movement of this magnitude is within expected single-run variance.
+- The prior noisy run with "Cannot operate on a closed database" was not deterministic
+  load variance; it was the close/read race above.
+
 ---
 
 ## Phase 2 — Global Store (tenant + collection listing)

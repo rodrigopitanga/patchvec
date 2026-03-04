@@ -16,7 +16,7 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 from threading import Lock
 from contextlib import contextmanager
 from txtai.embeddings import Embeddings
-from pave.meta_store import CollectionDB, LegacyMetadataError
+from pave.meta_store import CollectionDB
 from pave.stores.base import BaseStore, Record, SearchResult
 from pave.config import CFG as c, get_logger
 
@@ -196,11 +196,10 @@ class TxtaiStore(BaseStore):
         import shutil
         with collection_lock(tenant, collection):
             key = (tenant, collection)
-            if key in self._emb:
-                del self._emb[key]
-            if key in self._dbs:
-                self._dbs[key].close()
-                del self._dbs[key]
+            self._emb.pop(key, None)
+            col_db = self._dbs.pop(key, None)
+            if col_db is not None:
+                col_db.close()
             p = self._base_path(tenant, collection)
             if os.path.isdir(p):
                 shutil.rmtree(p)
@@ -230,9 +229,9 @@ class TxtaiStore(BaseStore):
                 raise ValueError(f"collection '{new_name}' already exists")
 
             # Close DB for old collection before rename
-            if old_key in self._dbs:
-                self._dbs[old_key].close()
-                del self._dbs[old_key]
+            old_db = self._dbs.pop(old_key, None)
+            if old_db is not None:
+                old_db.close()
 
             # Atomic directory rename
             os.rename(old_path, new_path)
@@ -249,6 +248,65 @@ class TxtaiStore(BaseStore):
             locks[1].release()
             locks[0].release()
 
+    @staticmethod
+    def _is_transient_db_read_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        if isinstance(exc, sqlite3.ProgrammingError):
+            return "closed database" in msg
+        if isinstance(exc, sqlite3.OperationalError):
+            return (
+                "unable to open database file" in msg
+                or "database is locked" in msg
+            )
+        if isinstance(exc, RuntimeError):
+            return (
+                "not opened" in msg
+                or "closing" in msg
+                or "closed" in msg
+            )
+        return False
+
+    def _read_meta_batch_safe(
+        self, tenant: str, collection: str, rids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        if not rids:
+            return {}
+
+        key = (tenant, collection)
+        cached = self._dbs.get(key)
+        if cached is not None:
+            try:
+                return cached.get_meta_batch(rids)
+            except Exception as e:
+                if not self._is_transient_db_read_error(e):
+                    raise
+                log.debug(
+                    "Transient cached meta read failure for %s/%s: %s",
+                    tenant, collection, e,
+                )
+
+        db_path = self._db_path(tenant, collection)
+        if not db_path.exists():
+            return {}
+
+        fallback = CollectionDB()
+        try:
+            fallback.open(db_path)
+            return fallback.get_meta_batch(rids)
+        except Exception as e:
+            if not self._is_transient_db_read_error(e):
+                raise
+            log.debug(
+                "Transient fallback meta read failure for %s/%s: %s",
+                tenant, collection, e,
+            )
+            return {}
+        finally:
+            try:
+                fallback.close()
+            except Exception:
+                pass
+
     def list_collections(self, tenant: str) -> list[str]:
         tenant_path = os.path.join(c.get("data_dir"), f"t_{tenant}")
         if not os.path.isdir(tenant_path):
@@ -261,10 +319,7 @@ class TxtaiStore(BaseStore):
             if not collection:
                 continue
             coll_dir = os.path.join(tenant_path, entry)
-            # Phase 1: meta.db is the primary signal; fall back to
-            # catalog.json for backward compat with existing data.
-            if os.path.isfile(os.path.join(coll_dir, "meta.db")) or \
-               os.path.isfile(os.path.join(coll_dir, "catalog.json")):
+            if os.path.isfile(os.path.join(coll_dir, "meta.db")):
                 collections.append(collection)
         return collections
 
@@ -285,21 +340,99 @@ class TxtaiStore(BaseStore):
                 tenants.append(tenant)
         return tenants
 
+    def catalog_metrics(self, data_dir: str) -> dict[str, int]:
+        """Return tenant/collection/doc/chunk counters from store metadata."""
+        from pathlib import Path
+
+        data_dir_path = Path(data_dir).resolve()
+        if not data_dir_path.is_dir():
+            return {
+                "tenant_count": 0,
+                "collection_count": 0,
+                "doc_count": 0,
+                "chunk_count": 0,
+            }
+
+        tenants: set[str] = set()
+        collection_count = 0
+        doc_count = 0
+        chunk_count = 0
+
+        for tenant_dir in data_dir_path.iterdir():
+            if not tenant_dir.is_dir():
+                continue
+            tname = tenant_dir.name
+            if not tname.startswith("t_"):
+                continue
+            tenant = tname[2:]
+            if not tenant:
+                continue
+            tenants.add(tenant)
+
+            for coll_dir in tenant_dir.iterdir():
+                if not coll_dir.is_dir():
+                    continue
+                cname = coll_dir.name
+                if not cname.startswith("c_"):
+                    continue
+                collection = cname[2:]
+                if not collection:
+                    continue
+
+                db_path = coll_dir / "meta.db"
+                if not db_path.is_file():
+                    continue
+
+                collection_count += 1
+                key = (tenant, collection)
+
+                col_db = self._dbs.get(key)
+                close_after = False
+                if col_db is None:
+                    col_db = CollectionDB()
+                    col_db.open(db_path)
+                    close_after = True
+                try:
+                    docs, chunks = col_db.get_doc_chunk_counts()
+                    doc_count += docs
+                    chunk_count += chunks
+                finally:
+                    if close_after:
+                        col_db.close()
+
+        return {
+            "tenant_count": len(tenants),
+            "collection_count": collection_count,
+            "doc_count": doc_count,
+            "chunk_count": chunk_count,
+        }
+
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
         key = (tenant, collection)
         col_db = self._dbs.get(key)
         if col_db is not None:
-            return col_db.has_doc(docid)
+            try:
+                return col_db.has_doc(docid)
+            except Exception as e:
+                if not self._is_transient_db_read_error(e):
+                    raise
         # Fallback: open DB read-only style (no lock needed for WAL read)
         db_path = self._db_path(tenant, collection)
         if not db_path.exists():
             return False
         col_db = CollectionDB()
-        col_db.open(db_path)
         try:
+            col_db.open(db_path)
             return col_db.has_doc(docid)
+        except Exception as e:
+            if self._is_transient_db_read_error(e):
+                return False
+            raise
         finally:
-            col_db.close()
+            try:
+                col_db.close()
+            except Exception:
+                pass
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         with collection_lock(tenant, collection):
@@ -755,11 +888,7 @@ class TxtaiStore(BaseStore):
                 lookup = em.lookup(list(_need_txt)) or {}
 
         # --- OUTSIDE lock: WAL meta read is concurrent ---
-        col_db = self._dbs.get((tenant, collection))
-        if col_db is not None:
-            meta_batch = col_db.get_meta_batch(meta_rids)
-        else:
-            meta_batch = {}
+        meta_batch = self._read_meta_batch_safe(tenant, collection, meta_rids)
 
         kept: list[tuple[str, float, Any]] = []
         if pos_f:

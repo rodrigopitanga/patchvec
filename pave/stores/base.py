@@ -65,3 +65,21 @@ class BaseStore(ABC):
                filters: dict[str, Any] | None = None) -> list[SearchResult]:
         """Search for similar documents. Returns a list of SearchResult entries."""
         ...
+
+    def catalog_metrics(self, data_dir: str) -> dict[str, int]:
+        """Return store-level catalog counters for admin/metrics endpoints.
+
+        Default implementation provides tenant/collection counts only via the
+        existing listing APIs. Backends with richer metadata stores should
+        override this to include document/chunk counts.
+        """
+        tenants = self.list_tenants(data_dir)
+        collection_count = 0
+        for tenant in tenants:
+            collection_count += len(self.list_collections(tenant))
+        return {
+            "tenant_count": len(tenants),
+            "collection_count": collection_count,
+            "doc_count": 0,
+            "chunk_count": 0,
+        }

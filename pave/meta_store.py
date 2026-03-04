@@ -14,9 +14,10 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone as tz
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 class LegacyMetadataError(RuntimeError):
@@ -70,6 +71,9 @@ class CollectionDB:
         self._rconn: sqlite3.Connection | None = None
         self._wconn: sqlite3.Connection | None = None
         self._write_lock = threading.Lock()
+        self._state_cv = threading.Condition()
+        self._active_readers = 0
+        self._closing = False
 
     def _open_conn(self, path: Path) -> sqlite3.Connection:
         """Open a single sqlite3 connection with standard pragmas."""
@@ -97,17 +101,31 @@ class CollectionDB:
                 )
         parent.mkdir(parents=True, exist_ok=True)
         self.path = path
-        self._rconn = self._open_conn(path)
-        self._wconn = self._open_conn(path)
+        with self._state_cv:
+            self._rconn = self._open_conn(path)
+            self._wconn = self._open_conn(path)
+            self._active_readers = 0
+            self._closing = False
         self._apply_migrations()
 
     def close(self) -> None:
-        if self._rconn is not None:
-            self._rconn.close()
+        with self._state_cv:
+            if self._rconn is None and self._wconn is None:
+                self._closing = False
+                return
+            self._closing = True
+            while self._active_readers > 0:
+                self._state_cv.wait(timeout=0.05)
+            rconn = self._rconn
+            wconn = self._wconn
             self._rconn = None
-        if self._wconn is not None:
-            self._wconn.close()
             self._wconn = None
+            self._closing = False
+
+        if rconn is not None:
+            rconn.close()
+        if wconn is not None:
+            wconn.close()
 
     @property
     def _conn(self) -> sqlite3.Connection | None:
@@ -127,6 +145,24 @@ class CollectionDB:
         if self._wconn is None:
             raise RuntimeError("CollectionDB not opened; call open() first.")
         return self._wconn
+
+    @contextmanager
+    def _reader(self) -> Iterator[sqlite3.Connection]:
+        with self._state_cv:
+            if self._rconn is None:
+                raise RuntimeError("CollectionDB not opened; call open() first.")
+            if self._closing:
+                raise RuntimeError("CollectionDB is closing.")
+            self._active_readers += 1
+            conn = self._rconn
+        try:
+            yield conn
+        finally:
+            with self._state_cv:
+                if self._active_readers > 0:
+                    self._active_readers -= 1
+                if self._closing and self._active_readers == 0:
+                    self._state_cv.notify_all()
 
     def _apply_migrations(self) -> None:
         conn = self._require_wconn()
@@ -207,11 +243,11 @@ class CollectionDB:
         Must be called inside collection_lock.
         """
         # Read rids using _rconn (no lock needed)
-        rconn = self._require_rconn()
-        cur = rconn.execute(
-            "SELECT rid FROM chunks WHERE docid=?", (docid,)
-        )
-        rids = [row[0] for row in cur.fetchall()]
+        with self._reader() as rconn:
+            cur = rconn.execute(
+                "SELECT rid FROM chunks WHERE docid=?", (docid,)
+            )
+            rids = [row[0] for row in cur.fetchall()]
         # Write using _wconn
         conn = self._require_wconn()
         with self._write_lock, conn:
@@ -225,26 +261,37 @@ class CollectionDB:
 
     def has_doc(self, docid: str) -> bool:
         """Return True if *docid* has at least one chunk row."""
-        conn = self._require_rconn()
-        cur = conn.execute(
-            "SELECT 1 FROM chunks WHERE docid=? LIMIT 1", (docid,)
-        )
-        return cur.fetchone() is not None
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT 1 FROM chunks WHERE docid=? LIMIT 1", (docid,)
+            )
+            return cur.fetchone() is not None
 
     def get_rids_for_doc(self, docid: str) -> list[str]:
-        conn = self._require_rconn()
-        cur = conn.execute(
-            "SELECT rid FROM chunks WHERE docid=?", (docid,)
-        )
-        return [row[0] for row in cur.fetchall()]
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT rid FROM chunks WHERE docid=?", (docid,)
+            )
+            return [row[0] for row in cur.fetchall()]
 
     def get_doc_version(self, docid: str) -> int | None:
-        conn = self._require_rconn()
-        cur = conn.execute(
-            "SELECT version FROM documents WHERE docid=?", (docid,)
-        )
-        row = cur.fetchone()
-        return int(row[0]) if row else None
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT version FROM documents WHERE docid=?", (docid,)
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else None
+
+    def get_doc_chunk_counts(self) -> tuple[int, int]:
+        """Return (doc_count, chunk_count) for this collection."""
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT COUNT(DISTINCT docid), COUNT(*) FROM chunks"
+            )
+            row = cur.fetchone()
+            if row is None:
+                return (0, 0)
+            return (int(row[0] or 0), int(row[1] or 0))
 
     def get_meta_batch(self, rids: list[str]) -> dict[str, dict[str, Any]]:
         """Fetch per-chunk metadata for *rids*.
@@ -254,20 +301,20 @@ class CollectionDB:
         """
         if not rids:
             return {}
-        conn = self._require_rconn()
-        out: dict[str, dict[str, Any]] = {}
-        chunk_size = 999
-        for i in range(0, len(rids), chunk_size):
-            batch = rids[i : i + chunk_size]
-            placeholders = ",".join(["?"] * len(batch))
-            cur = conn.execute(
-                f"SELECT rid, meta_json FROM chunks "
-                f"WHERE rid IN ({placeholders})",
-                batch,
-            )
-            for rid, meta_json in cur.fetchall():
-                try:
-                    out[rid] = json.loads(meta_json) if meta_json else {}
-                except Exception:
-                    out[rid] = {}
-        return out
+        with self._reader() as conn:
+            out: dict[str, dict[str, Any]] = {}
+            chunk_size = 999
+            for i in range(0, len(rids), chunk_size):
+                batch = rids[i : i + chunk_size]
+                placeholders = ",".join(["?"] * len(batch))
+                cur = conn.execute(
+                    f"SELECT rid, meta_json FROM chunks "
+                    f"WHERE rid IN ({placeholders})",
+                    batch,
+                )
+                for rid, meta_json in cur.fetchall():
+                    try:
+                        out[rid] = json.loads(meta_json) if meta_json else {}
+                    except Exception:
+                        out[rid] = {}
+            return out

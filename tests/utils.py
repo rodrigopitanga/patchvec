@@ -263,3 +263,7 @@ class SpyStore(BaseStore):
     def list_tenants(self, data_dir: str) -> list[str]:
         self.calls.append(("list_tenants", data_dir))
         return self.impl.list_tenants(data_dir)
+
+    def catalog_metrics(self, data_dir: str) -> dict[str, int]:
+        self.calls.append(("catalog_metrics", data_dir))
+        return self.impl.catalog_metrics(data_dir)
