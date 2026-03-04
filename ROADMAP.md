@@ -70,7 +70,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
 | P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.5.9 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
-| P1-09 | Metadata store (SQLite) | 🧱 | ACID + concurrency | v0.5.8 |
+| P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
 | P1-10 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
 | P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.6 |
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
@@ -239,7 +239,7 @@ and logs (market practice §7).~~
 - ~~Configurable search timeout + `max_concurrent_searches` with 503 fast-fail (market
 practice §5).~~
 - ~~Per-tenant and per-operation API rate limits (market practice §8 — quota governance).~~
-- Ship internal metadata/content store (SQLite) with migrations.
+- ~~Ship internal metadata/content store (SQLite) with migrations.~~
 - Serve `/metrics` and `/collections` from the internal store.
 - ~~Emit structured logs (JSON lines) with `request_id`, tenant, collection, and
 latency on every search/ingest/delete.~~
