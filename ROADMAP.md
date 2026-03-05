@@ -83,7 +83,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
 | P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation
   | v0.5.8 |
-| P1-21 | Serve listings + metrics from store | 🧩 | Internal store query layer
+| P1-21 | ~~Serve listings + store catalog counts in health/metrics~~ | 🧩 | Internal store query layer
   | v0.5.8 |
 | P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v0.6 |
 | P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.6 |
@@ -145,7 +145,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-31 | Async ingest jobs + job status API | 🧱 | v0.9 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v0.9 |
 | P3-34 | ~~Relicensing (AGPLv3 candidate)~~ | 🧱 | v0.5.9 |
-| P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.6 |
+| P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.5.9–v0.6 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | v1.0+ |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
 | P3-39 | Resolve embedder factory integration | 🔧 | v0.6 |
@@ -240,7 +240,9 @@ and logs (market practice §7).~~
 practice §5).~~
 - ~~Per-tenant and per-operation API rate limits (market practice §8 — quota governance).~~
 - ~~Ship internal metadata/content store (SQLite) with migrations.~~
-- Serve `/metrics` and `/collections` from the internal store.
+- ~~Serve `/collections` and store-backed catalog counts in `/health/metrics` + `/metrics`
+  from the internal store (runtime op counters still come from `metrics.json` until
+  Phase 3).~~
 - ~~Emit structured logs (JSON lines) with `request_id`, tenant, collection, and
 latency on every search/ingest/delete.~~
 - ~~Support renaming collections through the API and CLI.~~
@@ -250,6 +252,7 @@ latency on every search/ingest/delete.~~
 - Split main.py into APIRouter modules per domain.
 - Honor `meta.priority` boosts during scoring.
 - Add hybrid reranking (vector similarity + BM25/token matching).
+- Rebranding phase 1 (internal only: prefixes, metadata, packaging surface).
 - Multilingual relevance evaluation fixtures (non-English test corpus).
 - Run benchmark suite in CI; publish results as artifacts; define p99
   latency SLO gate (closes Market Practice §2 gap).
@@ -277,7 +280,7 @@ latency on every search/ingest/delete.~~
 - Formalize collection independence from tenant: tenant is a namespace, not an owner;
   collections must be fully exportable and importable across instances and tenants.
 - Publish `pip freeze` snapshot as a release artifact alongside Docker images.
-- Rebranding review (PaveDB candidate).
+- Rebranding phase 2 (external/user-visible docs, UI, and messages).
 - ~~List tenants and collections via API (CLI parity).~~
 - ~~Typed response models (internal `SearchResult` dataclass).~~
 - ~~Remove or gate `qdrant-client` dependency behind extras.~~
