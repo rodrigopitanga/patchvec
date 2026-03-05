@@ -40,7 +40,10 @@ publish-pypi:
   script:
     - python -m pip install --upgrade build twine
     - python -m build
-    - twine upload dist/* -u __token__ -p $PYPI_TOKEN
+    - test -n "${PYPI_TOKEN:-}" || { echo "PYPI_TOKEN is missing"; exit 1; }
+    - export TWINE_USERNAME="__token__"
+    - export TWINE_PASSWORD="${PYPI_TOKEN}"
+    - twine upload dist/*
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
 
@@ -63,7 +66,10 @@ publish-testpypi:
   script:
     - python -m pip install --upgrade build twine
     - python -m build
-    - twine upload --repository testpypi dist/* -u __token__ -p $TEST_PYPI_TOKEN
+    - test -n "${TEST_PYPI_TOKEN:-}" || { echo "TEST_PYPI_TOKEN is missing"; exit 1; }
+    - export TWINE_USERNAME="__token__"
+    - export TWINE_PASSWORD="${TEST_PYPI_TOKEN}"
+    - twine upload --repository-url "https://test.pypi.org/legacy/" dist/*
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}rc\d{1,3}$/'
 
@@ -79,8 +85,14 @@ publish-docker-rc:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
     - export VERSION="${CI_COMMIT_TAG#v}"
-    - make docker-build VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=1
-    - make docker-push  VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=1
+    - export IMAGE_BASE="$CI_REGISTRY_IMAGE/patchvec"
+    - export IMAGE_TAG="$VERSION-cpu"
+    - export LATEST_TAG="latest-cpu"
+    - export BUILD_ID="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cpu"
+    - docker build --progress=plain --build-arg USE_CPU=1 --build-arg BUILD_ID="$BUILD_ID" -t "$IMAGE_BASE:$IMAGE_TAG" -f Dockerfile .
+    - docker push "$IMAGE_BASE:$IMAGE_TAG"
+    - docker tag "$IMAGE_BASE:$IMAGE_TAG" "$IMAGE_BASE:$LATEST_TAG"
+    - docker push "$IMAGE_BASE:$LATEST_TAG"
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}rc\d{1,3}$/'
 
@@ -96,10 +108,17 @@ publish-docker:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
     - export VERSION="${CI_COMMIT_TAG#v}"
-    - make docker-build VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=0
-    - make docker-push  VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=0
-    - make docker-build VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=1
-    - make docker-push  VERSION="$VERSION" REGISTRY="$CI_REGISTRY_IMAGE" IMAGE_NAME="patchvec" USE_CPU=1
+    - export IMAGE_BASE="$CI_REGISTRY_IMAGE/patchvec"
+    - export BUILD_ID_GPU="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-gpu"
+    - export BUILD_ID_CPU="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cpu"
+    - docker build --progress=plain --build-arg USE_CPU=0 --build-arg BUILD_ID="$BUILD_ID_GPU" -t "$IMAGE_BASE:$VERSION-gpu" -f Dockerfile .
+    - docker push "$IMAGE_BASE:$VERSION-gpu"
+    - docker tag "$IMAGE_BASE:$VERSION-gpu" "$IMAGE_BASE:latest-gpu"
+    - docker push "$IMAGE_BASE:latest-gpu"
+    - docker build --progress=plain --build-arg USE_CPU=1 --build-arg BUILD_ID="$BUILD_ID_CPU" -t "$IMAGE_BASE:$VERSION-cpu" -f Dockerfile .
+    - docker push "$IMAGE_BASE:$VERSION-cpu"
+    - docker tag "$IMAGE_BASE:$VERSION-cpu" "$IMAGE_BASE:latest-cpu"
+    - docker push "$IMAGE_BASE:latest-cpu"
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
 
