@@ -1,33 +1,75 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.5.8a0 — 2026-02-24
+## 0.5.8rc0 — 2026-03-04
 
 ### API
 - [cli] add list-tenants and list-collections endpoints and commands
 - Ensure latency_ms in all /search returns (incl. common disabled)
 - Normalize error envelope and make document delete idempotent
+- Reject uploads exceeding configurable size limit (default 500 MB)
+- Search timeout + concurrency cap (P1-20)
+- Ingest concurrency cap (P1-20 follow-up)
+- Per-tenant concurrent request cap (P1-08)
+- Expose server HW info in /health/metrics
+
+### Documentation
+- Add coding style, commit message standards to developer docs
+- Revamp ROADMAP structure, priorities, and release ordering
+- Config.yml.example full docs pass
+- [bench] baseline benchmark results before SQLite metadata store
+- [perf] Phase 1 benchmark results + impl comparison (winner:impl2)
+- Plan large scale store refactor
+
+### Performance
+- Rebalance stress weights; error tracking in both scripts
+- Improve benchmark scripts, make targets, and docs
+- Improve benchmark resilience: retry on failed seeds and add --debug mode
+- Run header, unified table format, sample results; tune stress duration/concur...
+- Stress: coverage pass for ops not picked during timed phase
+- Fix op_delete_collection: remove from world only after success
+
+### Log
+- Dev stream cleanup (P2-28)
+- Ops stream: pave/log.py, ops_event decorator, 8 routes (P2-28)
+- Merge diverging log level configs, set defaults, surface log.level as source...
+- Migrate dev stream from config.py to log.py; ~ expansion for log paths
+- Add top result excerpt to search log line
+
+### Store
+- Migrate legacy txtai indexes missing documents/objects/sections tables
+- Phase 1 SQLite per-collection meta.db — impl2 (read/write split conn)
+- [tests] fix has_doc cache race and add regression test
+- [search] scope metadata fetch to top-k when no post-filter
+- Store-backed catalog metrics (P1-21) + validation hardening
 
 ### Core
 - Add collection rename functionality across all layers
 - Standardize naming across API, CLI, and service layers
 - Add SearchResult dataclass for type-safe search results
+- Lazy build_app(): app only initialised on first access
 
-### Documentation
-- Add coding style, commit message standards to developer docs
-- Revamp ROADMAP structure, priorities, and release ordering
+### Config
+- Ingest timeout guidance: expose timeout_keep_alive, nginx proxy hints
+- Complete _DEFAULTS, ~ path expansion, fix Makefile env vars
+- Default path ~/patchvec/config.yml; expand PATCHVEC_CONFIG too
 
 ### Build
 - Make release re-run safety, docker-build/push USE_CPU parity
+- Fix docker-build/push error propagation on sub-make failure
+
+### Testing
+- Speed up suite 5x: inject FakeEmbeddings for non-slow tests
+- [store] fix Python 3.12 sqlite3 DeprecationWarning; silence SwigPy noise
 
 ### Infrastructure
 - Remove deploy jobs, add docker RC build, fix tag patterns
 
-### Chores
-- Refine release pipeline, CI/CD workflow, and developer docs
-- Enforce 88-char line limit across project files
-- Enforce 88-char line limit across docs
-- Update ROADMAP
+### Packaging
+- Changelog generation goes back to last tag in changelog itself not in git his...
+
+### Service
+- Fix _flush_store_caches: drop refs, do not close() connections
 
 ---
 ## 0.5.7 — 2026-02-21
