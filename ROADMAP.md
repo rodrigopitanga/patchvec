@@ -5,6 +5,7 @@
 
 tl;dr: This roadmap tracks production readiness and integration milestones. To claim a
 task, open an issue titled `claim: <task ID>` and link your branch or PR.
+Detailed design plans live under `docs/` and are indexed after the task tables.
 
 > PatchVec is a general-purpose vector search microservice. The roadmap that follows
 > below is driven by production readiness for its first downstream consumer — an
@@ -161,6 +162,18 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-49 | Additional media types: georeferenced | 🧱 | v1.0 |
 | P3-50 | Split main.py routes into APIRouter modules (health, admin,
 collections, documents, search) | 🧩 | v0.5.9 |
+
+---
+
+## Plan Docs
+
+Substantial features are specified under `docs/` before implementation.
+
+| File | Plan ID | Feature |
+|---|---|---|
+| [`docs/PLAN-OPS-LOG.md`](docs/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
+| [`docs/PLAN-SQLITE.md`](docs/PLAN-SQLITE.md) | P1-09 | Internal SQLite metadata store |
+| [`docs/PLAN-STORE.md`](docs/PLAN-STORE.md) | P1-10 / P3-39 | Store layer separation + embedder/store integration |
 
 ---
 

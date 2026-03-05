@@ -115,7 +115,7 @@ commits (`chore(release): vX.Y.Z`) are auto-skipped.
 
 ## Issues and task claims
 
-- `ROADMAP.md` lists chores that need owners.
+- [`ROADMAP.md`](ROADMAP.md) lists tasks that need owners.
 - To claim a task, open an issue titled `claim: <task ID>` and describe the
 approach.
 - Good first issues live under the `bite-sized` label. Submit a draft PR
@@ -124,12 +124,8 @@ within a few days of claiming.
 ## Feature plans
 
 Substantial features are designed in `docs/` before implementation. Read the
-relevant plan before picking up a task.
-
-| File | Plan ID | Feature |
-|---|---|---|
-| `docs/PLAN-OPS-LOG.md` | P2-28 | Structured log emission — ops JSON stream |
-| `docs/PLAN-SQLITE.md` | P1-09 | Internal SQLite metadata store |
+relevant plan before picking up a task from [`ROADMAP.md`](ROADMAP.md).
+Plan links are maintained in the `Plan Docs` section of [`ROADMAP.md`](ROADMAP.md).
 
 When writing a new plan, follow the structure in existing documents: objectives,
 config schema, ops event schema or data model, implementation notes, files
