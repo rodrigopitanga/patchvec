@@ -1,7 +1,7 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.5.8rc0 — 2026-03-04
+## 0.5.8 — 2026-03-05
 
 ### API
 - [cli] add list-tenants and list-collections endpoints and commands
