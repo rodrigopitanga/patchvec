@@ -50,7 +50,10 @@ publish-gitlab-pypi:
   script:
     - python -m pip install --upgrade build twine
     - python -m build
-    - twine upload --repository-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi" dist/* -u __token__ -p $CI_JOB_TOKEN
+    - |
+      test -n "${CI_DEPLOY_USER:-}" || { echo "CI_DEPLOY_USER is missing"; exit 1; }
+      test -n "${CI_DEPLOY_PASSWORD:-}" || { echo "CI_DEPLOY_PASSWORD is missing"; exit 1; }
+    - twine upload --repository-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi" dist/* -u "$CI_DEPLOY_USER" -p "$CI_DEPLOY_PASSWORD"
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}\S{0,16}$/'
 
