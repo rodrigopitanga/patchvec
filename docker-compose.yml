@@ -3,7 +3,7 @@
 
 services:
   patchvec:
-    image: patchvec:0.5.8
+    image: patchvec:0.5.8.1
     build: .
     container_name: patchvec
     ports:
