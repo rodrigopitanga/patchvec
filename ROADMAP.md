@@ -126,6 +126,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-35 | MCP server | 🧱 | AI agent integration | v0.8 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v0.8 |
 | P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.0 |
+| P2-41 | TXT preprocessor: byte offset in chunk metadata | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
 
 ### P3 — Scale and long-term
 
@@ -160,8 +161,9 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-47 | Additional media types: graphic/geom | 🧱 | v1.0 |
 | P3-48 | Additional media types: AV | 🧱 | v1.0 |
 | P3-49 | Additional media types: georeferenced | 🧱 | v1.0 |
-| P3-50 | Split main.py routes into APIRouter modules (health, admin,
-collections, documents, search) | 🧩 | v0.5.9 |
+| P3-50 | Split main.py routes into APIRouter modules (health, admin, collections, documents, search) | 🧩 | v0.5.9 |
+| P3-51 | `make docker-check`: alive test against prebuilt Docker image | 🧩 | v0.5.9 |
+| P3-52 | `make build-check`: install from local wheel in temp venv, alive test | 🧩 | v0.5.9 |
 
 ---
 
@@ -271,6 +273,9 @@ latency on every search/ingest/delete.~~
   latency SLO gate (closes Market Practice §2 gap).
 - ~~Relicensing review (AGPLv3 candidate).~~
 - Response envelope standardization (v0.6 prep).
+- TXT preprocessor: emit byte `offset` in chunk metadata (P2-41).
+- `make docker-check`: alive test against a prebuilt Docker image (P3-51).
+- `make build-check`: install from local wheel in a temp venv, alive test (P3-52).
 
 ### 0.6 — Stability
 
