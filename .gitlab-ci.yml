@@ -45,7 +45,7 @@ publish-pypi:
     - export TWINE_PASSWORD="${PYPI_TOKEN}"
     - twine upload dist/*
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
 
 # GitLab PyPI: all versioned tags (final, rc, alpha, beta, etc.)
 publish-gitlab-pypi:
@@ -120,7 +120,7 @@ publish-docker:
     - docker tag "$IMAGE_BASE:$VERSION-cpu" "$IMAGE_BASE:latest-cpu"
     - docker push "$IMAGE_BASE:latest-cpu"
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
 
 include:
   - template: Security/SAST.gitlab-ci.yml

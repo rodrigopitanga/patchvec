@@ -413,7 +413,7 @@ release:
 	  fi; \
 	fi; \
 	echo ""; \
-	if printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	if printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$$'; then \
 	  TAG_REMOTES="$(RELEASE_TAG_REMOTES_FINAL)"; \
 	else \
 	  TAG_REMOTES="$(RELEASE_TAG_REMOTES_PRERELEASE)"; \
