@@ -525,7 +525,9 @@ class TxtaiStore(BaseStore):
         return None
 
     def index_records(self, tenant: str, collection: str, docid: str,
-                      records: Iterable[Record]) -> int:
+                      records: Iterable[Record],
+                      doc_meta: dict[str, Any] | None = None
+                      ) -> int:
         """
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
         dict-records, updates SQLite metadata, saves index. Thread critical.
@@ -537,7 +539,6 @@ class TxtaiStore(BaseStore):
             em = self._emb[key]
             prepared: list[tuple[str, Any, str]] = []
             chunk_rows: list[tuple[str, str | None, dict[str, Any]]] = []
-            doc_meta: dict[str, Any] = {}
 
             for r in records:
                 if isinstance(r, dict):
@@ -569,12 +570,6 @@ class TxtaiStore(BaseStore):
                             md = {}
 
                 md["docid"] = docid
-                # Capture first occurrence of doc-level meta fields
-                if not doc_meta:
-                    doc_meta = {
-                        k: v for k, v in md.items()
-                        if k not in ("chunk", "page", "position", "section")
-                    }
 
                 try:
                     safe_meta = self._sanit_meta_dict(md)

@@ -58,7 +58,9 @@ class BaseStore(ABC):
 
     @abstractmethod
     def index_records(self, tenant: str, collection: str, docid: str,
-                      records: Iterable[Record]) -> int: ...
+                      records: Iterable[Record],
+                      doc_meta: dict[str, Any] | None = None
+                      ) -> int: ...
 
     @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,

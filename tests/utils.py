@@ -187,7 +187,8 @@ class DummyStore(BaseStore):
         return bool(ret)
 
     def index_records(self, tenant: str, collection: str, docid: str,
-                      records: Iterable[Record]) -> int:
+                      records: Iterable[Record],
+                      doc_meta: dict[str, Any] | None = None) -> int:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         try:
             data = json.load(open(cat, "r", encoding="utf-8"))
@@ -250,10 +251,16 @@ class SpyStore(BaseStore):
         self.calls.append(("has_doc", tenant, collection, docid))
         return self.impl.has_doc(tenant, collection, docid)
 
-    def index_records(self, tenant: str, collection: str, docid: str, records: Iterable[Record]) -> int:
+    def index_records(self, tenant: str, collection: str, docid: str,
+                      records: Iterable[Record],
+                      doc_meta: dict[str, Any] | None = None) -> int:
         recs = list(records)
-        self.calls.append(("index_records", tenant, collection, docid, len(recs)))
-        return self.impl.index_records(tenant, collection, docid, recs)
+        self.calls.append(
+            ("index_records", tenant, collection, docid, len(recs), doc_meta)
+        )
+        return self.impl.index_records(
+            tenant, collection, docid, recs, doc_meta=doc_meta
+        )
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> list[SearchResult]:

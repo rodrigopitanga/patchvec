@@ -99,6 +99,36 @@ def test_meta_json_and_filters(store):
 
     # Ensure meta was JSON-encoded internally (FakeEmbeddings asserts this)
 
+
+def test_doc_level_meta_persists_in_documents_table(store):
+    tenant, coll, docid = "acme", "docmeta", "DOCMETA"
+    recs = [
+        {
+            "id": "0",
+            "content": "Documento com metadados.",
+            "metadata": {"lang": "pt", "chunk": 0},
+        },
+    ]
+    doc_meta = {
+        "docid": docid,
+        "filename": "meta.txt",
+        "lang": "pt",
+        "source": "api",
+    }
+
+    n = store.index_records(tenant, coll, docid, recs, doc_meta=doc_meta)
+    assert n == 1
+
+    col_db = store.impl._dbs[(tenant, coll)]
+    conn = col_db._conn
+    assert conn is not None
+    row = conn.execute(
+        "SELECT meta_json FROM documents WHERE docid=?",
+        (docid,),
+    ).fetchone()
+    assert row is not None and row[0]
+    assert json.loads(row[0]) == doc_meta
+
 def test_purge_doc_removes_ids(store):
     recs = [
         {"id": "y::0", "content": "primeiro", "metadata": {}},

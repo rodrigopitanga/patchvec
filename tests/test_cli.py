@@ -32,6 +32,37 @@ def test_cli_ingest_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
                and c[3] == "DOC1" for c in store.calls)
     assert ("save", tenant, coll) in store.calls
 
+
+def test_cli_ingest_passes_doc_meta_through_wrapper(cli_env, tmp_path):
+    pvcli, store, _ = cli_env
+    tenant, coll = "acme", "metawrap"
+    sample = tmp_path / "meta.txt"
+    sample.write_text("conteúdo de teste", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(
+        [
+            "ingest", tenant, coll, str(sample),
+            "--docid", "DOCMETA",
+            "--metadata", '{"lang":"pt","source":"cli"}',
+        ]
+    )
+
+    calls = [
+        c for c in store.calls
+        if c[0] == "index_records" and c[1] == tenant
+        and c[2] == coll and c[3] == "DOCMETA"
+    ]
+    assert calls
+    doc_meta = calls[-1][5]
+    assert isinstance(doc_meta, dict)
+    assert doc_meta["docid"] == "DOCMETA"
+    assert doc_meta["lang"] == "pt"
+    assert doc_meta["source"] == "cli"
+    assert doc_meta["filename"].endswith("meta.txt")
+    assert doc_meta["ingested_at"].endswith("Z")
+
+
 def test_cli_reingest_same_docid_triggers_purge(cli_env, tmp_path):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "reupcli"

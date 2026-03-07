@@ -29,7 +29,8 @@ class QdrantStore(BaseStore):
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         raise NotImplementedError("to be implemented")
 
-    def index_records(self, tenant: str, collection: str, docid: str, records: Iterable[Record]) -> int:
+    def index_records(self, tenant: str, collection: str, docid: str,
+                      records: Iterable[Record], doc_meta: dict | None = None) -> int:
         raise NotImplementedError("to be implemented")
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,

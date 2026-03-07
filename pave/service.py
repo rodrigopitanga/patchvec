@@ -160,17 +160,19 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             if baseid and store.has_doc(tenant, collection, baseid):
                 purged = store.purge_doc(tenant, collection, baseid)
                 m_inc("purge_total", purged)
-            meta_doc = metadata or {}
+            meta_from_call = metadata or {}
+            now = datetime.now(tz.utc).isoformat(timespec="seconds")
+            now = now.replace("+00:00", "Z")
+            doc_meta = {
+                "docid": baseid, "filename": filename,
+                "ingested_at": now, **meta_from_call,
+            }
             records = []
             for local_id, text, extra in preprocess(
                 filename, content, csv_options=csv_options
             ):
                 rid = f"{baseid}::{local_id}"
-                now = datetime.now(tz.utc).isoformat(timespec="seconds")
-                now = now.replace("+00:00", "Z")
-                meta = {"docid": baseid, "filename": filename, "ingested_at": now}
-                meta.update(meta_doc)
-                meta.update(extra)
+                meta = {**doc_meta, **extra}
                 records.append((rid, text, meta))
             if not records:
                 return {
@@ -178,7 +180,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                     "code": "no_text_extracted",
                     "error": "no text extracted",
                 }
-            count = store.index_records(tenant, collection, baseid, records)
+            count = store.index_records(tenant, collection, baseid, records, doc_meta)
             m_inc("documents_indexed_total", 1.0)
             m_inc("chunks_indexed_total", float(count or 0))
             latency_ms = round((_time.perf_counter() - _t0) * 1000, 2)
