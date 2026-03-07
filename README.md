@@ -1,31 +1,39 @@
 <!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> --> 
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# 🍰 PatchVec — Lightweight, Pluggable Vector Search Microservice
+# 🍰 PatchVec — Vector Search You Can Understand
 
-Patchvec is a compact vector store built for people who want provenance and fast
-iteration on RAG plumbing. No black boxes, no hidden pipelines: every chunk records
-document id, page, and byte offsets, and you can swap embeddings or storage backends per
-collection.
+PatchVec is a single-process vector search engine that ingests your
+documents, chunks and embeds them, and gives you semantic search with
+full provenance — document id, page, byte offset, and the exact
+snippet that matched. No cluster, no managed service, no
+opaque pipelines.
 
-## ⚙️ Core capabilities
+Drop a file in, search it, see exactly what came back and why.
 
-- **Docker images** — prebuilt CPU/GPU images published to the GitLab Container
-  Registry.
-- **Tenants and collections** — isolation by tenant with per-collection configuration.
-- **Pluggable embeddings** — choose the embedding adapter per collection; wire in local
-  or hosted models.
-- **REST and CLI** — production use over HTTP, quick experiments with the bundled CLI.
-- **Deterministic provenance** — every hit returns doc id, page, offset, and snippet for
-  traceability.
+## ⚙️ Why PatchVec
+
+- **Ingest files, not embeddings** — hand it a PDF, CSV, or TXT and
+  PatchVec chunks, embeds, and indexes it. No preprocessing pipeline
+  to build.
+- **Full provenance on every hit** — every search result traces back
+  to a document, page, and byte offset. Latency and request
+  traceability are built into every response.
+- **Multi-tenant by default** — tenant/collection namespacing is
+  built in, not bolted on.
+- **REST, CLI, or embed it** — run as an HTTP service, script via
+  the CLI, or import the library directly in your Python app.
+- **Pluggable embeddings** — swap models per collection; wire in
+  local or hosted embedding backends.
 
 ## 🧭 Workflows
 
 ### 🐳 Docker workflow (prebuilt images)
 
-Pull the image that fits your hardware from the [https://gitlab.com/flowlexi](Flowlexi)
-Container Registry on Gitlab (CUDA builds publish as `latest-gpu`, CPU-only as `latest-
-cpu`).
+Pull the image that fits your hardware from the
+[Flowlexi Container Registry](https://gitlab.com/flowlexi/patchvec/container_registry)
+on GitLab (CUDA builds publish as `latest-gpu`, CPU-only as
+`latest-cpu`).
 
 ```bash
 docker pull registry.gitlab.com/flowlexi/patchvec/patchvec:latest-gpu
@@ -66,20 +74,20 @@ local configuration directory.
 **Requires Python 3.10–3.14.**
 
 ```bash
-mkdir -p ~/pv && cd ~/pv #or wherever
+mkdir -p ~/pv && cd ~/pv  # or wherever
 python -m venv .venv-pv
 source .venv-pv/bin/activate
 python -m pip install --upgrade pip
 pip install "patchvec[cpu]"
 
 # grab the default configs
-curl -LO https://raw.githubusercontent.com/patchvec/patchvec/main/config.yml.example
-curl -LO https://raw.githubusercontent.com/patchvec/patchvec/main/tenants.yml.example
+curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/config.yml.example
+curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/tenants.yml.example
 cp config.yml.example config.yml
 cp tenants.yml.example tenants.yml
 
 # sample demo corpus
-curl -LO https://raw.githubusercontent.com/patchvec/patchvec/main/demo/20k_leagues.txt
+curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/demo/20k_leagues.txt
 
 # point Patchvec at the config directory and set a local admin key
 export PATCHVEC_CONFIG="$HOME/pv/config.yml"
@@ -129,8 +137,34 @@ curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
   "http://localhost:8086/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
-There is a simple Swagger UI available at the root of the server. Just point your
-browser to `http://localhost:8086/`
+Every hit comes back with provenance you can trace, plus latency
+and request id for observability:
+
+```json
+{
+  "matches": [
+    {
+      "id": "verne-20k::chunk_42",
+      "score": 0.82,
+      "text": "Captain Nemo conducted me to the central staircase ...",
+      "tenant": "demo",
+      "collection": "books",
+      "match_reason": "semantic",
+      "meta": {
+        "docid": "verne-20k",
+        "filename": "20k_leagues.txt",
+        "offset": 8192,
+        "lang": "en",
+        "ingested_at": "2026-03-07T12:00:00Z"
+      }
+    }
+  ],
+  "latency_ms": 12.4,
+  "request_id": "req-5f3a-b812"
+}
+```
+
+The Swagger UI is available at `http://localhost:8086/`.
 
 Health and metrics endpoints are available at `/health` and `/metrics`.
 
@@ -147,10 +181,15 @@ though), or explicitly delete the document and then ingest it again.
 CLI (re-ingest to replace):
 
 ```bash
-pavecli ingest demo books demo/20k_leagues.txt --docid=verne-20k
-cp demo/20k_leagues.txt demo/20k_leagues_mod.txt
-echo "THE END" >> demo/20k_leagues_mod.txt
+# initial ingest
 pavecli ingest demo books 20k_leagues.txt --docid=verne-20k
+
+# modify the content (filename can change — docid is what matters)
+cp 20k_leagues.txt 20k_leagues_v2.txt
+echo "THE END" >> 20k_leagues_v2.txt
+
+# re-ingest with the same docid to replace the indexed content
+pavecli ingest demo books 20k_leagues_v2.txt --docid=verne-20k
 ```
 
 REST (delete then ingest):
@@ -169,37 +208,24 @@ curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
 
 ### 🛠️ Developer workflow
 
-Building from source relies on the `Makefile` shortcuts (`make install-dev`, `USE_CPU=1
-make serve`, `make test`, etc.). The full contributor workflow, target reference, and
-task claiming rules live in [CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks
-are documented in [README-benchmarks.md](README-benchmarks.md).
+Building from source relies on `Makefile` shortcuts (`make install-dev`,
+`USE_CPU=1 make serve`, `make test`, `make check`, etc.).
+The full contributor workflow, target reference, and task claiming rules live in
+[CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks are documented in
+[README-benchmarks.md](README-benchmarks.md).
 
 ## Logging
 
-PatchVec emits two independent log streams.
-
-**Dev stream** (stderr, always on): human-readable text, colored in TTY.
-Controlled by `log.level` in `config.yml` (`DEBUG`, `INFO`, `WARNING`; default
-`INFO`). Namespace-level overrides:
+PatchVec writes human-readable logs to stderr and optionally emits
+structured JSON lines (one per search/ingest/delete) for production
+observability. Enable the ops stream in `config.yml`:
 
 ```yaml
 log:
-  level: INFO
-  debug: [pave.stores]   # force DEBUG for specific namespaces
-  watch: [txtai]         # one level more verbose than base
-  quiet: [uvicorn]       # one level quieter (uvicorn is quieted by default)
+  ops_log: stdout   # null (off) | stdout | /path/to/ops.jsonl
 ```
 
-**Ops stream**: one JSON line per operation —
-search, ingest, delete, rename — written to a configurable destination. Off by
-default; `stdout` is recommended for Docker/12-factor deployments (PatchVec
-already uses `stderr` for the dev stream):
-
-```yaml
-log:
-  ops_log: null          # null (off) | stdout | /path/to/ops.jsonl
-  access_log: null       # uvicorn access log: null (off) | stdout | /path
-```
+See `config.yml.example` for the full logging configuration.
 
 ## 🗺️ Roadmap
 

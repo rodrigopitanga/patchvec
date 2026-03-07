@@ -42,8 +42,7 @@ almost production-like stack, or call the wrapper script directly:
 2. Create a branch named after the task (`feature/tenant-search`, `fix/csv-metadata`,
    etc.).
 3. Make the change, keep commits scoped, and include tests whenever applicable.
-4. Run `make test` and `make check` or `make package` if you touched deployment or
-   packaging paths.
+4. Run `make test` and `make check` before submitting.
 5. Open a pull request referencing the issue you claimed.
 
 ## Code style
@@ -144,7 +143,10 @@ without it if you have a properly configured GPU).
 
 ## Benchmarks
 
-- `make benchmark` runs latency + stress benchmarks with tuned defaults.
+- `make benchmark` runs latency + stress benchmarks with tuned defaults. It
+  reuses `http://127.0.0.1:8086` when already active; otherwise it starts
+  ephemeral local servers with temporary `data_dir` (one clean server per
+  bench).
 - Save outputs with `BENCH_SAVE=1` and an optional tag:
   `make benchmark BENCH_SAVE=1 BENCH_TAG=sqlite-phase1-before`
 - If no tag is provided, a `<branch>-<shortsha>` tag is used.
@@ -270,45 +272,65 @@ def test_purge_clears_index(monkeypatch, tmp_path):
     ...
 ```
 
-## Makefile Targets (base by default; `USE_CPU=1` for CPU-only wheels).
+## Makefile Targets
 
-- `make install` — install runtime deps.
-- `make install-dev` — runtime + test deps for contributors.
-- `make serve` — start the FastAPI app (uvicorn) with autoreload.
-- `make test` — run the pytest suite.
-- `make check` — build and smoke-test the container image with the demo corpus.
-- `make build` — build sdist/wheel (includes ABOUT.md).
-- `make package` — create `.zip`/`.tar.gz` artifacts under `./artifacts`.
-- `make changelog` — preview the new changelog entry (no write).
-- `make changelog-write` — update `CHANGELOG.md` for `VERSION`.
-- `make release VERSION=x.y.z` — bump versions, regenerate changelog, run tests/build,
-  create artifacts (`./artifacts`), tag (no push), and build Docker images:
-  - If `USE_CPU` is not set, builds both CPU and GPU images.
-  - If `USE_CPU=0` or `USE_CPU=1`, builds only the requested variant.
-  - If `DOCKER_PUBLISH=1`, pushes images; otherwise builds only.
+Run `make help` for the full list and flags. Key targets:
+
+- `make install` — install runtime deps (`USE_CPU=1` for CPU-only).
+- `make serve` — start the dev server (autoreload, auth=none).
+- `make test` — run the full pytest suite.
+- `make check` — end-to-end smoke test (ingest + search + delete).
+  Reuses `:8086` if active, otherwise starts an ephemeral server.
+- `make benchmark` — latency + stress benchmarks (`BENCH_SAVE=1`
+  to persist results, `BENCH_TAG=<tag>` for naming).
+- `make release VERSION=x.y.z` — bump, test, build, tag, push
+  tags. Set `RELEASE_PUBLISH=1` to also publish to PyPI and
+  Docker registries.
+- `make clean` — remove caches and build outputs (keeps `.venv`).
+
+### Maintainer git remotes
+
+Release defaults expect a GitLab remote. One-time setup:
+
+```bash
+git remote add gitlab git@gitlab.com:flowlexi/patchvec.git
+git remote -v
+```
 
 ### If `make release` fails
 
-`make release VERSION=x.y.z` is safe to re-run after fixing the failure:
+`make release VERSION=x.y.z` is safe to re-run after fixing the
+failure:
 
-- **Failed before commit** (e.g. tests): bumped files are uncommitted. Fix and
-  re-run, or `git checkout -- .` to start clean.
-- **Failed after commit, before tag**: re-run skips the commit (nothing staged)
-  and creates the tag normally.
-- **Failed after tag** (e.g. Docker): re-run skips the commit, then prompts
-  `Re-tag? [y/N]` — answer `N` to keep the existing tag and continue from the
-  Docker step.
+- **Failed before commit** (e.g. tests): bumped files are uncommitted.
+  Fix and re-run, or `git checkout -- .` to start clean.
+- **Failed after commit, before tag**: re-run skips the commit (nothing
+  staged) and creates the tag normally.
+- **Failed after tag** (e.g. Docker): the tag is auto-deleted on
+  failure; re-run recreates it. If the tag survived, re-run prompts
+  `Re-tag? [y/N]`.
+- **Failed after package upload**: re-run is still safe; uploads use
+  `twine --skip-existing`.
 
 ## Release tags and GitLab CI
 
 Pushing a tag to the GitLab repository triggers the release pipeline
 automatically (no manual steps). Tag format:
-`vX.Y.Z` where each component is 1–4 digits, with an optional suffix up to 16
-non-whitespace characters (e.g. `rc1`, `a0`, `b2`).
+`vX.Y.Z` where each component is 1–4 digits, with an optional suffix
+up to 16 non-whitespace characters (e.g. `rc1`, `a0`, `b2`).
 
 | Tag pattern | PyPI | TestPyPI | GitLab Package Registry | Docker |
 |-------------|------|----------|-------------------------|--------|
 | `vX.Y.Z` | ✓ | — | ✓ | CPU + GPU |
 | `vX.Y.ZrcN` (N ≤ 999) | — | ✓ | ✓ | CPU only |
 | `vX.Y.Z<other>` | — | — | ✓ | — |
-- `make clean` / `make clean-dist` — remove caches and build outputs.
+
+In practical terms, the Flowlexi GitLab pipeline does:
+
+- **Every pipeline** (branches and tags): run `pytest` (CPU deps) plus
+  GitLab SAST and Secret Detection.
+- **`vX.Y.Z` tags**: publish package to PyPI and GitLab Package Registry,
+  and publish Docker `-gpu` and `-cpu` images (including `latest-*` tags).
+- **`vX.Y.ZrcN` tags**: publish package to TestPyPI and GitLab Package
+  Registry, and publish Docker CPU image only (`-cpu`, `latest-cpu`).
+- **`vX.Y.Z<other>` tags**: publish only to GitLab Package Registry.

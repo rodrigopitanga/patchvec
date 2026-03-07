@@ -8,15 +8,23 @@ Performance benchmarks for PatchVec.
 ## Quick start
 
 ```bash
-# start the server in dev mode (separate terminal)
-USE_CPU=1 make serve
-
-# run all benchmarks (latency + stress)
+# Uses active http://127.0.0.1:8086 if available.
+# If not, starts an ephemeral local server with a temporary data_dir.
+# In `make benchmark`, each bench gets a fresh ephemeral server.
 make benchmark
 
 # or run individually
-make benchmark-latency
-make benchmark-stress
+make bench-latency
+make bench-stress
+
+# force ephemeral mode even if :8086 is active
+BENCH_FORCE_EPHEMERAL=1 make benchmark
+
+# target a server on another machine
+make benchmark BENCH_SERVER_URL=http://10.0.0.42:8086
+
+# if remote server requires bearer auth
+make benchmark BENCH_SERVER_URL=http://10.0.0.42:8086 BENCH_API_KEY=your-token
 ```
 
 ---
@@ -29,16 +37,19 @@ Measures search latency under concurrent load.
 
 ```bash
 # run with defaults (1200 queries, 42 concurrent)
-make benchmark-latency
+make bench-latency
 
 # or customize
-make benchmark-latency BENCH_QUERIES=500 BENCH_CONCUR=20
+make bench-latency BENCH_QUERIES=500 BENCH_CONCUR=20
 ```
 
 ### PyPI / evaluation workflow
 
 ```bash
-pip install httpx
+# script defaults (queries=100, concurrency=10)
+python benchmarks/search_latency.py --url http://localhost:8086
+
+# match `make bench-latency` defaults
 python benchmarks/search_latency.py --url http://localhost:8086 \
   --queries 1200 --concurrency 42
 ```
@@ -46,8 +57,8 @@ python benchmarks/search_latency.py --url http://localhost:8086 \
 ### Options
 
 * `--url` - PatchVec base URL (default: http://localhost:8086)
-* `--queries` - Number of queries to run (default: 1200)
-* `--concurrency` - Concurrent requests (default: 42)
+* `--queries` - Number of queries to run (default: 100)
+* `--concurrency` - Concurrent requests (default: 10)
 * `--debug` - Print stack traces for setup failures
 
 ### Output
@@ -67,26 +78,29 @@ percentiles plus error rates.
 ### Developer workflow
 
 ```bash
-# run with defaults (300s duration, 24 concurrent)
-make benchmark-stress
+# run with defaults (90s duration, 8 concurrent)
+make bench-stress
 
 # or customize
-make benchmark-stress STRESS_DURATION=60 STRESS_CONCUR=30
+make bench-stress STRESS_DURATION=60 STRESS_CONCUR=30
 ```
 
 ### PyPI / evaluation workflow
 
 ```bash
-pip install httpx
-python benchmarks/stress.py --url http://localhost:8086 --duration 300 \
-  --concurrency 24
+# script defaults (duration=20, concurrency=8)
+python benchmarks/stress.py --url http://localhost:8086
+
+# match `make bench-stress` defaults
+python benchmarks/stress.py --url http://localhost:8086 --duration 90 \
+  --concurrency 8
 ```
 
 ### Options
 
 * `--url` - PatchVec base URL (default: http://localhost:8086)
-* `--duration` - Test duration in seconds (default: 300)
-* `--concurrency` - Max concurrent operations (default: 24)
+* `--duration` - Test duration in seconds (default: 20)
+* `--concurrency` - Max concurrent operations (default: 8)
 * `--debug` - Print stack traces for setup failures
 
 ### Output
@@ -107,5 +121,5 @@ If `BENCH_TAG` is omitted, a `<branch>-<shortsha>` tag is used. Outputs are save
 under `benchmarks/results/` as:
 
 ```
-{latency,stress}-YYYY-MM-DD_HHmmss[_tag].txt
+{latency,stress}-YYYY-MM-DD_HHmmss_<tag>.txt
 ```

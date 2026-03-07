@@ -52,3 +52,9 @@ tenants.secrets.yml
 # Logs
 *.log
 logs/
+
+# Make target temp files
+.check_search.json
+.e2e_ingest.json
+.e2e_search.json
+.demo.pid

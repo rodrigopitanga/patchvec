@@ -46,7 +46,16 @@ ART_DIR         := artifacts
 DOCKERFILE      ?= Dockerfile
 CONTEXT         ?= .
 PUSH_LATEST     ?= 1
-DOCKER_PUBLISH  ?= 1
+RELEASE_PUBLISH ?= 0
+SKIP_DOCKER_BUILD ?= 0
+SKIP_DOCKER_PUSH  ?= $(if $(filter 1,$(RELEASE_PUBLISH)),0,1)
+SKIP_PYPI_BUILD   ?= 0
+SKIP_PYPI_PUSH    ?= $(if $(filter 1,$(RELEASE_PUBLISH)),0,1)
+# Space-separated remote lists used by `make release`.
+# Defaults support canonical `gitlab` and legacy `flowlexi` names.
+RELEASE_TAG_REMOTES_FINAL      ?= gitlab flowlexi origin
+RELEASE_TAG_REMOTES_PRERELEASE ?= gitlab flowlexi
+RELEASE_BRANCH_REMOTES         ?= gitlab flowlexi origin
 REGISTRY        ?= $(REGISTRY_HOST)/$(REGISTRY_GROUP)/$(PKG_NAME)
 IMAGE_NAME 	?= $(PKG_NAME)
 ifeq ($(USE_CPU),1)
@@ -71,34 +80,49 @@ SHELL := /bin/bash
 
 .PHONY: help
 help:
-	@echo "$(PKG_LONGNAME) Make Targets"
-	@echo "  venv            Create local virtualenv (.venv)"
-	@echo "  install         Install runtime deps (GPU by default; USE_CPU=1 for CPU)"
-	@echo "  install-dev     Install dev/test deps (GPU by default; USE_CPU=1 for CPU)"
-	@echo "  test            Run pytest (full suite)"
-	@echo "  test-fast       Run pytest (skip slow/real-embedding tests)"
-	@echo "  serve           Run API server (DEV: PATCHVEC_DEV=1, auth=none, loopback)"
-	@echo "  cli             Run CLI (pass ARGS='...')"
-	@echo "  bump            Bump file versions everywhere"
-	@echo "  build           Build sdist+wheel to ./dist"
-	@echo "  package         Build artifacts (.zip + .tar.gz) to ./artifacts"
-	@echo "  docker-build    Build Docker image (VERSION=x.y.z)"
-	@echo "  docker-push     Push Docker image (VERSION=x.y.z, REGISTRY=...)"
-	@echo "  deps-clean      Remove .venv (deps dir)"
-	@echo "  dist-clean      Remove dist/build/caches/artifacts"
-	@echo "  data-clean      Remove local data/indexes"
-	@echo "  clean           Full clean (except deps)"
-	@echo "  benchmark       Run all benchmarks (latency + stress)"
-	@echo "  benchmark-latency  Search latency benchmark"
-	@echo "  benchmark-stress   Concurrent stress test"
-	@echo "  BENCH_SAVE=1 to save outputs in benchmarks/results/"
-	@echo "  BENCH_TAG=<tag> adds suffix to saved filenames"
-	@echo "  check           Run end-to-end demo inside Docker container"
-	@echo "  changelog       Preview changelog entry for VERSION (no write)"
-	@echo "  changelog-write Update CHANGELOG.md for VERSION and print new entry"
-	@echo "  release         Bump/tag/push; updates CHANGELOG; optional Docker publish"
-	@echo "  publish-test    Upload to TestPyPI (builds first)"
-	@echo "  publish         Upload to PyPI (builds first)"
+	@B=$$'\033[1m'; R=$$'\033[0m'; \
+	echo "$(PKG_LONGNAME) Make Targets"; \
+	echo ""; \
+	echo "Setup:"; \
+	echo "  $${B}install$${R}          Install runtime deps (GPU by default; USE_CPU=1 for CPU)"; \
+	echo "  install-dev      Install dev/test deps (GPU by default; USE_CPU=1 for CPU)"; \
+	echo "  venv             Create local virtualenv (.venv)"; \
+	echo ""; \
+	echo "Run:"; \
+	echo "  $${B}serve$${R}           Run API server (DEV: PATCHVEC_DEV=1, auth=none, loopback)"; \
+	echo "  cli              Run CLI (pass ARGS='...')"; \
+	echo ""; \
+	echo "Build:"; \
+	echo "  build            Build sdist+wheel to ./dist"; \
+	echo "  package          Build release archives (.zip + .tar.gz) to ./artifacts"; \
+	echo "  docker-build     Build Docker image (VERSION=x.y.z)"; \
+	echo ""; \
+	echo "Verify:"; \
+	echo "  $${B}test$${R}            Run pytest (full suite)"; \
+	echo "  test-fast        Run pytest (skip slow/real-embedding tests)"; \
+	echo "  check            Run end-to-end API check (reuse :8086, else ephemeral; flags: CHECK_FORCE_EPHEMERAL=1, CHECK_SERVER_URL=URL)"; \
+	echo ""; \
+	echo "Benchmarks:"; \
+	echo "  $${B}benchmark$${R}       Run latency + stress (reuse :8086, else fresh ephemeral per bench; flags: BENCH_FORCE_EPHEMERAL=1, BENCH_SERVER_URL=URL)"; \
+	echo "  bench-latency    Search latency benchmark"; \
+	echo "  bench-stress     Concurrent stress test"; \
+	echo "    BENCH_SAVE=1 to save outputs in benchmarks/results/"; \
+	echo "    BENCH_TAG=<tag> adds suffix to saved filenames"; \
+	echo ""; \
+	echo "Release:"; \
+	echo "  $${B}release$${R}         Bump/tag/build; flags: SKIP_PYPI_BUILD, SKIP_PYPI_PUSH, SKIP_DOCKER_BUILD, SKIP_DOCKER_PUSH (or RELEASE_PUBLISH=1)"; \
+	echo "  bump             Bump release versions in project files"; \
+	echo "  changelog        Preview changelog entry for VERSION (no write)"; \
+	echo "  changelog-write  Update CHANGELOG.md for VERSION and print new entry"; \
+	echo "  pypi-push        Upload existing dist/* to PyPI"; \
+	echo "  pypitest-push    Upload existing dist/* to TestPyPI"; \
+	echo "  docker-push      Push Docker image (VERSION=x.y.z, REGISTRY=...)"; \
+	echo ""; \
+	echo "Clean:"; \
+	echo "  $${B}clean$${R}           Full clean (except deps)"; \
+	echo "  deps-clean       Remove .venv (deps dir)"; \
+	echo "  dist-clean       Remove dist/build/caches/artifacts"; \
+	echo "  data-clean       Remove local data/indexes"
 
 # -------- venv (robust, idempotent) --------
 $(VENV)/.created:
@@ -199,7 +223,7 @@ bump:
 	@echo "✅ Bumped to $(VERSION). Review changes, then commit:"
 	@echo "   git add -A && git commit -m \"chore: bump version to $(VERSION)\""
 
-# -------- build / package --------
+# -------- build / artifacts --------
 .PHONY: build
 build: install
 	rm -rf $(DIST_DIR) $(BUILD_DIR)
@@ -207,20 +231,21 @@ build: install
 	$(PYTHON_BIN) -m build
 	$(PYTHON_BIN) -m twine check $(DIST_DIR)/*
 
-$(ART_DIR):
-	mkdir -p $(ART_DIR)
-
 .PHONY: package
-package: build $(ART_DIR)
+package: build
+	mkdir -p $(ART_DIR)
 	@echo "Creating archives for $(ARCHIVE_BASENAME)"
-	# .zip of source tree (exclude venv, dist, build, artifacts, .git)
-	zip -rq $(ART_DIR)/$(ARCHIVE_BASENAME).zip . -x "$(VENV)/*" "$(DIST_DIR)/*" "$(BUILD_DIR)/*" "$(ART_DIR)/*" ".git/*" || true
-	# .tar.gz from sdist if available, else from tree
+	@if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	  echo "ERROR: artifacts target requires a git work tree"; \
+	  exit 1; \
+	fi
+	# .zip from tracked files only (explicit, reproducible)
+	git archive --format=zip --output $(ART_DIR)/$(ARCHIVE_BASENAME).zip HEAD
+	# .tar.gz from sdist if available, else from tracked files only
 	if ls $(DIST_DIR)/*.tar.gz >/dev/null 2>&1; then \
 	  cp $(DIST_DIR)/*.tar.gz $(ART_DIR)/$(ARCHIVE_BASENAME).tar.gz; \
 	else \
-	  tar --exclude="$(VENV)" --exclude="$(DIST_DIR)" --exclude="$(BUILD_DIR)" --exclude="$(ART_DIR)" --exclude=".git" \
-	    -czf $(ART_DIR)/$(ARCHIVE_BASENAME).tar.gz . ; \
+	  git archive --format=tar.gz --output $(ART_DIR)/$(ARCHIVE_BASENAME).tar.gz HEAD; \
 	fi
 	@echo "✅ Artifacts available in $(ART_DIR)/"
 
@@ -257,26 +282,6 @@ docker-push:
 	  if [ "$(PUSH_LATEST)" = "1" ]; then docker push $(IMAGE_NAME):$(LATEST_TAG); fi; \
 	fi
 
-.PHONY: docker-save
-docker-save:
-        docker save -o patchvec.tar $(IMAGE_NAME)-dev:$(LATEST_TAG)
-
-# SSH deploy to dev server
-.PHONY: deploy-dev
-deploy-dev: docker-save
-	@echo "🚀 Deploy via SSH para $(DEV_HOST)"
-	ssh -i $(SSH_KEY_PATH) $(DEV_USER)@$(DEV_HOST) "\
-	docker stop patchvec-dev || true && \
-	docker rm patchvec-dev || true && \
-	docker image rm $(IMAGE_NAME):$(LATEST_TAG) || true"
-	scp -i $(SSH_KEY_PATH) patchvec.tar $(DEV_USER)@$(DEV_HOST):~/patchvec.tar
-	ssh -i $(SSH_KEY_PATH) $(DEV_USER)@$(DEV_HOST) "\
-	docker load -i patchvec.tar && \
-	docker run -d --name patchvec-dev \
-	-p 8086:8086 \
-	-e PATCHVEC_AUTH__GLOBAL_KEY=$(PATCHVEC_AUTH__GLOBAL_KEY) \
-	$(IMAGE_NAME)-dev:$(LATEST_TAG)"
-
 # -------- clean (refactored) --------
 .PHONY: dist-clean
 dist-clean:
@@ -296,19 +301,28 @@ clean: dist-clean data-clean
 	@echo "Cleaned caches and data."
 
 
-.PHONY: dep-clean
-dep-clean:
+.PHONY: deps-clean
+deps-clean:
 	rm -rf $(VENV)
 	@echo "Cleaned deps (.venv)."
 
 # -------- release --------
-# (unchanged)
 .PHONY: release
 release:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make release VERSION=0.5.4')"; exit 1; fi
 	@if [ -n "$$(git status --porcelain)" ]; then echo "Working tree not clean"; exit 1; fi
-	@set -e; \
+	@set -eE; \
+	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
 	LAST_TAG=$$(git describe --tags --abbrev=0 2>/dev/null || true); \
+	PKG_PUBLISHED="no"; \
+	PKG_WHERE="not published (local build only)"; \
+	DOCKER_PUBLISHED="no"; \
+	DOCKER_WHERE="not published (local build only)"; \
+	IMAGE_REFS=""; \
+	BRANCH_REMOTES="$(RELEASE_BRANCH_REMOTES)"; \
+	TAG_TOUCHED=0; \
+	POST_TAG=0; \
+	trap 'status=$$?; if [ "$$status" -ne 0 ] && [ "$$POST_TAG" = "1" ] && [ "$$TAG_TOUCHED" = "1" ]; then echo "Release failed after tagging; deleting tag v$(VERSION) (keeping bumped commit)."; git tag -d "v$(VERSION)" >/dev/null 2>&1 || true; fi; exit $$status' ERR; \
 	revert_changes() { \
 	  echo "Reverting version bumps and changelog..."; \
 	  git restore --staged CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
@@ -322,8 +336,12 @@ release:
 	git add CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
 	echo "Running tests..."; \
 	$(MAKE) test || { echo "Tests failed."; revert_changes; exit 1; }; \
-	echo "Building dists..."; \
-	$(MAKE) build || { echo "Build failed."; revert_changes; exit 1; }; \
+	if [ "$(SKIP_PYPI_BUILD)" != "1" ]; then \
+	  echo "Building dists..."; \
+	  $(MAKE) build || { echo "Build failed."; revert_changes; exit 1; }; \
+	else \
+	  echo "Skipping dists build (SKIP_PYPI_BUILD=1)."; \
+	fi; \
 	if git diff --cached --quiet; then \
 	  echo "Nothing to commit — release commit already exists, skipping."; \
 	else \
@@ -335,14 +353,44 @@ release:
 	  if [ "$$RETAG" = "y" ] || [ "$$RETAG" = "Y" ]; then \
 	    git tag -d "v$(VERSION)"; \
 	    git tag "v$(VERSION)"; \
+	    TAG_TOUCHED=1; \
 	  else \
 	    echo "Keeping existing tag."; \
+	    TAG_TOUCHED=0; \
 	  fi; \
 	else \
 	  git tag "v$(VERSION)"; \
+	  TAG_TOUCHED=1; \
 	fi; \
-	$(MAKE) package; \
-	if [ "$(DOCKER_PUBLISH)" = "1" ]; then \
+	POST_TAG=1; \
+	$(MAKE) -o build package; \
+	if [ "$(SKIP_PYPI_PUSH)" != "1" ]; then \
+	  if printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+$$'; then \
+	    echo "Publishing package(s) to TestPyPI..."; \
+	    $(MAKE) pypitest-push; \
+	    PKG_PUBLISHED="yes"; \
+	    PKG_WHERE="TestPyPI (https://test.pypi.org/project/$(PKG_NAME)/)"; \
+	  else \
+	    echo "Publishing package(s) to PyPI..."; \
+	    $(MAKE) pypi-push; \
+	    PKG_PUBLISHED="yes"; \
+	    PKG_WHERE="PyPI (https://pypi.org/project/$(PKG_NAME)/)"; \
+	  fi; \
+	fi; \
+	if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-gpu $(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu"; \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-gpu $(REGISTRY)/$(IMAGE_NAME):latest-cpu"; fi; \
+	else \
+	  if [ "$(USE_CPU)" = "1" ]; then IMG_SUFFIX="cpu"; else IMG_SUFFIX="gpu"; fi; \
+	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-$$IMG_SUFFIX"; \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-$$IMG_SUFFIX"; fi; \
+	fi; \
+	if [ "$(SKIP_DOCKER_BUILD)" = "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
+	  echo "Invalid flags: SKIP_DOCKER_BUILD=1 requires SKIP_DOCKER_PUSH=1."; \
+	  exit 1; \
+	elif [ "$(SKIP_DOCKER_BUILD)" = "1" ]; then \
+	  echo "Skipping Docker build/push (SKIP_DOCKER_BUILD=1)."; \
+	elif [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
 	  echo "Publishing Docker image(s)..."; \
 	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
 	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
@@ -353,8 +401,10 @@ release:
 	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
 	    $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
 	  fi; \
+	  DOCKER_PUBLISHED="yes"; \
+	  DOCKER_WHERE="$(REGISTRY)/$(IMAGE_NAME)"; \
 	else \
-	  echo "Building Docker image(s) (no publish)..."; \
+	  echo "Building Docker image(s) (no push; SKIP_DOCKER_PUSH=1)..."; \
 	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
 	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
 	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
@@ -362,7 +412,53 @@ release:
 	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
 	  fi; \
 	fi; \
-	echo "✅ Release v$(VERSION) done."
+	echo ""; \
+	if printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	  TAG_REMOTES="$(RELEASE_TAG_REMOTES_FINAL)"; \
+	else \
+	  TAG_REMOTES="$(RELEASE_TAG_REMOTES_PRERELEASE)"; \
+	fi; \
+	echo "Pushing tag v$(VERSION) to: $$TAG_REMOTES"; \
+	declare -A PUSHED_URLS=(); \
+	for remote in $$TAG_REMOTES; do \
+	  if url=$$(git remote get-url "$$remote" 2>/dev/null); then \
+	    if [ -n "$${PUSHED_URLS[$$url]+x}" ]; then \
+	      echo "Skipping duplicate remote URL: $$remote -> $$url"; \
+	      continue; \
+	    fi; \
+	    PUSHED_URLS[$$url]=1; \
+	    git push "$$remote" "v$(VERSION)"; \
+	  else \
+	    echo "Skipping missing remote: $$remote"; \
+	  fi; \
+	done; \
+	echo ""; \
+	echo "✅ Release v$(VERSION): tests and builds succeeded."; \
+	echo ""; \
+	echo "Packages:"; \
+	for f in dist/*; do [ -e "$$f" ] && echo "  - $$f"; done; \
+	echo "  Published: $$PKG_PUBLISHED"; \
+	echo "  Destination: $$PKG_WHERE"; \
+	echo ""; \
+	echo "Docker images:"; \
+	for img in $$IMAGE_REFS; do echo "  - $$img"; done; \
+	echo "  Published: $$DOCKER_PUBLISHED"; \
+	echo "  Destination: $$DOCKER_WHERE"; \
+	echo ""; \
+	echo "Next step: push commits to branch remotes"; \
+	declare -A SHOWN_URLS=(); \
+	for remote in $$BRANCH_REMOTES; do \
+	  if url=$$(git remote get-url "$$remote" 2>/dev/null); then \
+	    if [ -n "$${SHOWN_URLS[$$url]+x}" ]; then \
+	      echo "  # skipping duplicate remote URL: $$remote -> $$url"; \
+	      continue; \
+	    fi; \
+	    SHOWN_URLS[$$url]=1; \
+	    echo "  git push $$remote $$BRANCH"; \
+	  else \
+	    echo "  # skipping missing remote: $$remote"; \
+	  fi; \
+	done
 
 # -------- changelog --------
 .PHONY: changelog
@@ -380,13 +476,21 @@ changelog-write:
 	@$(PYTHON_BIN) scripts/update_changelog.py $(VERSION)
 	@awk 'BEGIN{p=0} /^## /{p=1} p{print} /^---/{exit}' CHANGELOG.md
 
-# ------------------- E2E CHECK (dockerized) -------------------
-# Build+run container, create collection, ingest 20k leagues, search, stop.
+# ------------------- E2E CHECK (server-aware) -------------------
+# Reuse active http://127.0.0.1:8086 when available.
+# Otherwise start an ephemeral local server with temporary data_dir.
 
-CHECK_NAME        ?= patchvec-check
-CHECK_HOST        ?= 127.0.0.1
-CHECK_PORT        ?= 8088
+CHECK_DEFAULT_HOST ?= 127.0.0.1
+CHECK_DEFAULT_PORT ?= 8086
+CHECK_DEFAULT_URL  ?= http://$(CHECK_DEFAULT_HOST):$(CHECK_DEFAULT_PORT)
+CHECK_EPHEMERAL_HOST ?= 127.0.0.1
+CHECK_EPHEMERAL_PORT ?= 18087
+CHECK_EPHEMERAL_URL  ?= http://$(CHECK_EPHEMERAL_HOST):$(CHECK_EPHEMERAL_PORT)
+CHECK_URL         ?= $(CHECK_DEFAULT_URL)
+CHECK_FORCE_EPHEMERAL ?= 0
+CHECK_SERVER_URL  ?=
 CHECK_TIMEOUT_S   ?= 45
+CHECK_SERVER_LOG_LEVEL ?= warning
 
 # Auth + API params
 CHECK_AUTH_MODE   ?= static
@@ -403,85 +507,39 @@ CHECK_TXTAI_BACKEND ?= faiss
 # Test document (host path)
 CHECK_TXT_FILE    ?= ./demo/20k_leagues.txt
 
-# Image ref (fallback to :latest if VERSION is empty)
-CHECK_TAG   := $(if $(strip $(VERSION)),$(VERSION),latest)
-ifdef REGISTRY
-CHECK_IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(CHECK_TAG)
-else
-CHECK_IMAGE := $(IMAGE_NAME):$(CHECK_TAG)
-endif
-
-.PHONY: check-up
-check-up:
-	@set -euo pipefail; set -x; \
-	IMG="$(CHECK_IMAGE)"; \
-	if ! docker image inspect $$IMG >/dev/null 2>&1; then docker build --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $$IMG -f "$(DOCKERFILE)" "$(CONTEXT)"; fi; \
-	docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true; \
-	docker run -d --rm \
-	  --name $(CHECK_NAME) \
-	  -p "$(CHECK_PORT):8086" \
-	  --env PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
-	  --env PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
-	  --env PATCHVEC_SERVER__HOST=$(CHECK_HOST) \
-	  --env PATCHVEC_SERVER__PORT=$(CHECK_PORT) \
-	  --env PATCHVEC_VECTOR_STORE__TYPE=default \
-	  --env PATCHVEC_VECTOR_STORE__TXTAI__BACKEND=$(CHECK_TXTAI_BACKEND) \
-	  $$IMG
-
-.PHONY: check-down
-check-down:
-	@docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true
-
-.PHONY: check
-check: install
+.PHONY: check-run
+check-run: install
 	@set -euo pipefail; \
-	IMG="$(CHECK_IMAGE)"; \
-	if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 127; fi; \
-	if ! docker image inspect "$$IMG" >/dev/null 2>&1; then \
-	  echo "Image $$IMG not found. Building locally..."; \
-	  docker build --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t "$$IMG" -f "$(DOCKERFILE)" "$(CONTEXT)"; \
-	fi; \
-	echo "==> Running container: $(CHECK_NAME) on $(CHECK_HOST):$(CHECK_PORT)"; \
-	docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true; \
-	docker run -d --rm \
-	  --name $(CHECK_NAME) \
-	  -p $(CHECK_PORT):8086 \
-	  -e PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
-	  -e PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
-	  -e PATCHVEC_SERVER__HOST=$(CHECK_HOST) \
-	  -e PATCHVEC_SERVER__PORT=$(CHECK_PORT) \
-	  -e PATCHVEC_VECTOR_STORE__TYPE=default \
-	  -e PATCHVEC_VECTOR_STORE__TXTAI__BACKEND=$(CHECK_TXTAI_BACKEND) \
-	  "$$IMG" >/dev/null; \
-	trap 'echo "==> Stopping container $(CHECK_NAME)"; docker rm -f $(CHECK_NAME) >/dev/null 2>&1 || true' EXIT INT TERM; \
-	BASE="http://$(CHECK_HOST):$(CHECK_PORT)"; \
+	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
+	BASE="$(CHECK_URL)"; \
 	echo "==> Waiting for live $$BASE/health/live (timeout $(CHECK_TIMEOUT_S)s)"; \
 	for i in $$(seq 1 $(CHECK_TIMEOUT_S)); do \
-	  if curl -sf "$$BASE/health/live" >/dev/null; then echo "   Live."; break; fi; \
-	  sleep 1; \
-	  if ! docker ps --format '{{.Names}}' | grep -q '^$(CHECK_NAME)$$'; then \
-	    echo "Container died early; logs:"; docker logs $(CHECK_NAME) || true; exit 1; \
+	  if curl -fsS "$$BASE/health/live" >/dev/null 2>&1; then \
+	    echo "   Live."; \
+	    break; \
 	  fi; \
+	  sleep 1; \
 	  if [ $$i -eq $(CHECK_TIMEOUT_S) ]; then \
-	    echo "Timeout waiting for live"; docker logs $(CHECK_NAME) || true; exit 1; \
+	    echo "Timeout waiting for live at $$BASE"; \
+	    exit 1; \
 	  fi; \
 	done; \
 	AHDR=""; if [ "$(CHECK_AUTH_MODE)" = "static" ]; then AHDR="Authorization: Bearer $(CHECK_TOKEN)"; fi; \
 	echo "==> Create collection: $(CHECK_TENANT)/$(CHECK_COLL)"; \
 	if [ -n "$$AHDR" ]; then \
-	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" -H "Content-Length: 0" >/dev/null; \
+	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" -H "Content-Length: 0" >/dev/null; \
 	else \
-	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "Content-Length: 0" >/dev/null; \
+	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "Content-Length: 0" >/dev/null; \
 	fi; \
 	[ -f "$(CHECK_TXT_FILE)" ] || { echo "Missing file: $(CHECK_TXT_FILE)"; exit 1; }; \
 	echo "==> Ingest: $(CHECK_TXT_FILE) (docid=$(CHECK_DOCID))"; \
 	if [ -n "$$AHDR" ]; then \
-	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" -H "$$AHDR" \
+	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" -H "$$AHDR" \
 	    -F "file=@$(CHECK_TXT_FILE)" \
 	    -F "docid=$(CHECK_DOCID)" \
 	    -F "metadata={\"lang\":\"en\",\"source\":\"Gutenberg\"}" >/dev/null; \
 	else \
-	  curl -sf -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" \
+	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" \
 	    -F "file=@$(CHECK_TXT_FILE)" \
 	    -F "docid=$(CHECK_DOCID)" \
 	    -F "metadata={\"lang\":\"en\",\"source\":\"Gutenberg\"}" >/dev/null; \
@@ -489,28 +547,211 @@ check: install
 	echo "==> Search (GET) q='$(CHECK_QUERY)' k=$(CHECK_K)"; \
 	ENCQ=$$(printf %s "$(CHECK_QUERY)" | jq -sRr @uri 2>/dev/null || printf %s "$(CHECK_QUERY)"); \
 	if [ -n "$$AHDR" ]; then \
-	  curl -sf "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" -H "$$AHDR" | tee .check_search.json >/dev/null; \
+	  curl -fsS "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" -H "$$AHDR" | tee .check_search.json >/dev/null; \
 	else \
-	  curl -sf "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" | tee .check_search.json >/dev/null; \
+	  curl -fsS "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" | tee .check_search.json >/dev/null; \
 	fi; \
-	grep -q '"matches":\[\{' .check_search.json || { echo "Empty search results"; exit 1; }; \
+	$(PYTHON_BIN) -c 'import json,sys; d=json.load(open(".check_search.json")); m=d.get("matches"); (print("Empty search results", file=sys.stderr), sys.exit(1)) if (not isinstance(m, list) or not m) else None; f=m[0] if isinstance(m[0], dict) else {}; reason=f.get("match_reason") or f.get("reason") or ""; latency=d.get("latency_ms"); text=(f.get("text") or "").replace("\n", " "); print(f"==> First match reason: {reason}"); print(f"==> First match text: {text}"); print(f"==> Search latency_ms: {latency}")'; \
+	rm -f .check_search.json; \
+	echo "==> Cleanup: delete collection $(CHECK_TENANT)/$(CHECK_COLL)"; \
+	if [ -n "$$AHDR" ]; then \
+	  curl -fsS -X DELETE "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" >/dev/null; \
+	else \
+	  curl -fsS -X DELETE "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" >/dev/null; \
+	fi; \
 	echo "✅ make check passed."
 
-# -------- benchmarks --------
-BENCH_URL       ?= http://localhost:8086
-BENCH_QUERIES   ?= 1200
-BENCH_CONCUR    ?= 42
-STRESS_DURATION ?= 90
-STRESS_CONCUR   ?= 8
-BENCH_TAG       ?=
-BENCH_TS        ?= $(shell date -u +%Y-%m-%d_%H%M%S)
-BENCH_RESULTS_DIR ?= benchmarks/results
-BENCH_SAVE      ?= 0
+.PHONY: _check-with-server
+_check-with-server: install
+	@set -e; \
+	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
+	if [ -n "$(CHECK_SERVER_URL)" ] && [ "$(CHECK_FORCE_EPHEMERAL)" = "1" ]; then \
+	  echo "ERROR: CHECK_SERVER_URL and CHECK_FORCE_EPHEMERAL=1 are mutually exclusive."; \
+	  exit 1; \
+	fi; \
+	check_url="$(CHECK_DEFAULT_URL)"; \
+	managed=0; \
+	data_dir=""; \
+	log_file=""; \
+	srv_pid=""; \
+	if [ -n "$(CHECK_SERVER_URL)" ]; then \
+	  check_url="$(CHECK_SERVER_URL)"; \
+	  echo "==> Using configured check server on $$check_url"; \
+	elif [ "$(CHECK_FORCE_EPHEMERAL)" = "1" ]; then \
+	  managed=1; \
+	  check_url="$(CHECK_EPHEMERAL_URL)"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-check.XXXXXX")"; \
+	  log_file="$$data_dir/server.log"; \
+	  echo "==> CHECK_FORCE_EPHEMERAL=1; starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
+	  PYTHONPATH=. \
+	  PATCHVEC_DEV=1 \
+	  PATCHVEC_DATA_DIR="$$data_dir" \
+	  PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
+	  PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
+	  PATCHVEC_LOG__LEVEL=$(CHECK_SERVER_LOG_LEVEL) \
+	  PATCHVEC_VECTOR_STORE__TYPE=default \
+	  PATCHVEC_VECTOR_STORE__TXTAI__BACKEND=$(CHECK_TXTAI_BACKEND) \
+	  PATCHVEC_SERVER__HOST=$(CHECK_EPHEMERAL_HOST) \
+	  PATCHVEC_SERVER__PORT=$(CHECK_EPHEMERAL_PORT) \
+	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
+	  srv_pid=$$!; \
+	elif curl -fsS "$$check_url/health/live" >/dev/null 2>&1; then \
+	  echo "==> Using active server on $$check_url"; \
+	else \
+	  managed=1; \
+	  check_url="$(CHECK_EPHEMERAL_URL)"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-check.XXXXXX")"; \
+	  log_file="$$data_dir/server.log"; \
+	  echo "==> No active server on $(CHECK_DEFAULT_URL); starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
+	  PYTHONPATH=. \
+	  PATCHVEC_DEV=1 \
+	  PATCHVEC_DATA_DIR="$$data_dir" \
+	  PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
+	  PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
+	  PATCHVEC_LOG__LEVEL=$(CHECK_SERVER_LOG_LEVEL) \
+	  PATCHVEC_VECTOR_STORE__TYPE=default \
+	  PATCHVEC_VECTOR_STORE__TXTAI__BACKEND=$(CHECK_TXTAI_BACKEND) \
+	  PATCHVEC_SERVER__HOST=$(CHECK_EPHEMERAL_HOST) \
+	  PATCHVEC_SERVER__PORT=$(CHECK_EPHEMERAL_PORT) \
+	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
+	  srv_pid=$$!; \
+	fi; \
+	cleanup() { \
+	  if [ "$$managed" = "1" ]; then \
+	    kill "$$srv_pid" >/dev/null 2>&1 || true; \
+	    wait "$$srv_pid" >/dev/null 2>&1 || true; \
+	    rm -rf "$$data_dir"; \
+	  fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	if [ "$$managed" = "1" ]; then \
+	  for i in $$(seq 1 $(CHECK_TIMEOUT_S)); do \
+	    if curl -fsS "$$check_url/health/live" >/dev/null 2>&1; then \
+	      ready=1; \
+	      break; \
+	    fi; \
+	    sleep 1; \
+	  done; \
+	  if [ "$${ready:-0}" != "1" ]; then \
+	    echo "ERROR: check server did not become ready in $(CHECK_TIMEOUT_S)s."; \
+	    tail -n 80 "$$log_file" || true; \
+	    exit 1; \
+	  fi; \
+	fi; \
+	$(MAKE) -o install CHECK_URL="$$check_url" check-run
 
-.PHONY: benchmark-latency
-benchmark-latency:
+.PHONY: check
+check: install
+	@$(MAKE) -o install _check-with-server
+
+# -------- benchmarks --------
+BENCH_DEFAULT_HOST ?= 127.0.0.1
+BENCH_DEFAULT_PORT ?= 8086
+BENCH_DEFAULT_URL  ?= http://$(BENCH_DEFAULT_HOST):$(BENCH_DEFAULT_PORT)
+BENCH_EPHEMERAL_HOST ?= 127.0.0.1
+BENCH_EPHEMERAL_PORT ?= 18086
+BENCH_EPHEMERAL_URL  ?= http://$(BENCH_EPHEMERAL_HOST):$(BENCH_EPHEMERAL_PORT)
+BENCH_URL         ?= $(BENCH_DEFAULT_URL)
+BENCH_FORCE_EPHEMERAL ?= 0
+BENCH_SERVER_URL  ?=
+BENCH_API_KEY     ?=
+BENCH_QUERIES     ?= 1200
+BENCH_CONCUR      ?= 42
+STRESS_DURATION   ?= 90
+STRESS_CONCUR     ?= 8
+BENCH_TAG         ?=
+BENCH_TS          ?= $(shell date -u +%Y-%m-%d_%H%M%S)
+BENCH_RESULTS_DIR ?= benchmarks/results
+BENCH_SAVE        ?= 0
+BENCH_STARTUP_TIMEOUT_S ?= 30
+BENCH_SERVER_LOG_LEVEL ?= warning
+
+.PHONY: _bench-with-server
+_bench-with-server:
+	@if [ -z "$(BENCH_RUN_TARGET)" ]; then echo "ERROR: BENCH_RUN_TARGET is not set."; exit 1; fi
+	@set -e; \
+	if [ -n "$(BENCH_SERVER_URL)" ] && [ "$(BENCH_FORCE_EPHEMERAL)" = "1" ]; then \
+	  echo "ERROR: BENCH_SERVER_URL and BENCH_FORCE_EPHEMERAL=1 are mutually exclusive."; \
+	  exit 1; \
+	fi; \
+	bench_url="$(BENCH_DEFAULT_URL)"; \
+	managed=0; \
+	data_dir=""; \
+	log_file=""; \
+	srv_pid=""; \
+	if [ -n "$(BENCH_SERVER_URL)" ]; then \
+	  bench_url="$(BENCH_SERVER_URL)"; \
+	  if ! curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
+	    echo "ERROR: BENCH_SERVER_URL is not reachable: $$bench_url"; \
+	    exit 1; \
+	  fi; \
+	  echo "==> Using configured benchmark server on $$bench_url"; \
+	elif [ "$(BENCH_FORCE_EPHEMERAL)" = "1" ]; then \
+	  managed=1; \
+	  bench_url="$(BENCH_EPHEMERAL_URL)"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-bench.XXXXXX")"; \
+	  log_file="$$data_dir/server.log"; \
+	  echo "==> BENCH_FORCE_EPHEMERAL=1; starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
+	  PYTHONPATH=. \
+	  PATCHVEC_DEV=1 \
+	  PATCHVEC_DATA_DIR="$$data_dir" \
+	  PATCHVEC_AUTH__MODE=none \
+	  PATCHVEC_LOG__LEVEL=$(BENCH_SERVER_LOG_LEVEL) \
+	  PATCHVEC_SERVER__HOST=$(BENCH_EPHEMERAL_HOST) \
+	  PATCHVEC_SERVER__PORT=$(BENCH_EPHEMERAL_PORT) \
+	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
+	  srv_pid=$$!; \
+	elif curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
+	  echo "==> Using active server on $$bench_url"; \
+	else \
+	  managed=1; \
+	  bench_url="$(BENCH_EPHEMERAL_URL)"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-bench.XXXXXX")"; \
+	  log_file="$$data_dir/server.log"; \
+	  echo "==> No active server on $(BENCH_DEFAULT_URL); starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
+	  PYTHONPATH=. \
+	  PATCHVEC_DEV=1 \
+	  PATCHVEC_DATA_DIR="$$data_dir" \
+	  PATCHVEC_AUTH__MODE=none \
+	  PATCHVEC_LOG__LEVEL=$(BENCH_SERVER_LOG_LEVEL) \
+	  PATCHVEC_SERVER__HOST=$(BENCH_EPHEMERAL_HOST) \
+	  PATCHVEC_SERVER__PORT=$(BENCH_EPHEMERAL_PORT) \
+	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
+	  srv_pid=$$!; \
+	fi; \
+	cleanup() { \
+	  if [ "$$managed" = "1" ]; then \
+	    kill "$$srv_pid" >/dev/null 2>&1 || true; \
+	    wait "$$srv_pid" >/dev/null 2>&1 || true; \
+	    rm -rf "$$data_dir"; \
+	  fi; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	if [ "$$managed" = "1" ]; then \
+	  for i in $$(seq 1 $(BENCH_STARTUP_TIMEOUT_S)); do \
+	    if curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
+	      ready=1; \
+	      break; \
+	    fi; \
+	    sleep 1; \
+	  done; \
+	  if [ "$${ready:-0}" != "1" ]; then \
+	    echo "ERROR: benchmark server did not become ready in $(BENCH_STARTUP_TIMEOUT_S)s."; \
+	    tail -n 80 "$$log_file" || true; \
+	    exit 1; \
+	  fi; \
+	fi; \
+	$(MAKE) -o install-dev BENCH_URL="$$bench_url" BENCH_TS="$(BENCH_TS)" $(BENCH_RUN_TARGET)
+
+.PHONY: bench-latency bench-latency-run
+bench-latency: install-dev
+	@$(MAKE) -o install-dev BENCH_RUN_TARGET=bench-latency-run BENCH_TS="$(BENCH_TS)" _bench-with-server
+
+bench-latency-run:
 	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
 	tag="$(BENCH_TAG)"; \
+	api_arg=""; \
+	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
 	if [ -z "$$tag" ]; then \
 	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
 	  tag="$$branch-$$sha"; \
@@ -520,21 +761,28 @@ benchmark-latency:
 	if [ "$(BENCH_SAVE)" = "1" ]; then \
 	  echo "==> Saving: yes (ts=$(BENCH_TS), tag=$$tag)"; \
 	  mkdir -p $(BENCH_RESULTS_DIR); \
-	  PYTHONPATH=. $(PYTHON) benchmarks/search_latency.py \
+	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/search_latency.py \
 	    --url $(BENCH_URL) --queries $(BENCH_QUERIES) \
 	    --concurrency $(BENCH_CONCUR) \
+	    $$api_arg \
 	    | tee $(BENCH_RESULTS_DIR)/latency-$(BENCH_TS)_$$tag.txt; \
 	else \
 	  echo "==> Saving: no (ts=$(BENCH_TS), tag=$$tag)"; \
-	  PYTHONPATH=. $(PYTHON) benchmarks/search_latency.py \
+	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/search_latency.py \
 	    --url $(BENCH_URL) --queries $(BENCH_QUERIES) \
-	    --concurrency $(BENCH_CONCUR); \
+	    --concurrency $(BENCH_CONCUR) \
+	    $$api_arg; \
 	fi
 
-.PHONY: benchmark-stress
-benchmark-stress:
+.PHONY: bench-stress bench-stress-run
+bench-stress: install-dev
+	@$(MAKE) -o install-dev BENCH_RUN_TARGET=bench-stress-run BENCH_TS="$(BENCH_TS)" _bench-with-server
+
+bench-stress-run:
 	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
 	tag="$(BENCH_TAG)"; \
+	api_arg=""; \
+	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
 	if [ -z "$$tag" ]; then \
 	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
 	  tag="$$branch-$$sha"; \
@@ -544,29 +792,28 @@ benchmark-stress:
 	if [ "$(BENCH_SAVE)" = "1" ]; then \
 	  echo "==> Saving: yes (ts=$(BENCH_TS), tag=$$tag)"; \
 	  mkdir -p $(BENCH_RESULTS_DIR); \
-	  PYTHONPATH=. $(PYTHON) benchmarks/stress.py \
+	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
 	    --url $(BENCH_URL) --duration $(STRESS_DURATION) \
 	    --concurrency $(STRESS_CONCUR) \
+	    $$api_arg \
 	    | tee $(BENCH_RESULTS_DIR)/stress-$(BENCH_TS)_$$tag.txt; \
 	else \
 	  echo "==> Saving: no (ts=$(BENCH_TS), tag=$$tag)"; \
-	  PYTHONPATH=. $(PYTHON) benchmarks/stress.py \
+	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
 	    --url $(BENCH_URL) --duration $(STRESS_DURATION) \
-	    --concurrency $(STRESS_CONCUR); \
+	    --concurrency $(STRESS_CONCUR) \
+	    $$api_arg; \
 	fi
 
 .PHONY: benchmark
-benchmark:
-	@ts=$$(date -u +%Y-%m-%d_%H%M%S); \
-	$(MAKE) benchmark-latency BENCH_TS=$$ts; \
-	$(MAKE) benchmark-stress BENCH_TS=$$ts
+benchmark: install-dev
+	@ts="$(BENCH_TS)"; \
+	$(MAKE) -o install-dev BENCH_TS="$$ts" bench-latency bench-stress
 
-.PHONY: publish-test publish
+.PHONY: pypi-push pypitest-push
 
-# Upload para o TestPyPI (faz build antes)
-publish-test: build
-	$(PYTHON_BIN) -m twine upload --skip-existing --repository testpypi $(DIST_DIR)/*
-
-# Upload para o PyPI oficial (requer token)
-publish: build
+pypi-push:
 	$(PYTHON_BIN) -m twine upload --skip-existing $(DIST_DIR)/*
+
+pypitest-push:
+	$(PYTHON_BIN) -m twine upload --skip-existing --repository testpypi $(DIST_DIR)/*
