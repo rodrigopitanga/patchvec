@@ -5,7 +5,7 @@
 
 PatchVec is a single-process vector search engine that ingests your
 documents, chunks and embeds them, and gives you semantic search with
-full provenance — document id, page, byte offset, and the exact
+full provenance — document id, page, character offset, and the exact
 snippet that matched. No cluster, no managed service, no
 opaque pipelines.
 
@@ -17,7 +17,7 @@ Drop a file in, search it, see exactly what came back and why.
   PatchVec chunks, embeds, and indexes it. No preprocessing pipeline
   to build.
 - **Full provenance on every hit** — every search result traces back
-  to a document, page, and byte offset. Latency and request
+  to a document, page, and character offset. Latency and request
   traceability are built into every response.
 - **Multi-tenant by default** — tenant/collection namespacing is
   built in, not bolted on.
@@ -153,7 +153,7 @@ and request id for observability:
       "meta": {
         "docid": "verne-20k",
         "filename": "20k_leagues.txt",
-        "offset": 8192,
+        "offset": 21000,
         "lang": "en",
         "ingested_at": "2026-03-07T12:00:00Z"
       }

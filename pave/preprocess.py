@@ -143,8 +143,9 @@ def preprocess(filename: str, content: bytes, csv_options: dict[str, Any] \
             yield f"page_{i}", text, {"page": i}
     elif ext == "txt":
         text = content.decode("utf-8", errors="ignore")
+        step = max(TXT_CHUNK_SIZE - TXT_CHUNK_OVERLAP, 1)
         for i, chunk in enumerate(_chunks(text)):
-            yield f"chunk_{i}", chunk, {"chunk": i}
+            yield f"chunk_{i}", chunk, {"offset": i * step}
     elif ext == "csv" or mt == "text/csv":
         yield from _preprocess_csv(filename, content, csv_options or {})
         return

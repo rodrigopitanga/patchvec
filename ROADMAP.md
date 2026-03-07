@@ -126,7 +126,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-35 | MCP server | 🧱 | AI agent integration | v0.8 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v0.8 |
 | P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.0 |
-| P2-41 | TXT preprocessor: byte offset in chunk metadata | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
+| P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | ~~Provenance contract (replace `chunk` key with `offset`)~~ | v0.5.9 |
 
 ### P3 — Scale and long-term
 
