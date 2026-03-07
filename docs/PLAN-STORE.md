@@ -169,47 +169,15 @@ branches.
 
 ---
 
-## Step 3 — GlobalDB + catalog separation (v0.6, PLAN-SQLITE Phase 2)
+## Step 3 — GlobalDB + catalog separation (owned by PLAN-SQLITE)
 
-### Problem
+This step is specified in `docs/PLAN-SQLITE.md` (Phase 2) and tracked
+as roadmap item `P1-33`.
 
-`list_tenants()` and `list_collections()` walk the filesystem.
-`catalog_metrics()` opens temporary `CollectionDB` instances per
-collection. This code belongs in a catalog layer, not in the vector
-store.
-
-Phase 2 of PLAN-SQLITE (`GlobalDB`) is the forcing function. When the
-catalog moves to SQLite, listing code must be extracted from
-`TxtaiStore`.
-
-Additionally, `GlobalDB` is where per-collection `embed_model` is
-stored, completing the foundation for P1-10.
-
-### Interface
-
-Already defined in `docs/PLAN-SQLITE.md` Phase 2. Key addition:
-
-```python
-class GlobalDB:
-    ...
-    def get_collection_config(
-        self, tenant: str, name: str,
-    ) -> dict[str, Any] | None:
-        """Returns {embed_model, embed_config_json, ...} or None."""
-        ...
-```
-
-### Files changed
-
-| File | Change |
-|------|--------|
-| `pave/meta_store.py` | Add `GlobalDB` (schema, migrations, CRUD) |
-| `pave/stores/txtai_store.py` | Remove `list_tenants()`, `list_collections()`, `catalog_metrics()` |
-| `pave/stores/base.py` | Remove listing methods from `BaseStore` (move to orchestrator in Step 4) |
-
-### What does NOT change
-
-`CollectionDB`, vector backends, filter logic.
+`PLAN-STORE` treats Step 3 as an external dependency:
+- `GlobalDB` becomes the source of truth for listing/catalog concerns.
+- `get_collection_config()` provides per-collection embedder config.
+- `Store` orchestration (Step 4) integrates that interface.
 
 ---
 
@@ -341,7 +309,7 @@ Step 1  VectorBackend protocol (v0.5.9)
   │
   ├──→ Step 2  Embedder factory (v0.6) ───────┐
   │                                             │
-  └──→ Step 3  GlobalDB + catalog (v0.6) ──────┤
+  └──→ Step 3  GlobalDB + catalog (P1-33, PLAN-SQLITE Phase 2) ──────┤
                                                 │
                                                 ▼
                                         Step 4  Store orchestrator (v0.6)
@@ -357,19 +325,17 @@ both. Step 5 is a feature enabled by Step 4.
 
 ## ROADMAP amendments
 
-New items (P1-29 through P1-32, all new):
+Store-plan-owned items (P1-29 through P1-32):
 
 | ID | Task | Effort | Version | Depends on |
 |----|------|--------|---------|------------|
 | P1-29 | Extract VectorBackend protocol | 🔧 | v0.5.9 | — |
-| P1-30 | Activate embedder factory + model caching | 🔧 | v0.6 | P1-29, P3-39 |
-| P1-31 | Store orchestrator (compose backend + meta + catalog) | 🧱 | v0.6 | P1-29, P1-30, Phase 2 |
+| P1-30 | Activate embedder factory + model caching | 🔧 | v0.6 | P1-29 |
+| P1-31 | Store orchestrator (compose backend + meta + catalog) | 🧱 | v0.6 | P1-29, P1-30, P1-33 |
 | P1-32 | Per-collection embeddings | 🧱 | v0.6 | P1-31 |
 
 Existing items affected:
-- **P3-39** (Resolve embedder factory integration): absorbed by P1-30.
-- **P1-10** (Per-collection embeddings): renumbered/replaced by P1-32.
-- **Phase 2 GlobalDB**: unchanged in PLAN-SQLITE.md; referenced by Step 3.
+- **P1-33** (GlobalDB + catalog separation) is owned by PLAN-SQLITE.
 
 ---
 

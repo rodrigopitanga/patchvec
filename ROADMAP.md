@@ -72,7 +72,6 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.5.9 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
-| P1-10 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
 | P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.6 |
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
@@ -95,6 +94,11 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs
   `rate_limit_buckets` table (Phase 3); seeded from `tenants.max_rpm` config field
   | post-SQLite |
+| P1-29 | VectorBackend protocol | 🔧 | Backend seam for store split | v0.5.9 |
+| P1-30 | Activate embedder factory cache | 🔧 | Unblock model wiring | v0.6 |
+| P1-31 | Store orchestrator | 🧱 | Orchestrate backend + meta + catalog | v0.6 |
+| P1-32 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
+| P1-33 | GlobalDB + catalog separation | 🧱 | SQLite catalog + collection config source | v0.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -150,7 +154,6 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.5.9–v0.6 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | v1.0+ |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
-| P3-39 | Resolve embedder factory integration | 🔧 | v0.6 |
 | P3-40 | Publish pip freeze snapshot | 🧩 | v0.6 |
 | P3-41 | Swagger UI tenant/collection defaults | 🧩 | v0.7b |
 | P3-42 | Alive test in CI | 🧩 | v0.7b |
@@ -174,8 +177,8 @@ Substantial features are specified under `docs/` before implementation.
 | File | Plan ID | Feature |
 |---|---|---|
 | [`docs/PLAN-OPS-LOG.md`](docs/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
-| [`docs/PLAN-SQLITE.md`](docs/PLAN-SQLITE.md) | P1-09 | Internal SQLite metadata store |
-| [`docs/PLAN-STORE.md`](docs/PLAN-STORE.md) | P1-10 / P3-39 | Store layer separation + embedder/store integration |
+| [`docs/PLAN-SQLITE.md`](docs/PLAN-SQLITE.md) | P1-09 / P1-33 | Internal SQLite metadata and global catalog store |
+| [`docs/PLAN-STORE.md`](docs/PLAN-STORE.md) | P1-29..P1-32 | Store layer separation + embedder/store integration |
 
 ---
 
@@ -264,44 +267,41 @@ latency on every search/ingest/delete.~~
 
 ### v0.5.9 — Relevance
 
-- Split main.py into APIRouter modules per domain.
-- Honor `meta.priority` boosts during scoring.
-- Add hybrid reranking (vector similarity + BM25/token matching).
-- Rebranding phase 1 (internal only: prefixes, metadata, packaging surface).
-- Multilingual relevance evaluation fixtures (non-English test corpus).
-- Run benchmark suite in CI; publish results as artifacts; define p99
-  latency SLO gate (closes Market Practice §2 gap).
-- ~~Relicensing review (AGPLv3 candidate).~~
-- Response envelope standardization (v0.6 prep).
-- TXT preprocessor: emit byte `offset` in chunk metadata (P2-41).
-- `make docker-check`: alive test against a prebuilt Docker image (P3-51).
-- `make build-check`: install from local wheel in a temp venv, alive test (P3-52).
+- Split `main.py` into APIRouter modules per domain (P3-50).
+- Add service-layer error logging for `ok: false` sites (P2-40).
+- Honor `meta.priority` boosts during scoring (P2-11).
+- Extract VectorBackend protocol seam (P1-29).
+- Add hybrid reranking (vector similarity + BM25/token matching) (P1-07).
+- Build multilingual relevance fixtures (P2-29).
+- Add benchmark CI gate + p99 latency SLO (P2-30).
+- `make build-check`: install from local wheel in temp venv, alive test (P3-52).
+- `make docker-check`: alive test against prebuilt Docker image (P3-51).
+- Rebranding phase 1 (internal-only surface changes) (P3-35).
+- ~~TXT preprocessor: emit char `offset` in chunk metadata (P2-41).~~
+- ~~Relicensing review (AGPLv3 candidate) (P3-34).~~
 
 ### 0.6 — Stability
 
-- Define embedder/store separation contract (txtai models vs FAISS store).
-- Resolve embedder factory integration with TxtaiStore.
-- Tenant admin infrastructure (limits, visibility, controls).
-- Per-tenant collection count limit.
-- Per-tenant storage limit.
-- Configure embedding model per collection via `config.yml`.
-- Per-collection hot caches with isolation.
-- Global `request_id` echo across all endpoints and responses.
-- Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`).
-- Response envelope standardization (consistent success/error shape).
-- Dev vs prod config defaults: dev `./data` + auth=none; prod `~/.patchvec/data`
-  + auth required.
-- Admin key auto-generate if missing; persist with strict perms; warn user.
-- Config reference doc + CI check for coverage and drift.
-- Collection version tagging (PatchVec version + schema version baked into collection
-  metadata at creation/write time — foundation for portability and migration).
-- Formalize collection independence from tenant: tenant is a namespace, not an owner;
-  collections must be fully exportable and importable across instances and tenants.
-- Publish `pip freeze` snapshot as a release artifact alongside Docker images.
-- Rebranding phase 2 (external/user-visible docs, UI, and messages).
-- ~~List tenants and collections via API (CLI parity).~~
-- ~~Typed response models (internal `SearchResult` dataclass).~~
-- ~~Remove or gate `qdrant-client` dependency behind extras.~~
+- Define embedder/store separation contract (P3-26).
+- Activate embedder factory cache (P1-30).
+- GlobalDB + catalog separation (PLAN-SQLITE Phase 2) (P1-33).
+- Build store orchestrator (depends on P1-33) (P1-31).
+- Per-collection embeddings (P1-32).
+- Response envelope standardization (P1-14).
+- Per-collection hot caches with isolation (P1-22).
+- Global `request_id` echo across endpoints and responses (P1-11).
+- Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`) (P1-23).
+- Dev vs prod config defaults (P1-25).
+- Admin key auto-generate + persist (P1-27).
+- Config reference doc + CI drift check (P1-26).
+- Tenant admin infrastructure (P2-19).
+- Per-tenant collection count limit (P2-20).
+- Per-tenant storage limit (P2-21).
+- Collection version tagging (P2-25).
+- Formalize collection independence from tenant (P2-31).
+- Publish `pip freeze` snapshot as release artifact (P3-40).
+- Rebranding phase 2 (external/user-visible surface) (P3-35).
+- ~~List tenants and collections via API (CLI parity) (P2-12).~~
 
 ### 0.7a — Adoption
 - Python client package (`pave`): HTTP mode for remote instances; library mode for
@@ -432,8 +432,9 @@ global lock. (done v0.5.7)
 
 5. **Embedder factory unused** — `pave/embedders/factory.py` exists but is never
 called. The TxtaiStore creates its own Embeddings instance internally (`_config()`).
-This means the pluggable embedder architecture is dead code for the default store. Per-
-collection embedding config (P1-10) will require resolving this. (schedule v0.6)
+This means the pluggable embedder architecture is dead code for the default store. The
+STORE split tasks (P1-29/P1-30/P1-31) + per-collection embeddings (P1-32) resolve
+this. (schedule v0.5.9-v0.6)
 
 6. **QdrantStore is a dead stub** — Every method raises `NotImplementedError`.
 It ships as a runtime dependency (`qdrant-client` in `setup.py`) but cannot be used.

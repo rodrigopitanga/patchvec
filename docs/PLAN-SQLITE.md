@@ -10,6 +10,10 @@ Note: txtai already uses SQLite internally for its content/metadata store.
 This plan adds our own SQLite layer for catalog, metadata, and operational state
 that txtai does not manage.
 
+Roadmap ownership:
+- Phase 1 → `P1-09`
+- Phase 2 → `P1-33`
+
 ---
 
 ## Phase 1 — Per-Collection Metadata Store (catalog + meta.json replacement)
@@ -326,6 +330,7 @@ Notes:
 ## Phase 2 — Global Store (tenant + collection listing)
 
 **Target: v0.6**
+**Roadmap item: `P1-33`**
 
 ### Problem
 
@@ -376,6 +381,8 @@ class GlobalDB:
     def list_tenants(self) -> list[str]
     def list_collections(self, tenant: str) -> list[str]
         # Returns collection names; counts derived from per-collection meta.db
+    def get_collection_config(self, tenant: str, name: str) -> dict[str, Any] | None
+        # Returns e.g. {embed_model, embed_config_json, ...}
     def close(self) -> None
 ```
 
