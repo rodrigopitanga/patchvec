@@ -1,32 +1,38 @@
 <!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> --> 
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# 🍰 PatchVec — Vector Search You Can Understand
+# 🛣️ PatchVec — Vector search you can understand & deploy within minutes
 
-PatchVec is a single-process vector search engine that ingests your
-documents, chunks and embeds them, and gives you semantic search with
-full provenance — document id, page, character offset, and the exact
-snippet that matched. No cluster, no managed service, no
-opaque pipelines.
+PatchVec is a single-process vector search engine for AI applications.
 
-Drop a file in, search it, see exactly what came back and why.
+It ingests your documents, chunks and embeds them, and gives you semantic search with
+full provenance — document id, page, character offset, and the exact snippet that
+matched.
+
+Built for developers shipping **RAG (Retrieval-Augmented Generation)** systems, PatchVec
+provides a straightforward service for **vector search, embeddings pipelines, and
+semantic retrieval**. It runs as a **REST service, a CLI tool, or an embedded library**,
+so you can ship your first version quickly and keep growing with the same codebase as
+your application scales. No cluster. No opaque pipelines.
+
+Drop a file in. Search it. See exactly what came back — and why. Minutes after your
+first commit.
 
 ## ⚙️ Why PatchVec
 
-- **Ingest files, not embeddings** — hand it a PDF, CSV, or TXT and
-  PatchVec chunks, embeds, and indexes it. No preprocessing pipeline
-  to build.
-- **Full provenance on every hit** — every search result traces back
-  to a document, page, and character offset. Latency and request
-  traceability are built into every response.
-- **Multi-tenant by default** — tenant/collection namespacing is
-  built in, not bolted on.
-- **REST, CLI, or embed it** — run as an HTTP service, script via
-  the CLI, or import the library directly in your Python app.
-- **Pluggable embeddings** — swap models per collection; wire in
-  local or hosted embedding backends.
+- **Ingest files, not embeddings** — hand it a PDF, CSV, or TXT (more formats to come)
+  and PatchVec chunks, embeds, and indexes it. No preprocessing pipeline to build.
+- **Full provenance on every hit** — every search result traces back to a document,
+  page, and character offset. Latency and request traceability are built into every
+  response.
+- **Multi-tenant by default** — tenant/collection namespacing is built in, not bolted
+    on (and transparent when you just don't need it).
+- **REST, CLI, or embed it** — run as an HTTP service, script via the CLI, or import the
+  library directly in your Python app.
+- **Pluggable embeddings** (soon) — swap models per collection; wire in local or hosted
+  embedding backends.
 
-## 🧭 Workflows
+## 🧭 How to
 
 ### 🐳 Docker workflow (prebuilt images)
 
@@ -80,17 +86,10 @@ source .venv-pv/bin/activate
 python -m pip install --upgrade pip
 pip install "patchvec[cpu]"
 
-# grab the default configs
-curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/config.yml.example
-curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/tenants.yml.example
-cp config.yml.example config.yml
-cp tenants.yml.example tenants.yml
-
 # sample demo corpus
 curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/demo/20k_leagues.txt
 
-# point Patchvec at the config directory and set a local admin key
-export PATCHVEC_CONFIG="$HOME/pv/config.yml"
+# in server mode you must set an admin key
 export PATCHVEC_GLOBAL_KEY=super-sekret
 
 # option A: run the service (stays up until you stop it)
@@ -178,7 +177,7 @@ Patchvec supports live data refresh without restarting the server. Re-ingest the
 `docid` to *replace* vector content (filename doesn't matter - metadata will change
 though), or explicitly delete the document and then ingest it again.
 
-CLI (re-ingest to replace):
+Re-ingest to replace (CLI path example):
 
 ```bash
 # initial ingest
@@ -188,11 +187,11 @@ pavecli ingest demo books 20k_leagues.txt --docid=verne-20k
 cp 20k_leagues.txt 20k_leagues_v2.txt
 echo "THE END" >> 20k_leagues_v2.txt
 
-# re-ingest with the same docid to replace the indexed content
+# re-ingest with the *same docid* to replace the indexed content
 pavecli ingest demo books 20k_leagues_v2.txt --docid=verne-20k
 ```
 
-REST (delete then ingest):
+Delete by ID then ingest (REST path example):
 
 ```bash
 curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
@@ -208,9 +207,10 @@ curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
 
 ### 🛠️ Developer workflow
 
-Building from source relies on `Makefile` shortcuts (`make install-dev`,
-`USE_CPU=1 make serve`, `make test`, `make check`, etc.).
-The full contributor workflow, target reference, and task claiming rules live in
+Building from source relies on `Makefile` shortcuts (`make install-dev`, `make serve`,
+`make test`, `make check`, etc.).
+
+The full contributor workflow, target reference, and coding style live in
 [CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks are documented in
 [README-benchmarks.md](README-benchmarks.md).
 
@@ -229,9 +229,20 @@ See `config.yml.example` for the full logging configuration.
 
 ## 🗺️ Roadmap
 
-Short & mid-term chores are tracked in [`ROADMAP.md`](ROADMAP.md). Pick one, open an
-issue titled `claim: <task ID>`, and ship a patch.
+Short/mid-term tasks and long-term plans are all tracked in
+[`ROADMAP.md`](ROADMAP.md). Pick one, open an issue titled `claim: <task ID>`, and
+ship a patch. If you find a bug, file it under the *Issues* tab.
 
 ## 📜 License
 
-AGPL-3.0-or-later — (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+PatchVec is free software: you can use it, copy it, redistribute it and/or modify it
+free of charge under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+PatchVec is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE.  See the GNU Affero General Public License for more details.
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+Copyright (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
