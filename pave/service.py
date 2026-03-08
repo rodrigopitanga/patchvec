@@ -45,6 +45,10 @@ def create_collection(store, tenant: str, name: str) -> dict[str, Any]:
             "collection": name
         }
     except Exception as e:
+        log.warning(
+            "create_collection failed tenant=%s coll=%s: %s",
+            tenant, name, e,
+        )
         return {
             "ok": False,
             "code": "create_collection_failed",
@@ -61,6 +65,10 @@ def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
             "deleted": name
         }
     except Exception as e:
+        log.warning(
+            "delete_collection failed tenant=%s coll=%s: %s",
+            tenant, name, e,
+        )
         return {
             "ok": False,
             "code": "delete_collection_failed",
@@ -70,6 +78,10 @@ def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
 def rename_collection(store, tenant: str,
                       old_name: str, new_name: str) -> dict[str, Any]:
     if old_name == new_name:
+        log.info(
+            "rename_collection rejected tenant=%s: "
+            "same name %s", tenant, old_name,
+        )
         return {
             "ok": False,
             "code": "rename_invalid",
@@ -88,6 +100,10 @@ def rename_collection(store, tenant: str,
     except ValueError as e:
         err = str(e)
         if "does not exist" in err:
+            log.info(
+                "rename_collection not_found tenant=%s "
+                "old=%s: %s", tenant, old_name, err,
+            )
             return {
                 "ok": False,
                 "code": "collection_not_found",
@@ -95,12 +111,21 @@ def rename_collection(store, tenant: str,
                 "error_type": "not_found",
             }
         if "already exists" in err:
+            log.info(
+                "rename_collection conflict tenant=%s "
+                "new=%s: %s", tenant, new_name, err,
+            )
             return {
                 "ok": False,
                 "code": "collection_conflict",
                 "error": err,
                 "error_type": "conflict",
             }
+        log.info(
+            "rename_collection invalid tenant=%s "
+            "old=%s new=%s: %s",
+            tenant, old_name, new_name, err,
+        )
         return {
             "ok": False,
             "code": "rename_invalid",
@@ -108,6 +133,11 @@ def rename_collection(store, tenant: str,
             "error_type": "invalid",
         }
     except Exception as e:
+        log.warning(
+            "rename_collection failed tenant=%s "
+            "old=%s new=%s: %s",
+            tenant, old_name, new_name, e,
+        )
         return {
             "ok": False,
             "code": "rename_failed",
@@ -131,6 +161,10 @@ def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str
             "chunks_deleted": purged,
         }
     except Exception as e:
+        log.warning(
+            "delete_document failed tenant=%s coll=%s "
+            "docid=%s: %s", tenant, collection, docid, e,
+        )
         return {
             "ok": False,
             "code": "delete_document_failed",
@@ -175,6 +209,11 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                 meta = {**doc_meta, **extra}
                 records.append((rid, text, meta))
             if not records:
+                log.info(
+                    "ingest no_text_extracted tenant=%s "
+                    "coll=%s file=%s",
+                    tenant, collection, filename,
+                )
                 return {
                     "ok": False,
                     "code": "no_text_extracted",
@@ -200,6 +239,12 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
         except ValueError as exc:
             raise ServiceError("invalid_csv_options", str(exc)) from exc
         except Exception as e:
+            log.warning(
+                "ingest failed tenant=%s coll=%s "
+                "docid=%s: %s",
+                tenant, collection,
+                docid or filename, e,
+            )
             return {
                 "ok": False,
                 "code": "ingest_failed",
@@ -484,8 +529,13 @@ def restore_archive(
 def list_tenants(store, data_dir: str | os.PathLike[str]) -> dict[str, Any]:
     try:
         tenants = sorted(store.list_tenants(str(data_dir)))
-        return {"ok": True, "tenants": tenants, "count": len(tenants)}
+        return {
+            "ok": True,
+            "tenants": tenants,
+            "count": len(tenants),
+        }
     except Exception as e:
+        log.warning("list_tenants failed: %s", e)
         return {
             "ok": False,
             "code": "list_tenants_failed",
@@ -502,6 +552,10 @@ def list_collections(store, tenant: str) -> dict[str, Any]:
             "count": len(collections),
         }
     except Exception as e:
+        log.warning(
+            "list_collections failed tenant=%s: %s",
+            tenant, e,
+        )
         return {
             "ok": False,
             "code": "list_collections_failed",

@@ -119,7 +119,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v0.8 |
 | P2-27 | Image ingest + embeddings | 🧱 | Multimodal adoption | v0.8 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | ~~JSON lines per operation with request_id, tenant, latency~~ | v0.5.8 |
-| P2-40 | Error logging at service layer | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
+| P2-40 | ~~Error logging at service layer~~ | 🧩 | ~~`log.warning` on every `ok: false` return site; audit codes and choose level per error class~~ | v0.5.9 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.8 |
 | P2-29 | Multilingual relevance fixtures | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | Benchmark CI gate + p99 SLO | 🧩 | Latency contract | v0.5.9 |
@@ -164,7 +164,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-47 | Additional media types: graphic/geom | 🧱 | v1.0 |
 | P3-48 | Additional media types: AV | 🧱 | v1.0 |
 | P3-49 | Additional media types: georeferenced | 🧱 | v1.0 |
-| P3-50 | Split main.py routes into APIRouter modules (health, admin, collections, documents, search) | 🧩 | v0.5.9 |
+| P3-50 | ~~Split main.py routes into APIRouter modules (health, admin, collections, documents, search)~~ | 🧩 | v0.5.9 |
 | P3-51 | `make docker-check`: alive test against prebuilt Docker image | 🧩 | v0.5.9 |
 | P3-52 | `make build-check`: install from local wheel in temp venv, alive test | 🧩 | v0.5.9 |
 
@@ -267,8 +267,6 @@ latency on every search/ingest/delete.~~
 
 ### v0.5.9 — Relevance
 
-- Split `main.py` into APIRouter modules per domain (P3-50).
-- Add service-layer error logging for `ok: false` sites (P2-40).
 - Honor `meta.priority` boosts during scoring (P2-11).
 - Extract VectorBackend protocol seam (P1-29).
 - Add hybrid reranking (vector similarity + BM25/token matching) (P1-07).
@@ -277,6 +275,8 @@ latency on every search/ingest/delete.~~
 - `make build-check`: install from local wheel in temp venv, alive test (P3-52).
 - `make docker-check`: alive test against prebuilt Docker image (P3-51).
 - Rebranding phase 1 (internal-only surface changes) (P3-35).
+- ~~Split `main.py` into APIRouter modules per domain (P3-50).~~
+- ~~Add service-layer error logging for `ok: false` sites (P2-40).~~
 - ~~TXT preprocessor: emit char `offset` in chunk metadata (P2-41).~~
 - ~~Relicensing review (AGPLv3 candidate) (P3-34).~~
 
