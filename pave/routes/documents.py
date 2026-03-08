@@ -1,0 +1,163 @@
+# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+from __future__ import annotations
+
+import asyncio
+import functools
+import json
+
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+
+from pave.auth import AuthContext, tenant_rate_limit
+from pave.log import ops_event
+from pave.metrics import inc
+from pave.service import (
+    ServiceError,
+    delete_document as svc_delete_document,
+    ingest_document as svc_ingest_document,
+)
+from pave.stores.base import BaseStore
+
+
+def build_documents_router(cfg, error, resp) -> APIRouter:
+    router = APIRouter()
+
+    def current_store(request: Request) -> BaseStore:
+        return request.app.state.store
+
+    @router.post(
+        "/collections/{tenant}/{collection}/documents",
+        status_code=201,
+        responses=resp(400, 401, 403, 413, 429, 500, 503),
+    )
+    @ops_event(
+        "ingest",
+        coll="collection",
+        docid=lambda kw, r: (
+            kw.get("docid") or getattr(kw.get("file"), "filename", None)
+        ),
+        chunks=lambda kw, r: (
+            r.get("chunks") if isinstance(r, dict) and r.get("ok") else None
+        ),
+    )
+    async def ingest_document(
+        request: Request,
+        tenant: str,
+        collection: str,
+        file: UploadFile = File(...),
+        docid: str | None = Form(None),
+        metadata: str | None = Form(None),
+        csv_has_header: str | None = Query(None, pattern="^(auto|yes|no)$"),
+        csv_meta_cols: str | None = Query(None),
+        csv_include_cols: str | None = Query(None),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        meta_obj = None
+        if metadata:
+            try:
+                meta_obj = json.loads(metadata)
+            except Exception as e:
+                return error(
+                    400,
+                    "invalid_metadata_json",
+                    f"invalid metadata json: {e}",
+                )
+
+        content = await file.read()
+
+        max_mb = float(cfg.get("ingest.max_file_size_mb"))
+        max_bytes = int(max_mb * 1024 * 1024)
+        if max_bytes > 0 and len(content) > max_bytes:
+            return error(
+                413,
+                "file_too_large",
+                f"file exceeds the {int(max_mb)} MB limit",
+            )
+
+        csv_opts = None
+        if csv_has_header or csv_meta_cols or csv_include_cols:
+            csv_opts = {
+                "has_header": csv_has_header or "auto",
+                "meta_cols": csv_meta_cols or "",
+                "include_cols": csv_include_cols or "",
+            }
+
+        max_i = request.app.state.max_ingests
+        if max_i > 0:
+            if request.app.state.active_ingests >= max_i:
+                return error(
+                    503,
+                    "ingest_overloaded",
+                    "too many concurrent ingests, try again later",
+                )
+            request.app.state.active_ingests += 1
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    request.app.state.ingest_executor,
+                    functools.partial(
+                        svc_ingest_document,
+                        store,
+                        tenant,
+                        collection,
+                        file.filename,
+                        content,
+                        docid,
+                        meta_obj,
+                        csv_options=csv_opts,
+                    ),
+                )
+                if not result.get("ok"):
+                    code = result.get("code", "ingest_failed")
+                    status_map = {
+                        "no_text_extracted": 400,
+                        "ingest_failed": 500,
+                    }
+                    return error(
+                        status_map.get(code, 500),
+                        code,
+                        result.get("error", "failed to ingest document"),
+                    )
+                return result
+            except ServiceError as exc:
+                code = exc.code
+                status_map = {
+                    "invalid_csv_options": 400,
+                    "ingest_failed": 500,
+                }
+                return error(
+                    status_map.get(code, 500),
+                    code,
+                    exc.message,
+                )
+        finally:
+            if max_i > 0:
+                request.app.state.active_ingests -= 1
+
+    @router.delete(
+        "/collections/{tenant}/{collection}/documents/{docid}",
+        responses=resp(401, 403, 429, 500),
+    )
+    @ops_event("delete_doc", coll="collection", docid="docid")
+    def delete_document(
+        tenant: str,
+        collection: str,
+        docid: str,
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_delete_document(store, tenant, collection, docid)
+        if not result.get("ok"):
+            return error(
+                500,
+                result.get("code", "delete_document_failed"),
+                result.get("error", "failed to delete document"),
+            )
+        return result
+
+    return router
