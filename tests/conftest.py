@@ -58,13 +58,17 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
         # Real embeddings for end-to-end pipeline tests; small fast model.
         cfg.set("vector_store.txtai.embed_model", _FAST_MODEL)
         if not _txtai_available:
-            import pave.stores.txtai_store as store_mod
-            monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
+            import pave.backends.txtai as backend_mod
+            monkeypatch.setattr(
+                backend_mod, "Embeddings", FakeEmbeddings, raising=True
+            )
     else:
         # Fast path: always use FakeEmbeddings; no model loaded.
         cfg.set("vector_store.txtai.embed_model", "fake")
-        import pave.stores.txtai_store as store_mod
-        monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
+        import pave.backends.txtai as backend_mod
+        monkeypatch.setattr(
+            backend_mod, "Embeddings", FakeEmbeddings, raising=True
+        )
     yield
 
 @pytest.fixture()

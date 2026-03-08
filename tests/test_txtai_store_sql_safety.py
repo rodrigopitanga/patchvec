@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from pave.stores import txtai_store as store_mod
+import pave.backends.txtai as backend_mod
 from pave.stores.txtai_store import TxtaiStore
 from pave.config import get_cfg
 from utils import FakeEmbeddings
@@ -13,7 +13,9 @@ from utils import FakeEmbeddings
 
 @pytest.fixture(autouse=True)
 def _fake_embeddings(monkeypatch):
-    monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
+    monkeypatch.setattr(
+        backend_mod, "Embeddings", FakeEmbeddings, raising=True
+    )
 
 
 @pytest.fixture()

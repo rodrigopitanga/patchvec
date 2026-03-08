@@ -4,7 +4,7 @@
 import pytest
 from pave.service import ingest_document as svc_ingest, ServiceError
 from pave.stores.txtai_store import TxtaiStore
-import pave.stores.txtai_store as store_mod
+import pave.backends.txtai as backend_mod
 from utils import FakeEmbeddings
 
 @pytest.fixture
@@ -23,7 +23,9 @@ def store(monkeypatch, tmp_path):
                 return "faiss"
             return default
     monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
-    monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
+    monkeypatch.setattr(
+        backend_mod, "Embeddings", FakeEmbeddings, raising=True
+    )
     return TxtaiStore()
 
 def _csv_bytes(s: str) -> bytes:

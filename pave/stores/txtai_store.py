@@ -15,9 +15,9 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 
 from threading import Lock
 from contextlib import contextmanager
-from txtai.embeddings import Embeddings
 from pave.meta_store import CollectionDB
 from pave.stores.base import BaseStore, Record, SearchResult
+from pave.backends import TxtaiVectorBackend, VectorBackend
 from pave.config import CFG as c, get_logger
 
 log = get_logger()
@@ -95,9 +95,9 @@ class TxtaiStore(BaseStore):
     _FILTER_MATCH_MAX_DEPTH = 10
 
     def __init__(self):
-        self._emb: dict[tuple[str, str], Embeddings] = {}
+        self._emb: dict[tuple[str, str], VectorBackend] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
-        self._models: dict = {}  # shared model cache across all Embeddings instances
+        self._models: dict = {}
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(c.get("data_dir"), f"t_{tenant}", f"c_{collection}")
@@ -159,23 +159,29 @@ class TxtaiStore(BaseStore):
         base = self._base_path(tenant, collection)
         os.makedirs(base, exist_ok=True)
 
-        em = Embeddings(self._config(), models=self._models)
         idxpath = os.path.join(base, "index")
-        # consider (existing) index valid only if embeddings file exists
-        embeddings_file = os.path.join(idxpath, "embeddings")
+        backend = TxtaiVectorBackend(
+            self._config(),
+            index_path=idxpath,
+            models=self._models,
+        )
 
-        if os.path.isfile(embeddings_file):
-            try:
-                em.load(idxpath)
-                _migrate_schema(em, tenant, collection)
-            except Exception:
-                log.warning(
-                    f"Corrupt or unreadable index at {idxpath} "
-                    f"for {tenant}/{collection}, starting fresh"
-                )
-                em = Embeddings(self._config(), models=self._models)
+        try:
+            backend.initialize()
+            if getattr(backend, "loaded_existing", False):
+                _migrate_schema(backend, tenant, collection)
+        except Exception:
+            log.warning(
+                f"Corrupt or unreadable index at {idxpath} "
+                f"for {tenant}/{collection}, starting fresh"
+            )
+            backend = TxtaiVectorBackend(
+                self._config(),
+                index_path=idxpath,
+                models=self._models,
+            )
 
-        self._emb[key] = em
+        self._emb[key] = backend
 
         # Open CollectionDB if not already open
         if key not in self._dbs:
@@ -188,15 +194,18 @@ class TxtaiStore(BaseStore):
         em = self._emb.get(key)
         if not em:
             return
-        idxpath = os.path.join(self._base_path(tenant, collection), "index")
-        os.makedirs(idxpath, exist_ok=True)  # ensure target dir
-        em.save(idxpath)
+        em.flush()
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         import shutil
         with collection_lock(tenant, collection):
             key = (tenant, collection)
-            self._emb.pop(key, None)
+            backend = self._emb.pop(key, None)
+            if backend is not None:
+                try:
+                    backend.close()
+                except Exception:
+                    pass
             col_db = self._dbs.pop(key, None)
             if col_db is not None:
                 col_db.close()
@@ -236,7 +245,7 @@ class TxtaiStore(BaseStore):
             # Atomic directory rename
             os.rename(old_path, new_path)
 
-            # Update in-memory cache for Embeddings
+            # Update in-memory cache for vector backends
             if old_key in self._emb:
                 self._emb[new_key] = self._emb.pop(old_key)
 
@@ -459,10 +468,10 @@ class TxtaiStore(BaseStore):
             col_db.delete_doc(docid)
 
             # delete vectors for these chunk ids
-            em = self._emb.get(key)
-            if em and ids:
+            backend = self._emb.get(key)
+            if backend and ids:
                 try:
-                    em.delete(ids)  # txtai embeddings supports deleting by ids
+                    backend.delete(ids)
                 except Exception:
                     # if the installed txtai doesn't expose delete(ids),
                     # skip silently. index still consistent via sidecars;
@@ -536,7 +545,7 @@ class TxtaiStore(BaseStore):
             self.load_or_init(tenant, collection)
             key = (tenant, collection)
             col_db = self._dbs[key]
-            em = self._emb[key]
+            backend = self._emb[key]
             prepared: list[tuple[str, Any, str]] = []
             chunk_rows: list[tuple[str, str | None, dict[str, Any]]] = []
 
@@ -604,7 +613,7 @@ class TxtaiStore(BaseStore):
 
             # Write metadata to SQLite (inside collection_lock)
             col_db.upsert_chunks(docid, chunk_rows, doc_meta=doc_meta)
-            em.upsert(prepared)
+            backend.index(prepared)
             self.save(tenant, collection)
             _rids = [r[0] for r in prepared[:3]]
             _sfx = " ..." if len(prepared) > 3 else ""
@@ -849,8 +858,8 @@ class TxtaiStore(BaseStore):
         with collection_lock(tenant, collection):
             self.load_or_init(tenant, collection)
             key = (tenant, collection)
-            em = self._emb[key]
-            raw = em.search(sql)
+            backend = self._emb[key]
+            raw = backend.search(sql)  # type: ignore[arg-type]
 
             # Normalize to (id, score, maybe_text)
             if raw and isinstance(raw[0], dict):
@@ -879,8 +888,8 @@ class TxtaiStore(BaseStore):
             _need_txt = {
                 rid for rid, _, txt in triples if rid and txt is None
             }
-            if _need_txt and hasattr(em, "lookup"):
-                lookup = em.lookup(list(_need_txt)) or {}
+            if _need_txt:
+                lookup = backend.lookup(list(_need_txt)) or {}
 
         # --- OUTSIDE lock: WAL meta read is concurrent ---
         meta_batch = self._read_meta_batch_safe(tenant, collection, meta_rids)

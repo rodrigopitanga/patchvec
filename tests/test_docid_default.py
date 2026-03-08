@@ -5,7 +5,7 @@ import pytest
 from pave.service import ingest_document as svc_ingest, _default_docid
 from pave.stores.txtai_store import TxtaiStore
 from utils import FakeEmbeddings
-import pave.stores.txtai_store as store_mod
+import pave.backends.txtai as backend_mod
 
 @pytest.fixture
 def store(monkeypatch, tmp_path):
@@ -18,7 +18,9 @@ def store(monkeypatch, tmp_path):
             if key.endswith("vector_backend"): return "faiss"
             return default
     monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
-    monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
+    monkeypatch.setattr(
+        backend_mod, "Embeddings", FakeEmbeddings, raising=True
+    )
     return TxtaiStore()
 
 def _b(s: str) -> bytes: return s.encode("utf-8")
