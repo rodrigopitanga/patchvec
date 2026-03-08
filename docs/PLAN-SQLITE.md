@@ -6,13 +6,17 @@
 PatchVec replaces ad-hoc JSON/filesystem metadata with a layered SQLite store.
 Each phase adds a new layer; earlier phases are prerequisites for later ones.
 
-Note: txtai already uses SQLite internally for its content/metadata store.
-This plan adds our own SQLite layer for catalog, metadata, and operational state
-that txtai does not manage.
+Note: current runtime still uses txtai internal SQLite for content/metadata.
+This plan adds PatchVec-owned SQLite layers for catalog, metadata, and
+operational state. During PLAN-STORE migration (P1-29b/P1-29c/P1-31), txtai
+state is progressively replaced by backends + CollectionDB + Store.
 
 Roadmap ownership:
 - Phase 1 → `P1-09`
 - Phase 2 → `P1-33`
+- Phase 2 is PLAN-STORE Step 5 dependency (for `P1-32` via `P1-31`).
+- Transitional note: current runtime still has `backend.search(sql)` in
+  `TxtaiStore`; this is removed in the remaining `P1-29b` cutover slice.
 
 ---
 
@@ -22,7 +26,7 @@ Roadmap ownership:
 
 ### Problem
 
-`TxtaiStore` maintains two JSON files per collection:
+`TxtaiStore` (as of 0.5.6) maintains two JSON files per collection:
 
 - `catalog.json` — `{docid: [rid, ...]}` — which chunk IDs belong to a document
 - `meta.json` — `{rid: {k: v, ...}}` — metadata dict per chunk
@@ -32,7 +36,7 @@ is in `search()`:
 
 ```python
 with collection_lock(tenant, collection):   # acquired
-    raw = em.search(sql)                    # FAISS vector search — can be 100ms+
+    raw = em.search(sql)                    # FAISS (under the hood) vector search — can be 100ms+
     ...
     meta = self._load_meta(tenant, collection)  # full meta.json load — INSIDE lock
 ```
@@ -45,7 +49,8 @@ Consequences:
 
 ### Schema
 
-One `meta.db` per collection at `{data_dir}/t_{tenant}/c_{collection}/meta.db`.
+We want collections to be binary-portable (at least within version-compatible pave/faiss
+installs), so one `meta.db` per collection at `{data_dir}/t_{tenant}/c_{collection}/meta.db`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -110,21 +115,25 @@ Doc-level fields (filename, content_type, ingest-time custom fields) live in
 
 Trade-off: hydrating a chunk with doc-level metadata requires a JOIN
 (`chunks JOIN documents ON chunks.docid = documents.docid`). In practice this
-is rarely needed on the hot path: txtai returns whatever metadata was indexed at
-ingest time, so `get_meta_batch` (per-chunk WAL read, no JOIN) covers the common
-search case. The JOIN path is reserved for explicit doc-metadata lookups.
+is rarely needed on the hot path. In Phase 1, txtai returns indexed metadata and
+`get_meta_batch` (per-chunk WAL read, no JOIN) covers the common search case.
+After PLAN-STORE P1-29c, CollectionDB becomes the first local pushdown
+implementation. Filter pushdown remains capability-based by backend, and
+this split still holds.
 
 ### Why JSON blob and not K/V rows
 
-Pre-filters go into txtai's own internal SQL via `em.search()`. Our store is
-never queried for pre-filtering. Only post-filter matching (wildcards, comparisons)
-and result hydration use our metadata. K/V rows add JOIN complexity with no
-query benefit.
+In Phase 1, pre-filters go into txtai internal SQL via `em.search()`. Our store
+is not queried for pre-filtering yet. Only post-filter matching (wildcards,
+comparisons) and result hydration use our metadata. This changes in PLAN-STORE
+P1-29c, where CollectionDB provides the first local pushdown path; other
+backends may implement pushdown differently.
 
 ### Migration system
 
 Integer-versioned DDL applied on first `open()`. Version state in
-`schema_migrations`. Clean start only: no JSON import.
+`schema_migrations`. Clean start only: no legacy JSON import (acceptable for current
+user base).
 
 **Legacy JSON detection:** if `catalog.json` or `meta.json` exist in the collection
 directory, raise `LegacyMetadataError` with a clear message. Prevents silent data
@@ -208,7 +217,8 @@ meta_batch = col_db.get_meta_batch(candidate_rids)   # WAL read, concurrent
 - `service.py`, `main.py`, `BaseStore` — no signature changes
 - `DummyStore` / `SpyStore` — unchanged
 - Chunk text sidecars (`chunks/*.txt`) — unchanged
-- Filter architecture — pre-filters still go to txtai SQL
+- Filter architecture (Phase 1) — pre-filters still go to txtai SQL
+  (first local pushdown in CollectionDB at P1-29c; capability-based overall)
 - `list_tenants` / `list_collections` — still filesystem walk
 
 ### Performance expectations
@@ -238,7 +248,7 @@ python benchmarks/stress.py --duration 180 --concurrency 24 \
 ### Phase 1 benchmark results
 
 Three `CollectionDB` implementations were evaluated (branches
-`sql-phase1-claude-impl0/1/2`, all carrying the same `service.py` and
+`sql-phase1-impl0/1/2`, all carrying the same `service.py` and
 `benchmarks/stress.py` bug-fixes as main). Tests: 126/126 pass on all three.
 
 **Implementation strategies**
@@ -382,7 +392,8 @@ class GlobalDB:
     def list_collections(self, tenant: str) -> list[str]
         # Returns collection names; counts derived from per-collection meta.db
     def get_collection_config(self, tenant: str, name: str) -> dict[str, Any] | None
-        # Returns e.g. {embed_model, embed_config_json, ...}
+        # Returns e.g. {backend_type, backend_config_json,
+        #               embedder_type, embed_model, embed_config_json}
     def close(self) -> None
 ```
 
@@ -390,10 +401,15 @@ One global write lock (`threading.Lock`) for writes; WAL for concurrent reads.
 
 ### Integration
 
-- `TxtaiStore.__init__` opens `GlobalDB` from `data_dir`
-- `create_collection` / `delete_collection` / `rename_collection` → sync `GlobalDB`
-- `service.list_collections` and `service.list_tenants` → delegate to `GlobalDB`
-- Filesystem walk kept as fallback during transition only
+- Transitional wiring (pre-P1-31): `TxtaiStore` opens and syncs `GlobalDB`
+  on create/delete/rename.
+- Listing APIs read via store methods backed by `GlobalDB`.
+- Target wiring (P1-31): Store orchestrator owns `GlobalDB` lifecycle and list
+  paths; `service.py` delegates only to Store.
+- Backend/embedder mapping is read from `GlobalDB`; store passes explicit
+  constructor keys per backend type (local path for local backends, service
+  coordinates for remote backends).
+- ~~Filesystem walk kept as fallback during transition only.~~ not necessary.
 
 ---
 
@@ -509,10 +525,13 @@ CREATE INDEX IF NOT EXISTS op_log_tenant ON operation_log (tenant, ts);
 Rolling retention enforced per tenant/collection (configurable window, default 30d).
 Powers P2-13 collection log export.
 
-**Per-collection embedding model config** — stores which model a collection was
-created with, for P1-10 (per-collection embeddings).
+**Per-collection backend + embedder config** — stores how each collection is
+wired (backend and embedder) for P1-32 and later backend swaps.
 
 ```sql
+ALTER TABLE collections ADD COLUMN backend_type TEXT;
+ALTER TABLE collections ADD COLUMN backend_config_json TEXT;
+ALTER TABLE collections ADD COLUMN embedder_type TEXT;
 ALTER TABLE collections ADD COLUMN embed_model TEXT;
 ALTER TABLE collections ADD COLUMN embed_config_json TEXT;
 ```

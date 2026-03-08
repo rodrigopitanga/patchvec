@@ -1,12 +1,22 @@
 <!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# STORE-PLAN — Store Layer Separation Roadmap
+# STORE-PLAN — Store Layer Separation
 
-PatchVec separates its monolithic `TxtaiStore` into composable layers:
-a vector backend, an embedder factory, a metadata store, and a catalog.
-A single orchestrator (`Store`) composes them and owns concurrency,
-archive I/O, and the search-then-hydrate flow.
+PatchVec's store architecture was designed from day one as a
+layered system: embedder, vector index, metadata store, and
+service logic are independent concerns with typed contracts
+between them. The codebase already reflects this — `BaseStore`
+ABC, `BaseEmbedder` ABC, `CollectionDB`, the embedder factory,
+`SearchResult` dataclass, and the service/store boundary have
+been in place since early versions. Each was shipped
+incrementally as the product matured.
+
+What this plan addresses is the final step: replacing the txtai
+dependency — which was the right bootstrapping choice — with
+PatchVec's own FAISS backend and activating the embedder layer
+that has been waiting in the wings. The seams are already cut.
+This plan connects them.
 
 ---
 
@@ -14,170 +24,368 @@ archive I/O, and the search-then-hydrate flow.
 
 `TxtaiStore` (950+ lines) conflates four concerns:
 
-1. **Vector engine** — `_emb` dict of txtai `Embeddings` objects (FAISS
-   index I/O, `em.search()`, `em.upsert()`, `em.delete()`).
-2. **Metadata store** — `_dbs` dict of `CollectionDB` objects (Phase 1
-   SQLite, already cleanly separated in `pave/meta_store.py` but lifecycle
-   managed by `TxtaiStore`).
+1. **Vector engine** — `_emb` dict of `TxtaiVectorBackend` objects
+   (wrapping `txtai.Embeddings`: FAISS index I/O, `em.search()`,
+   `em.upsert()`, `em.delete()`).
+2. **Metadata store** — `_dbs` dict of `CollectionDB` objects
+   (Phase 1 SQLite, already separated in `pave/meta_store.py` but
+   lifecycle managed by `TxtaiStore`).
 3. **Catalog** — `list_tenants()`, `list_collections()`,
    `catalog_metrics()` via filesystem walks.
-4. **Embedding model management** — `_models` shared cache, `_config()`
-   reads global model from config. No per-collection model support.
+4. **Embedding model management** — `_models` shared cache,
+   `_config()` reads global model from config. No per-collection
+   model support.
 
-`BaseStore` ABC forces any new vector backend to re-implement all four.
-`QdrantStore` is a stub precisely because the surface is too large.
+PatchVec already re-implements most of what txtai provides on top
+of txtai:
 
-`service.py` breaks the abstraction: `_unwrap_store()` reaches through
-`SpyStore` wrappers, `_flush_store_caches()` clears `_dbs` and `_emb`
-dicts directly, `_lock_indexes()` imports txtai_store's module-level
-lock registry. Archive ops are scattered between service and store.
+| Concern | txtai owns | PatchVec re-owns |
+|---------|-----------|-----------------|
+| Metadata store | internal SQLite | CollectionDB |
+| Chunk text | content store | sidecars |
+| Model cache | `Embeddings(models=)` | `_models` dict |
+| Filter/query | SQL `similar()` | `_build_sql`, `_split_filters` |
+| ID management | txtai internal | `docid::chunk_id` convention |
 
-The embedder factory (`pave/embedders/`) exists but is dead code — never
-called by `TxtaiStore`, which creates its own `Embeddings` internally.
+txtai adds ~150 MB of install weight for what is effectively a FAISS
+`index.search(vector, k)` call. Replacing txtai with raw FAISS +
+`sentence-transformers` (both already transitive deps of txtai)
+eliminates the duplication and gives PatchVec full ownership of the
+stack.
 
-Per-collection embeddings (P1-10) is impossible without resolving
-this: the model spec must be stored per-collection, the factory must
-create the right embedder, and the vector backend must index pre-computed
-vectors or be configured per-collection.
+`BaseStore` ABC forces any new vector backend to re-implement all
+four concerns. `QdrantStore` is a stub precisely because the surface
+is too large.
+
+`service.py` breaks the abstraction: `_unwrap_store()` reaches
+through `SpyStore` wrappers, `_flush_store_caches()` clears `_dbs`
+and `_emb` dicts directly, `_lock_indexes()` imports
+txtai_store's module-level lock registry. Archive ops are scattered
+between service and store.
+
+The embedder factory (`pave/embedders/`) exists but is dead code —
+never called by `TxtaiStore`, which creates its own `Embeddings`
+internally.
+
+Per-collection embeddings (P1-32) is impossible without resolving
+this: the model spec must be stored per-collection, the factory
+must create the right embedder, and the vector backend must index
+pre-computed vectors.
+
+---
+
+## Layer contracts
+
+Five interfaces define PatchVec's store stack. Each layer has a
+single responsibility and communicates with its neighbours through
+a typed contract. No layer bypasses another.
+
+### 1. Embedder — text → vectors
+
+Converts a batch of texts into embedding vectors. Does not know
+about collections, tenants, metadata, or storage.
+
+```python
+# pave/embedders/base.py
+class Embedder(Protocol):
+    def encode(self, texts: list[str]) -> NDArray[np.float32]:
+        """Encode texts into a (N, dim) matrix of unit vectors."""
+        ...
+    @property
+    def dimension(self) -> int:
+        """Embedding dimensionality (e.g. 384)."""
+        ...
+```
+
+Existing implementations (currently dead code, to be activated):
+
+| Class | Module | Backend |
+|-------|--------|---------|
+| `SbertEmbedder` | `pave/embedders/sbert_emb.py` | sentence-transformers |
+| `OpenAIEmbedder` | `pave/embedders/openai_emb.py` | OpenAI API |
+| `TxtaiEmbedder` | `pave/embedders/txtai_emb.py` | txtai (transitional) |
+
+Factory: `get_embedder()` in `pave/embedders/factory.py` dispatches
+on `embedder.type` config key. Already written.
+
+**Return type change**: current `encode()` returns
+`list[list[float]]`. Must change to `NDArray[np.float32]` —
+FAISS needs numpy, and the `.tolist()` round-trip is wasteful.
+
+**`dim` → `dimension`**: current property is `dim: int | None`.
+Must become `dimension: int` (non-optional; FAISS index creation
+requires it at construction time).
+
+### 2. VectorBackend — vectors → (rid, score) pairs
+
+Stores vectors keyed by string record ID. Searches by vector
+similarity. Does not know about text, metadata, or embedders.
+Persistence location/connection details are backend-specific and
+passed via constructor keys (not via generic path parameters).
+
+```python
+# pave/backends/base.py
+class VectorBackend(Protocol):
+    def initialize(self) -> None:
+        """Load/prepare backend state from its own constructor settings."""
+        ...
+    def add(
+        self, rids: list[str], vectors: NDArray[np.float32],
+    ) -> None:
+        """Add vectors with associated record IDs."""
+        ...
+    def search(
+        self, vector: NDArray[np.float32], k: int,
+    ) -> list[tuple[str, float]]:
+        """Return up to k (rid, score) pairs, descending."""
+        ...
+    def delete(self, rids: list[str]) -> None:
+        """Remove vectors by record ID."""
+        ...
+    def flush(self) -> None:
+        """Persist pending state (local backends) or no-op (remote backends)."""
+        ...
+    def close(self) -> None:
+        """Release backend resources."""
+        ...
+```
+
+### 3. CollectionDB — metadata storage + filtered queries
+
+Per-collection SQLite store. Owns two representations of the
+same metadata: `meta_json` (denormalized, for retrieval) and
+`chunk_meta` k/v table (normalized, for filtered queries).
+
+Existing contract (`pave/meta_store.py`, Phase 1 — unchanged):
+- `upsert_chunks(docid, chunks, doc_meta)` — write
+- `delete_doc(docid)` — write
+- `has_doc(docid)` — read
+- `get_meta_batch(rids)` — read (bulk metadata retrieval)
+- `get_doc_chunk_counts()` — read (catalog metrics)
+
+New in Step 3:
+- capability-based filter pushdown entrypoint (backend/local helper)
+  for candidate reduction before canonical post-filter.
+
+### 4. Store orchestrator — composes all layers
+
+Single entry point for service.py. Owns concurrency
+(`collection_lock`), the encode→search→filter→hydrate pipeline,
+backend + CollectionDB lifecycle, and archive I/O.
+
+**Contract to service.py** (text in, typed results out):
+
+```
+service.py calls          Store does internally
+─────────────────         ────────────────────
+index_records(            embedder.encode(texts)
+  tenant, coll, docid,    backend.add(rids, vectors)
+  records, doc_meta)      col_db.upsert_chunks(...)
+
+search(                   embedder.encode([query])
+  tenant, coll,           backend.search(vector, k*5)
+  query, k, filters)      col_db.filter_rids(...)
+                          col_db.get_meta_batch(...)
+                          → list[SearchResult]
+
+purge_doc(...)            col_db.delete_doc(docid)
+                          backend.delete(rids)
+```
+
+service.py never sees vectors, embedders, or backends. It passes
+text and gets `SearchResult` / `dict` back — same contract as
+today's `BaseStore`.
+
+### 5. service.py — business logic + error shaping
+
+Owns: docid generation, re-ingest (purge + ingest), response
+envelopes (`{"ok": true, ...}`), error codes, metrics counters,
+latency measurement, ops logging.
+
+Does NOT own: encoding, vector search, metadata storage,
+concurrency, archive mechanics.
+
+Contract to routes: `dict[str, Any]` responses (or `ServiceError`
+for search). Routes convert to HTTP status codes.
 
 ---
 
 ## Target architecture
 
 ```
-GlobalDB  ──→  "collection X uses model Y"
-                        │
-                        ▼
-EmbedderFactory  ──→  load/cache model Y  ──→  encode(text) → vector
-                                                      │
-                                                      ▼
-VectorBackend   ──→  index(rids, vectors) / search(vector, k)
-                                                      │
-                                                      ▼
-CollectionDB    ──→  hydrate results with metadata
+Embedder          ──→  encode(texts) → vectors
+                                │
+                                ▼
+FaissBackend      ──→  add(rids, vectors) / search(vector, k)
+                                │
+                                ▼
+CollectionDB      ──→  filter by k/v metadata
+                       hydrate results with meta_json
+                                │
+                                ▼
+Store orchestrator ──→  compose all layers, own concurrency
 ```
 
-- **Single vector backend type per instance.** Mixed backends per instance
-  is a 2.0+ concern; the factory interface does not preclude it.
-- **Per-collection embedder config** stored in `GlobalDB` (Phase 2 SQLite).
-- **`Store` orchestrator** composes all four layers, owns concurrency
-  (`collection_lock`), the search-then-hydrate pattern, and archive I/O.
-- **`service.py`** talks only to `Store`; no more `_unwrap_store` or
-  `_flush_store_caches`.
+- **Embedder and VectorBackend are separate concerns.** The embedder
+  converts text → vectors. The backend stores and searches vectors.
+  Neither knows about the other.
+- **CollectionDB owns both metadata retrieval (JSON) and metadata
+  filtering (k/v table).** No more txtai SQL queries for filtering.
+- **Single vector backend type per instance.** Mixed backends per
+  instance is a 2.0+ concern.
+- **Per-collection embedder config** stored in `GlobalDB` (Phase 2
+  SQLite, future step).
+- **`Store` orchestrator** composes all layers, owns concurrency
+  (`collection_lock`), the search-then-hydrate pattern, and archive
+  I/O.
+- **`service.py`** talks only to `Store`; no more `_unwrap_store`
+  or `_flush_store_caches`.
 - **External API unchanged.**
 
 ---
 
-## Step 1 — VectorBackend protocol (v0.5.9)
+## Step 1 — VectorBackend protocol (v0.5.9) ✓ DONE
 
-### Problem
-
-`TxtaiStore` constructs and manages `txtai.Embeddings` objects directly.
-No seam exists between "use the index" and "manage everything else."
-
-### Interface
-
-```python
-# pave/vector_backend.py (new)
-from typing import Protocol, Any
-
-class VectorBackend(Protocol):
-    def index(self, records: list[tuple[str, dict, str]]) -> None: ...
-    def search(self, sql: str) -> list[dict[str, Any]]: ...
-    def delete(self, rids: list[str]) -> None: ...
-    def save(self, path: str) -> None: ...
-    def load(self, path: str) -> None: ...
-    def lookup(self, rids: list[str]) -> dict[str, Any]: ...
-```
-
-`TxtaiVectorBackend` wraps `txtai.Embeddings` — delegates all calls.
-The `search(sql)` signature is txtai-flavored (accepts SQL strings
-with `similar()` calls). Future non-txtai backends would use a
-different dispatch; for now this is pragmatic and zero-risk.
-
-### Files changed
-
-| File | Change |
-|------|--------|
-| `pave/vector_backend.py` | New — protocol + `TxtaiVectorBackend` |
-| `pave/stores/txtai_store.py` | `_emb` values become `VectorBackend`; `load_or_init` creates `TxtaiVectorBackend` instead of raw `Embeddings` |
-| `tests/utils.py` | `FakeEmbeddings` satisfies `VectorBackend` protocol (or monkeypatch target adjusts) |
-
-### What does NOT change
-
-`BaseStore`, `service.py`, `CollectionDB`, `collection_lock`, external
-API, filter system (`_build_sql` passes SQL to `backend.search()`).
+Extracted `VectorBackend` + `TxtaiVectorBackend` under
+`pave/backends/` and moved `TxtaiStore._emb` to that seam.
 
 ---
 
-## Step 2 — Embedder factory activation (v0.6, resolves P3-39)
+## Step 2 — Clean VectorBackend protocol + FaissBackend (v0.5.9)
 
 ### Problem
 
-`pave/embedders/factory.py` and `BaseEmbedder` exist but are dead code.
-`TxtaiStore._config()` hardcodes the model path from global config.
-The `_models` dict (shared model cache) is owned by `TxtaiStore` but
-conceptually belongs to the embedder layer.
+Step 2 completes `P1-29b`: finalize vector-native backend flow with
+`FaissBackend` and activate embedder wiring.
 
-### Interface
+### File layout
+
+Backends live in `pave/backends/`, embedders in `pave/embedders/`.
+Current state and target end-state are:
+
+```
+pave/backends/
+    __init__.py          # re-exports backend contracts/adapters
+    base.py              # VectorBackend protocol
+    txtai.py             # TxtaiVectorBackend
+    qdrant.py            # QdrantVectorBackend (stub)
+    faiss.py             # FaissBackend
+pave/embedders/
+    __init__.py          # re-exports Embedder, get_embedder
+    base.py              # Embedder protocol
+    sbert_emb.py         # SentenceTransformer implementation
+```
+
+`pave/vector_backend.py` is retired once `pave/backends/` is wired in.
+
+### Protocols
+
+`VectorBackend` and `Embedder` protocols are defined in the
+**Layer contracts** section above. Step 2 implements them.
+
+### FaissBackend
 
 ```python
-# pave/embedders/factory.py (rewritten)
-class EmbedderFactory:
-    def __init__(self) -> None:
-        self._cache: dict[str, BaseEmbedder] = {}
-        self._models: dict = {}     # shared model objects for txtai
+# pave/backends/faiss.py
+class FaissBackend:
+    """Raw FAISS index with string ID mapping."""
+    def __init__(self, dimension: int, *, storage_dir: Path) -> None:
+        # IndexFlatIP for cosine sim (normalized vectors)
+        self._index = faiss.IndexIDMap2(
+            faiss.IndexFlatIP(dimension)
+        )
+        self._rid_to_id: dict[str, int] = {}
+        self._id_to_rid: dict[int, str] = {}
+        self._next_id: int = 0
+        self._storage_dir = storage_dir
 
-    def get(self, model_spec: str | None = None) -> BaseEmbedder:
-        """Return embedder for model_spec; default from config if None.
-        Caches by spec string — collections sharing a model share the
-        instance."""
+    def add(self, rids, vectors) -> None: ...
+    def search(self, vector, k) -> ...: ...
+    def delete(self, rids) -> None: ...
+    def initialize(self) -> None: ...
+    def flush(self) -> None: ...  # faiss.write_index + id map in storage_dir
+    def close(self) -> None: ...
+```
+
+Remote backends receive service coordinates instead of filesystem paths:
+
+```python
+class QdrantBackend:
+    def __init__(self, *, url: str, collection: str, api_key: str | None = None):
         ...
-
-    @property
-    def models(self) -> dict:
-        """Shared model cache passed to TxtaiVectorBackend."""
-        return self._models
 ```
-
-### Key decision
-
-For v0.6, `TxtaiVectorBackend` continues to use txtai's internal model
-(txtai bundles model + index). The `EmbedderFactory` resolves the model
-spec and owns the `_models` cache; `TxtaiVectorBackend` receives
-`models=factory.models` at construction. Non-txtai backends would call
-`embedder.encode()` directly.
 
 ### Files changed
 
 | File | Change |
 |------|--------|
-| `pave/embedders/base.py` | Unchanged (already has the right shape) |
-| `pave/embedders/factory.py` | Rewrite: `EmbedderFactory` class with caching |
-| `pave/stores/txtai_store.py` | Constructor takes `EmbedderFactory`; `_models` comes from `factory.models`; `_config()` accepts `model_spec` param |
-| `pave/stores/factory.py` | `get_store()` creates `EmbedderFactory`, passes to `TxtaiStore` |
+| `pave/backends/` | New package: protocol + txtai adapter + qdrant stub |
+| `pave/embedders/` | Existing package retained; activation under Step 2 |
+| `pave/vector_backend.py` | Retired (moved to `pave/backends/txtai.py`) |
+| `pave/stores/txtai_store.py` | Import path + backend wrapper wiring |
 
 ### What does NOT change
 
-`service.py`, `CollectionDB`, external API. Default behavior: global
-model used when no per-collection spec exists (same as today).
-
-### Note
-
-Step 2 and Step 3 are independent — can be developed on parallel
-branches.
+`BaseStore`, `service.py`, `CollectionDB`, external API.
 
 ---
 
-## Step 3 — GlobalDB + catalog separation (owned by PLAN-SQLITE)
+## Step 3 — CollectionDB k/v metadata for filtering (v0.5.9)
 
-This step is specified in `docs/PLAN-SQLITE.md` (Phase 2) and tracked
-as roadmap item `P1-33`.
+### Problem
 
-`PLAN-STORE` treats Step 3 as an external dependency:
-- `GlobalDB` becomes the source of truth for listing/catalog concerns.
-- `get_collection_config()` provides per-collection embedder config.
-- `Store` orchestration (Step 4) integrates that interface.
+With txtai removed, metadata filtering can no longer piggyback on
+txtai's SQL `WHERE` clauses. Filtering from `meta_json` (JSON
+blobs) requires parsing every candidate — too slow for large
+result sets.
+
+### Solution
+
+Add a `chunk_meta` k/v table alongside the existing `meta_json`
+column. Both are written at ingest time from the same dict.
+`meta_json` is the source of truth for full metadata retrieval.
+`chunk_meta` is the first local pushdown index for fast candidate
+reduction. Pushdown itself is capability-based per backend.
+
+```sql
+-- CollectionDB migration 2
+CREATE TABLE chunk_meta (
+    rid   TEXT NOT NULL,
+    key   TEXT NOT NULL,
+    value TEXT NOT NULL
+);
+CREATE INDEX chunk_meta_rid ON chunk_meta (rid);
+CREATE INDEX chunk_meta_kv ON chunk_meta (key, value);
+```
+
+### Filter flow (post-txtai, capability-based)
+
+1. `FaissBackend.search(vector, k*5)` → candidate `(rid, score)`
+   pairs (overfetch).
+2. Pushdown phase (optional, capability-based): backend (or a local
+   helper such as CollectionDB) receives full filters and applies what
+   it supports. CollectionDB SQL on `chunk_meta` is the first concrete
+   implementation (`lang='en'`, negation, etc.).
+3. Canonical post-filter (Python): `_matches_filters()` runs on
+   survivors to enforce consistent semantics across all backends.
+4. Truncate to k, hydrate from `meta_json`.
+
+Exact-match and negation are expected to be the first pushdown wins.
+Wildcards/comparison/date ops can remain in post-filter until a backend
+adds compatible pushdown support.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `pave/meta_store.py` | Migration 2: `chunk_meta` + `filter_rids` |
+| `pave/stores/txtai_store.py` | Add pushdown handoff + canonical post-filter |
+
+### What does NOT change
+
+`_matches_filters()` remains canonical for correctness.
+Pushdown is an optimization layer. `_sanit_sql`, `_sanit_field`,
+`_sanit_meta_dict` stay (input sanitization is always needed).
 
 ---
 
@@ -186,9 +394,10 @@ as roadmap item `P1-33`.
 ### Problem
 
 `service.py` breaks encapsulation with `_unwrap_store()`,
-`_flush_store_caches()`, and `_lock_indexes()`. Archive operations are
-scattered between service and store. There is no single component that
-coordinates vector backend + metadata + catalog + concurrency.
+`_flush_store_caches()`, and `_lock_indexes()`. Archive operations
+are scattered between service and store. There is no single
+component that coordinates vector backend + embedder + metadata +
+catalog + concurrency.
 
 ### Interface
 
@@ -198,29 +407,38 @@ class Store:
     def __init__(
         self,
         data_dir: str,
-        vector_backend_factory: Callable[..., VectorBackend],
-        embedder_factory: EmbedderFactory,
+        embedder: Embedder,
+        backend_factory: Callable[[int], VectorBackend],
     ) -> None: ...
 
-    # Collection lifecycle (delegates to GlobalDB)
-    def create_collection(self, tenant, name, embed_model=None): ...
+    # Collection lifecycle
+    def create_collection(self, tenant, name): ...
     def delete_collection(self, tenant, name): ...
     def rename_collection(self, tenant, old, new): ...
     def list_tenants(self) -> list[str]: ...
     def list_collections(self, tenant) -> list[str]: ...
     def catalog_metrics(self) -> dict[str, int]: ...
 
-    # Document ops (coordinates backend + CollectionDB)
+    # Document ops (coordinates embedder + backend + CollectionDB)
     def has_doc(self, tenant, collection, docid) -> bool: ...
     def purge_doc(self, tenant, collection, docid) -> int: ...
-    def index_records(self, tenant, collection, docid, records): ...
-    def search(self, tenant, collection, query, k, filters): ...
+    def index_records(self, tenant, collection, docid,
+                      records, doc_meta): ...
+    def search(self, tenant, collection, query, k,
+               filters) -> list[SearchResult]: ...
 
-    # Archive I/O (low-level; service.py keeps the public interface)
+    # Cache management
     def flush_caches(self) -> None: ...
-    def dump_archive(self) -> tuple[str, str | None]: ...
-    def restore_archive(self, archive_bytes) -> dict: ...
 ```
+
+### Orchestrated search flow
+
+The encode→search→filter→hydrate pipeline is documented in the
+**Layer contracts § Store orchestrator** section above.
+
+Key concurrency detail: FAISS search runs inside
+`collection_lock`; metadata reads (WAL) run outside it — same
+pattern as today's `TxtaiStore.search()`.
 
 ### Where things move
 
@@ -229,132 +447,172 @@ class Store:
 | `collection_lock` registry | `txtai_store.py` module scope | `Store` instance |
 | `_flush_store_caches` | `service.py` | `Store.flush_caches()` |
 | `_lock_indexes` | `service.py` | `Store._lock_all_indexes()` |
-| `_unwrap_store` | `service.py` | deleted — no longer needed |
-| `dump_archive` / `restore_archive` mechanics (lock, tar, extract) | `service.py` | `Store` methods; `service.py` keeps the public interface and any service-level concerns (error wrapping, response shaping) |
-| listing (`list_tenants`, etc.) | `TxtaiStore` | `Store` via `GlobalDB` |
-| chunk text sidecars | `TxtaiStore` | `Store` (or `pave/chunk_store.py`) |
-| filter logic (`_build_sql`, etc.) | `TxtaiStore` | `pave/filters.py` |
+| `_unwrap_store` | `service.py` | deleted |
+| archive mechanics | `service.py` | `Store` methods |
+| listing | `TxtaiStore` | `Store` (filesystem or `GlobalDB`) |
+| chunk text sidecars | `TxtaiStore` | `Store` |
+| filter logic | `TxtaiStore` | `pave/filters.py` + `CollectionDB` |
 
 ### What `TxtaiStore` becomes
 
-A thin factory that creates `TxtaiVectorBackend` instances. May be
-renamed to `pave/stores/txtai_backend.py`. No lifecycle management,
-no locking, no listing, no archive logic.
+Deleted. `FaissBackend` + `SentenceTransformerEmbedder` +
+`CollectionDB` + `Store` orchestrator replace it entirely.
 
 ### `BaseStore` becomes the orchestrator interface
 
-`BaseStore` is redefined (or replaced by `StoreProtocol`) with the
-`Store` signature above. Signature changes:
-- `list_tenants(data_dir)` → `list_tenants()` (data_dir known to orchestrator)
+`BaseStore` is redefined (or replaced by `StoreProtocol`) with
+the `Store` signature above. Signature changes:
+- `list_tenants(data_dir)` → `list_tenants()` (data_dir known)
 - `catalog_metrics(data_dir)` → `catalog_metrics()`
-- `load_or_init`, `save` become internal (not exposed to `service.py`)
+- `load_or_init`, `save` become internal
+- `search` takes `query: str` (orchestrator calls embedder)
 
 ### Files changed
 
 | File | Change |
 |------|--------|
 | `pave/store.py` | New — `Store` orchestrator |
-| `pave/filters.py` | New — filter logic extracted from `TxtaiStore` |
-| `pave/stores/txtai_store.py` | Drastically reduced; becomes backend factory |
+| `pave/filters.py` | New — `split_filters`, `matches_filters`, `_sanit_*` extracted |
+| `pave/stores/txtai_store.py` | Deleted; replaced by orchestrator + backends |
 | `pave/stores/base.py` | Redefined as orchestrator interface |
-| `pave/service.py` | Remove `_unwrap_store`, `_flush_store_caches`, `_lock_indexes`; archive ops delegate to `store` |
-| `pave/main.py` | Minor — `list_tenants` no longer passes `data_dir` |
-| `tests/utils.py` | `SpyStore` updated; `DummyStore` rebuilt or retired |
+| `pave/service.py` | Remove store internals; archive ops delegate to `store` |
+| `pave/main.py` | Minor — construct `Store` with `FaissBackend` + embedder |
+| tests | `SpyStore` updated; `DummyStore` rebuilt or retired |
 
 ---
 
-## Step 5 — Per-collection embeddings (v0.6, resolves P1-10)
+## Step 5 — GlobalDB + catalog separation (owned by PLAN-SQLITE)
+
+This step is specified in `docs/PLAN-SQLITE.md` (Phase 2) and
+tracked as roadmap item `P1-33`.
+
+`PLAN-STORE` treats Step 5 as an external dependency:
+- `GlobalDB` becomes the source of truth for listing/catalog.
+- `get_collection_config()` provides per-collection embedder
+  config.
+- `Store` orchestrator integrates that interface.
+
+---
+
+## Step 6 — Per-collection embeddings (v0.6, resolves P1-32)
 
 ### Problem
 
-All collections use the same embedding model. Per-collection model
-config is a hard requirement for multi-model deployments.
+All collections use the same embedding model. Per-collection
+model config is a hard requirement for multi-model deployments.
 
 ### How it works
 
-With the orchestrator (Step 4), `GlobalDB` (Step 3), and `EmbedderFactory`
-(Step 2) in place:
+With the orchestrator (Step 4) and `GlobalDB` (Step 5) in place:
 
-1. `create_collection(tenant, name, embed_model="...")` stores model
-   spec in `GlobalDB.collections.embed_model`.
+1. `create_collection(tenant, name, embed_model="...")` stores
+   model spec in `GlobalDB.collections.embed_model`.
 2. `_load_or_init` reads `embed_model` from `GlobalDB`, calls
-   `embedder_factory.get(model_spec)` to resolve the model, creates
-   `TxtaiVectorBackend` with the right config.
-3. Collections without explicit `embed_model` use the instance default.
-4. The `EmbedderFactory` caches model instances — collections sharing a
-   model share the embedder (and the `_models` dict for txtai).
+   `embedder_factory.get(model_spec)` to resolve the model,
+   creates `FaissBackend` with the right dimension.
+3. Collections without explicit `embed_model` use the instance
+   default.
+4. The embedder factory caches model instances — collections
+   sharing a model share the embedder.
 
 ### Validation
 
 - Reject search across collections with incompatible embeddings
   (dimensionality mismatch).
-- `embed_model` is immutable after creation (changing it invalidates all
-  stored vectors). Re-embedding requires delete + recreate.
+- `embed_model` is immutable after creation (changing it
+  invalidates all stored vectors). Re-embedding requires delete
+  + recreate.
 
-### Files changed
+---
 
-| File | Change |
-|------|--------|
-| `pave/store.py` | `create_collection` accepts `embed_model`; `_load_or_init` reads it from `GlobalDB` |
-| `pave/meta_store.py` | `GlobalDB.register_collection` stores `embed_model` |
-| `pave/service.py` | `create_collection` passes through `embed_model` |
-| `pave/main.py` | `POST /collections/{tenant}/{name}` accepts optional `embed_model` |
+## Migration from txtai indexes
+
+Existing indexes are in txtai's format (FAISS index + txtai
+internal SQLite). Two migration paths:
+
+**A) Re-index from chunk text sidecars (recommended).** PatchVec
+already persists chunk text as sidecar `.txt` files. A migration
+tool reads sidecars + `CollectionDB` metadata, encodes via
+`SentenceTransformerEmbedder`, writes to `FaissBackend`. No data
+loss. Simple, robust.
+
+**B) Extract vectors from txtai index.** Load the txtai index,
+read all vectors + IDs, write to `FaissBackend` format. Faster
+(no re-encoding) but depends on txtai's internal format.
+
+Path A is preferred — it's independent of txtai and validates the
+entire pipeline end-to-end.
+
+A `pavecli migrate-index` command handles the conversion. The
+server detects txtai-format indexes on startup and warns (does
+not auto-migrate).
 
 ---
 
 ## Dependency graph
 
 ```
-Step 1  VectorBackend protocol (v0.5.9)
+Step 1  VectorBackend protocol (v0.5.9) ✓
   │
-  ├──→ Step 2  Embedder factory (v0.6) ───────┐
-  │                                             │
-  └──→ Step 3  GlobalDB + catalog (P1-33, PLAN-SQLITE Phase 2) ──────┤
-                                                │
-                                                ▼
-                                        Step 4  Store orchestrator (v0.6)
-                                                │
-                                                ▼
-                                        Step 5  Per-collection embeddings (v0.6)
+  └──→ Step 2  Clean protocol + FaissBackend + Embedder (v0.5.9)
+         │
+         └──→ Step 3  CollectionDB k/v metadata (v0.5.9)
+                │
+                └──→ Step 4  Store orchestrator (v0.6)
+                       │
+                       ├──→ Step 5  GlobalDB (PLAN-SQLITE P2)
+                       │
+                       └──→ Step 6  Per-collection embeddings
 ```
 
-Steps 2 and 3 are independent (parallel branches). Step 4 integrates
-both. Step 5 is a feature enabled by Step 4.
+Steps 2 and 3 are independent (parallel branches). Step 4
+integrates both. Steps 5 and 6 are features enabled by Step 4.
 
 ---
 
 ## ROADMAP amendments
 
-Store-plan-owned items (P1-29 through P1-32):
+Store-plan-owned items (revised):
 
 | ID | Task | Effort | Version | Depends on |
 |----|------|--------|---------|------------|
-| P1-29 | Extract VectorBackend protocol | 🔧 | v0.5.9 | — |
-| P1-30 | Activate embedder factory + model caching | 🔧 | v0.6 | P1-29 |
-| P1-31 | Store orchestrator (compose backend + meta + catalog) | 🧱 | v0.6 | P1-29, P1-30, P1-33 |
-| P1-32 | Per-collection embeddings | 🧱 | v0.6 | P1-31 |
+| P1-29 | ~~Extract VectorBackend protocol~~ | 🔧 | v0.5.9 | — |
+| P1-29b | Clean protocol + FaissBackend + Embedder | 🔧 | v0.5.9 | P1-29 |
+| P1-29c | CollectionDB k/v metadata for filtering | 🔧 | v0.5.9 | — |
+| P1-30 | ~~Activate embedder factory + model caching~~ | — | — | superseded by P1-29b |
+| P1-31 | Store orchestrator | 🧱 | v0.6 | P1-29b, P1-29c |
+| P1-32 | Per-collection embeddings | 🧱 | v0.6 | P1-31, P1-33 |
 
 Existing items affected:
-- **P1-33** (GlobalDB + catalog separation) is owned by PLAN-SQLITE.
+- **P1-33** (GlobalDB + catalog separation) owned by PLAN-SQLITE.
+- **P3-26** (embedder/store contract) resolved by Steps 2-4.
+- **P1-30** superseded — embedder extraction is part of Step 2.
 
 ---
 
 ## Risks
 
-1. **txtai SQL coupling**: `_build_sql` constructs txtai-specific SQL
-   (`similar()` function). Stays as txtai-specific concern in
-   `pave/filters.py`. Future non-txtai backends need a different query
-   representation — the orchestrator would dispatch by backend type.
+1. **Migration friction**: Existing txtai indexes require
+   re-indexing. Mitigated by `pavecli migrate-index` and the fact
+   that chunk text sidecars guarantee no data loss.
 
-2. **Test monkeypatching**: Tests monkeypatch `Embeddings` at module
-   level. After Step 1, the target changes to `TxtaiVectorBackend` or
-   the factory callable. Mechanical change, touches many test files.
+2. **Test monkeypatching**: Tests monkeypatch
+   `TxtaiVectorBackend` at module level. After Step 2, the target
+   changes to `FaissBackend`. Mechanical change, touches many test
+   files.
 
-3. **`_models` cache during flush**: `flush_caches()` must NOT clear the
-   model cache (models are expensive to load). Only backend instances and
-   `CollectionDB` instances are flushed; the `EmbedderFactory` and its
-   `_models` dict survive.
+3. **`_models` cache during flush**: `flush_caches()` must NOT
+   clear the embedder model cache (models are expensive to load).
+   Only backend instances and `CollectionDB` instances are flushed;
+   the embedder survives.
 
-4. **Filter relocation**: `_build_sql`, `_split_filters`,
-   `_matches_filters`, `_sanit_*` (~200 lines) move to `pave/filters.py`.
-   Backend-specific (txtai SQL) but conceptually a query-building concern.
+4. **Filter performance**: The k/v table adds write overhead at
+   ingest (one row per metadata key per chunk). Read performance
+   is fast (indexed). Net positive for search-heavy workloads.
+
+5. **FAISS delete support**: `IndexIDMap2` supports `remove_ids()`
+   natively. `IndexIDMap` (without the 2) does not. Must use
+   `IndexIDMap2`.
+
+6. **Negation pre-filter path drift**: avoid backend-specific semantic
+   drift by enforcing canonical post-filter after any pushdown.

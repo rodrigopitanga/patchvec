@@ -89,16 +89,20 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.6 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v0.7 |
 | P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v0.6 |
+| P1-34 | Server config bootstrap | 🧩 | Zero-friction pip deployment | v0.6 |
+| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v0.6 |
 | P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v0.6 |
 | P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v0.6 |
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs
   `rate_limit_buckets` table (Phase 3); seeded from `tenants.max_rpm` config field
   | post-SQLite |
-| P1-29 | VectorBackend protocol | 🔧 | Backend seam for store split | v0.5.9 |
-| P1-30 | Activate embedder factory cache | 🔧 | Unblock model wiring | v0.6 |
+| P1-29 | ~~VectorBackend protocol~~ | 🔧 | ~~Initial backend seam for store split~~ | v0.5.9 |
+| P1-29b | Clean protocol + Faiss path | 🔧 | Finish FAISS cutover | v0.5.9 |
+| P1-29c | CollectionDB k/v pre-filter | 🔧 | First pushdown stage | v0.5.9 |
+| P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | ~~Superseded by Step 2 in PLAN-STORE~~ | superseded |
 | P1-31 | Store orchestrator | 🧱 | Orchestrate backend + meta + catalog | v0.6 |
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
-| P1-33 | GlobalDB + catalog separation | 🧱 | SQLite catalog + collection config source | v0.6 |
+| P1-33 | GlobalDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -178,7 +182,7 @@ Substantial features are specified under `docs/` before implementation.
 |---|---|---|
 | [`docs/PLAN-OPS-LOG.md`](docs/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
 | [`docs/PLAN-SQLITE.md`](docs/PLAN-SQLITE.md) | P1-09 / P1-33 | Internal SQLite metadata and global catalog store |
-| [`docs/PLAN-STORE.md`](docs/PLAN-STORE.md) | P1-29..P1-32 | Store layer separation + embedder/store integration |
+| [`docs/PLAN-STORE.md`](docs/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
 
 ---
 
@@ -268,7 +272,11 @@ latency on every search/ingest/delete.~~
 ### v0.5.9 — Relevance
 
 - Honor `meta.priority` boosts during scoring (P2-11).
-- Extract VectorBackend protocol seam (P1-29).
+- ~~Extract VectorBackend protocol seam (P1-29).~~
+- ~~Set backend seam to `search(vector, k)` and split `pave/backends/`
+  (P1-29b slice A).~~
+- Finish `P1-29b` with Faiss backend cutover and SQL-path removal.
+- Add first `CollectionDB` k/v pre-filter stage (P1-29c).
 - Add hybrid reranking (vector similarity + BM25/token matching) (P1-07).
 - Build multilingual relevance fixtures (P2-29).
 - Add benchmark CI gate + p99 latency SLO (P2-30).
@@ -283,8 +291,9 @@ latency on every search/ingest/delete.~~
 ### 0.6 — Stability
 
 - Define embedder/store separation contract (P3-26).
-- Activate embedder factory cache (P1-30).
-- GlobalDB + catalog separation (PLAN-SQLITE Phase 2) (P1-33).
+- ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
+- GlobalDB + catalog separation (PLAN-SQLITE Phase 2), including
+  collection backend/embedder config wiring (P1-33).
 - Build store orchestrator (depends on P1-33) (P1-31).
 - Per-collection embeddings (P1-32).
 - Response envelope standardization (P1-14).
@@ -292,6 +301,10 @@ latency on every search/ingest/delete.~~
 - Global `request_id` echo across endpoints and responses (P1-11).
 - Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`) (P1-23).
 - Dev vs prod config defaults (P1-25).
+- In server mode, write `config.yml` from defaults on first startup when no
+  config path is passed (P1-34).
+- Add capability-based filter pushdown with parity checks against canonical
+  post-filter semantics (P1-35).
 - Admin key auto-generate + persist (P1-27).
 - Config reference doc + CI drift check (P1-26).
 - Tenant admin infrastructure (P2-19).
@@ -433,8 +446,9 @@ global lock. (done v0.5.7)
 5. **Embedder factory unused** — `pave/embedders/factory.py` exists but is never
 called. The TxtaiStore creates its own Embeddings instance internally (`_config()`).
 This means the pluggable embedder architecture is dead code for the default store. The
-STORE split tasks (P1-29/P1-30/P1-31) + per-collection embeddings (P1-32) resolve
-this. (schedule v0.5.9-v0.6)
+STORE split tasks (P1-29/P1-29b/P1-29c/P1-31) + per-collection embeddings
+(P1-32) resolve this. P1-30 is superseded by P1-29b.
+(schedule v0.5.9-v0.6)
 
 6. **QdrantStore is a dead stub** — Every method raises `NotImplementedError`.
 It ships as a runtime dependency (`qdrant-client` in `setup.py`) but cannot be used.
@@ -503,17 +517,17 @@ swap via a `/admin/reload` endpoint.
 The equivalent of spatial indexing for geo queries: pushing filters into txtai's SQL
 query instead of fetching overfetch x 5 and filtering in Python.
 
-**Current state:** `_split_filters()` (`txtai_store.py:336`) sends `!`-prefixed values,
-wildcards, and comparison operators to `pos_f` (Python post-filter). Consumers using
-`!`-negation in parallel queries overfetch and filter in Python.
+**Current state:** `_split_filters()` routes exact matches and `!` negation to
+`pre_f` (SQL), and keeps wildcards/comparison/date-style operators in `pos_f`
+(Python post-filter). This is the compatibility baseline.
 
 **Why it matters:** If consumers fire multiple parallel searches and most use post-
 filtering, tail latency multiplies. At scale, this becomes the bottleneck.
 
-**Action:** For negation (`!value`), generate `[field] <> 'value'` in SQL instead of
-routing to post-filter. This is txtai-compatible SQL and avoids the overfetch penalty.
-Keep wildcards and comparison ops in post-filter where SQL support is uncertain. Status:
-done v0.5.7.
+**Action:** Negation (`!value`) already goes to SQL (`[field] <> 'value'`) —
+done v0.5.7. Keep the current pre/post split for reproducibility. Next step
+(`P1-35`) is capability-based pushdown with canonical Python post-filter
+parity checks.
 
 ### 5. Graceful degradation under overload
 
