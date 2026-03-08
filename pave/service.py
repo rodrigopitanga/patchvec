@@ -302,14 +302,9 @@ def _flush_store_caches(store: BaseStore | None) -> None:
     Called after restore_archive replaces files on disk so that the next
     access re-opens fresh connections from the restored files.
 
-    We intentionally do NOT call col_db.close() here: get_meta_batch runs
-    outside collection_lock, so a thread may already hold a reference to a
-    CollectionDB that _lock_indexes cannot block.  Calling close() on those
-    objects would corrupt in-flight reads.  Instead we just remove them from
-    the shared dicts; threads that already hold a reference finish on the old
-    (pre-restore) connection, which is safe and returns stale-but-consistent
-    data for that request.  The old connections are closed naturally when all
-    references drop (Python GC / sqlite3 __del__).
+    Old CollectionDB instances are closed in a daemon thread so that
+    ``close()`` can drain any in-flight readers (via ``_state_cv``)
+    without blocking under ``_lock_indexes``.
     """
     base_store = _unwrap_store(store)
     if base_store is None:
@@ -321,9 +316,16 @@ def _flush_store_caches(store: BaseStore | None) -> None:
     if not isinstance(base_store, TxtaiStore):
         return
 
-    # Drop dict references only — do NOT close the connections.
+    old_dbs = list(base_store._dbs.values())
     base_store._dbs.clear()
     base_store._emb.clear()
+
+    if old_dbs:
+        import threading
+        threading.Thread(
+            target=lambda: [db.close() for db in old_dbs],
+            daemon=True,
+        ).start()
 
 
 def _unwrap_store(store: BaseStore | None) -> BaseStore | None:

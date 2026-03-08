@@ -3,11 +3,12 @@
 
 import io
 import shutil
+import threading
 import zipfile
 from pathlib import Path
 
 from pave.stores import txtai_store
-from pave.service import dump_archive
+from pave.service import dump_archive, _flush_store_caches
 
 
 def test_dump_endpoint_returns_zip(client, temp_data_dir):
@@ -65,6 +66,34 @@ def test_dump_archive_acquires_txtai_locks(monkeypatch, temp_data_dir):
     finally:
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+def test_flush_store_caches_closes_old_dbs():
+    """_flush_store_caches closes abandoned CollectionDB instances."""
+    store = txtai_store.TxtaiStore()
+    store.index_records(
+        "acme", "flush_test", "doc1",
+        [("0", "flush probe", {"lang": "en"})],
+    )
+    key = ("acme", "flush_test")
+    col_db = store._dbs[key]
+
+    # Verify DB is open
+    assert col_db._rconn is not None
+
+    _flush_store_caches(store)
+
+    # Caches are cleared immediately
+    assert key not in store._dbs
+    assert key not in store._emb
+
+    # Wait for daemon thread to close the DB
+    for t in threading.enumerate():
+        if t.daemon and t.is_alive():
+            t.join(timeout=2.0)
+
+    assert col_db._rconn is None
+    assert col_db._wconn is None
+
 
 def test_restore_endpoint_replaces_data_dir(client, temp_data_dir):
     sample = Path(temp_data_dir) / "tenant" / "collection" / "doc.txt"
