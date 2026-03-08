@@ -291,7 +291,7 @@ class TxtaiStore(BaseStore):
 
         fallback = CollectionDB()
         try:
-            fallback.open(db_path)
+            fallback.open(db_path, read_only=True)
             return fallback.get_meta_batch(rids)
         except Exception as e:
             if not self._is_transient_db_read_error(e):
@@ -390,7 +390,7 @@ class TxtaiStore(BaseStore):
                 close_after = False
                 if col_db is None:
                     col_db = CollectionDB()
-                    col_db.open(db_path)
+                    col_db.open(db_path, read_only=True)
                     close_after = True
                 try:
                     docs, chunks = col_db.get_doc_chunk_counts()
@@ -416,13 +416,13 @@ class TxtaiStore(BaseStore):
             except Exception as e:
                 if not self._is_transient_db_read_error(e):
                     raise
-        # Fallback: open DB read-only style (no lock needed for WAL read)
+        # Fallback: open DB read-only (no wconn, no migrations)
         db_path = self._db_path(tenant, collection)
         if not db_path.exists():
             return False
         col_db = CollectionDB()
         try:
-            col_db.open(db_path)
+            col_db.open(db_path, read_only=True)
             return col_db.has_doc(docid)
         except Exception as e:
             if self._is_transient_db_read_error(e):

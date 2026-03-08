@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -69,6 +68,37 @@ def test_delete_doc(tmp_path):
     assert deleted == ["doc2::c0"]
     assert db.has_doc("doc2") is False
     db.close()
+
+
+def test_open_read_only_skips_wconn_and_migrations(tmp_path):
+    db_path = _meta_db(tmp_path)
+    # First open normally to create schema
+    db = CollectionDB()
+    db.open(db_path)
+    db.upsert_chunks(
+        "doc1",
+        [("doc1::c0", "chunks/doc1__c0.txt", {"docid": "doc1"})],
+        doc_meta={"docid": "doc1"},
+    )
+    db.close()
+
+    # Re-open read-only
+    ro = CollectionDB()
+    ro.open(db_path, read_only=True)
+    assert ro._rconn is not None
+    assert ro._wconn is None
+    assert ro.has_doc("doc1") is True
+    meta = ro.get_meta_batch(["doc1::c0"])
+    assert meta["doc1::c0"]["docid"] == "doc1"
+    ro.close()
+
+
+def test_open_read_only_does_not_create_dirs(tmp_path):
+    db_path = tmp_path / "nonexistent" / "sub" / "meta.db"
+    db = CollectionDB()
+    with pytest.raises(Exception):
+        db.open(db_path, read_only=True)
+    assert not db_path.parent.exists()
 
 
 def test_get_doc_chunk_counts(tmp_path):

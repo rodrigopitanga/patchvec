@@ -84,8 +84,13 @@ class CollectionDB:
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
-    def open(self, path: Path) -> None:
+    def open(self, path: Path, *, read_only: bool = False) -> None:
         """Open (or create) the meta.db at *path*.
+
+        When *read_only* is True only the read connection is opened
+        and migrations are skipped.  Use this for fallback reads
+        (``has_doc``, ``catalog_metrics``, ``_read_meta_batch_safe``)
+        where a write connection is unnecessary.
 
         Raises LegacyMetadataError if catalog.json or meta.json exist
         alongside the database file.
@@ -99,14 +104,17 @@ class CollectionDB:
                     f"Legacy catalog.json/meta.json detected in {parent}; "
                     "migration not supported — remove JSON files first."
                 )
-        parent.mkdir(parents=True, exist_ok=True)
+        if not read_only:
+            parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         with self._state_cv:
             self._rconn = self._open_conn(path)
-            self._wconn = self._open_conn(path)
+            if not read_only:
+                self._wconn = self._open_conn(path)
             self._active_readers = 0
             self._closing = False
-        self._apply_migrations()
+        if not read_only:
+            self._apply_migrations()
 
     def close(self) -> None:
         with self._state_cv:

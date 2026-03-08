@@ -1,6 +1,9 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+from unittest.mock import patch
+
+from pave.meta_store import CollectionDB
 from pave.stores.txtai_store import TxtaiStore
 
 
@@ -77,3 +80,32 @@ def test_rename_collection_evicts_old_cache_before_close():
     store.rename_collection(tenant, old_name, new_name)
 
     assert seen.get("present_during_close") is False
+
+
+def test_has_doc_fallback_opens_read_only():
+    """Fallback CollectionDB opens read-only (no _wconn)."""
+    store = TxtaiStore()
+    tenant, collection = "acme", "ro_fallback"
+    docid = "DOC-RO"
+    store.index_records(
+        tenant, collection, docid,
+        [("0", "read-only probe", {"lang": "en"})],
+    )
+
+    # Close and remove cached DB to force fallback path
+    store._dbs[(tenant, collection)].close()
+    del store._dbs[(tenant, collection)]
+
+    opened: list[CollectionDB] = []
+    _orig_open = CollectionDB.open
+
+    def _spy_open(self, path, *, read_only=False):
+        opened.append(self)
+        _orig_open(self, path, read_only=read_only)
+
+    with patch.object(CollectionDB, "open", _spy_open):
+        result = store.has_doc(tenant, collection, docid)
+
+    assert result is True
+    assert len(opened) == 1
+    assert opened[0]._wconn is None
