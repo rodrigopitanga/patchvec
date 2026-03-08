@@ -52,6 +52,10 @@ almost production-like stack, or call the wrapper script directly:
   have it installed.
 - Do not add framework abstractions unless they solve a concrete problem.
 - Avoid adding dependencies without discussing them in an issue first.
+- If you add or update a dependency, check license compatibility with `AGPL-3.0-or-later`
+  and update [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
+- For non-trivial new files or substantial edits, update/add copyright headers as needed.
+- Add SPDX identifiers when creating new files.
 - Use Python 3.10+ syntax (e.g. `dict` instead of `Dict`)
 
 ## Commit messages
@@ -136,6 +140,8 @@ changed, not-in-scope list.
 without it if you have a properly configured GPU).
 - [ ] Inform OS and pip freeze.
 - [ ] Docs updated when behavior changes.
+- [ ] Dependency changes include a license-compatibility check and an updated
+  [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
 - [ ] PR description states what changed and why.
 - [ ] PR is self-contained.
 - [ ] If it closes an issue, mention it; if it closes a [ROADMAP.md] item, strike it
