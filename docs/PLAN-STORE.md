@@ -448,7 +448,7 @@ adds compatible pushdown support.
 
 | File | Change |
 |------|--------|
-| `pave/meta_store.py` | Migration 2: `chunk_meta` + `filter_rids` |
+| `pave/meta_store.py` | Migration 2: `chunk_meta` + `filter_by_meta` |
 | `pave/stores/txtai_store.py` | Add pushdown handoff + canonical post-filter |
 
 ### What does NOT change
@@ -456,6 +456,67 @@ adds compatible pushdown support.
 `_matches_filters()` remains canonical for correctness.
 Pushdown is an optimization layer. `_sanit_sql`, `_sanit_field`,
 `_sanit_meta_dict` stay (input sanitization is always needed).
+
+### Step 3 benchmark results
+
+Benchmarked on the same machine and benchmark harness before and
+after the `chunk_meta` pushdown change. Baseline is the canonical
+`before_metakvtable` result set captured from `b971101` and saved
+on branch `before-metakvtable-benchresults` (`29a5e32`). "After"
+is the post-Step-3 run tagged `11becc6`. Parameters: latency
+5000 queries / concurrency=42.
+
+No canonical before/after stress pair was captured for Step 3, so
+only the latency benchmark is reported here.
+
+**Latency benchmark** — 5000 queries, concurrency=42
+
+| Variant | Run | p50 | p95 | p99 | Throughput |
+|---------|-----|-----|-----|-----|------------|
+| search | before\_metakvtable | 720ms | 897ms | 1233ms | 55.5 ops/s |
+| search | after\_metakvtable ✓ | **699ms** | **720ms** | **775ms** | **59.7 ops/s** |
+| search | Δ | −3% | −20% | −37% | **+8%** |
+| search\_exact | before\_metakvtable | 892ms | 1212ms | 1474ms | 45.6 ops/s |
+| search\_exact | after\_metakvtable ✓ | **700ms** | **758ms** | **889ms** | **59.0 ops/s** |
+| search\_exact | Δ | **−22%** | **−37%** | **−40%** | **+29%** |
+| search\_wildcard | before\_metakvtable | 704ms | **740ms** | **883ms** | 58.8 ops/s |
+| search\_wildcard | after\_metakvtable | **701ms** | 749ms | 902ms | **58.9 ops/s** |
+| search\_wildcard | Δ | ≈0% | +1% | +2% | ≈0% |
+| search\_mixed | before\_metakvtable | **688ms** | **711ms** | 856ms | **60.3 ops/s** |
+| search\_mixed | after\_metakvtable | 690ms | 719ms | **848ms** | 60.1 ops/s |
+| search\_mixed | Δ | ≈0% | +1% | −1% | ≈0% |
+
+**Result files**:
+
+- [latency-2026-03-09_230807_before_metakvtable-b971101-none.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-none.txt)
+- [latency-2026-03-09_230807_before_metakvtable-b971101-exact.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-exact.txt)
+- [latency-2026-03-09_230807_before_metakvtable-b971101-wildcard.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-wildcard.txt)
+- [latency-2026-03-09_230807_before_metakvtable-b971101-mixed.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-mixed.txt)
+- [latency-2026-03-10_194207_after_metakvtable-11becc6-none.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-none.txt)
+- [latency-2026-03-10_194207_after_metakvtable-11becc6-exact.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-exact.txt)
+- [latency-2026-03-10_194207_after_metakvtable-11becc6-wildcard.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-wildcard.txt)
+- [latency-2026-03-10_194207_after_metakvtable-11becc6-mixed.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-mixed.txt)
+
+**Analysis**:
+
+- **Exact-match filtering is the clear Step 3 win.** `search_exact`
+  improves 22% at p50, 37% at p95, 40% at p99, and 29% in
+  throughput. This is the direct target of `chunk_meta`
+  pushdown.
+- **Wildcard stays effectively flat**, which is expected because
+  wildcard filters are still handled by the canonical Python
+  post-filter, not by `CollectionDB.filter_by_meta()`.
+- **Mixed filters are effectively neutral**: only the exact subset
+  of a mixed filter can be pushed down, so the benchmark shows a
+  small tail win but no material movement in p50/p95 or
+  throughput.
+- **No parity drift was observed**. Hit counts are identical before
+  and after in every variant (`25000`, `16000`, `16000`, `6000`)
+  and error rate remains `0.0%`.
+- **Plain `search` also improves in this pair of runs**, but that
+  path does not use pushdown; treat it as background run-to-run
+  variance or incidental system-state improvement, not as a Step 3
+  effect.
 
 ---
 
