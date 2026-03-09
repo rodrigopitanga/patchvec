@@ -328,6 +328,76 @@ class QdrantBackend:
 
 `BaseStore`, `service.py`, `CollectionDB`, external API.
 
+### Step 2 benchmark results
+
+Benchmarked on the same machine and parameters as PLAN-SQLITE
+Phase 1 (latency: 1200 queries / concurrency=42, stress: 90s /
+concurrency=8). Baseline is the last txtai-backed commit
+(`a52c9fe`); "after" is the FaissBackend cutover (`fc52178` /
+`30f4a53`).
+
+**Latency benchmark** — 1200 queries, concurrency=42
+
+| | Min | p50 | p95 | p99 | Max | Throughput |
+|--|-----|-----|-----|-----|-----|------------|
+| before\_faiss (txtai) | 309ms | 1029ms | 1071ms | 1096ms | 1361ms | 39.4 ops/s |
+| after\_faiss ✓ | **80ms** | **641ms** | **894ms** | **949ms** | **958ms** | **60.1 ops/s** |
+| Δ | −74% | −38% | −17% | −13% | −30% | **+53%** |
+
+**Stress benchmark** — 90s duration, concurrency=8
+
+| | Total ops | Throughput | Total err% | Search p50 | Search p95 | Search p99 |
+|--|-----------|------------|------------|------------|------------|------------|
+| before\_faiss | 1499 | 16.5 ops/s | 0.0% | 139ms | 1567ms | 2552ms |
+| after\_faiss ✓ | **2678** | **29.6 ops/s** | **0.0%** | **102ms** | **860ms** | **1339ms** |
+| Δ | +79% | **+79%** | — | −27% | **−45%** | **−48%** |
+
+Stress per-operation highlights (p50 / p95):
+
+| Operation | before\_faiss | after\_faiss | Δ p50 | Δ p95 |
+|-----------|--------------|-------------|-------|-------|
+| search | 139 / 1567ms | 102 / 860ms | −27% | −45% |
+| collection\_create | 335 / 458ms | 19 / 36ms | −94% | −92% |
+| ingest\_small | 172 / 1448ms | 117 / 795ms | −32% | −45% |
+| ingest\_chunked | 1976 / 3217ms | 1009 / 1920ms | −49% | −40% |
+| health | 7 / 503ms | 7 / 19ms | — | −96% |
+
+**Result files**:
+
+- [latency-2026-03-08_225319_before_faiss-a52c9fe.txt](../benchmarks/results/latency-2026-03-08_225319_before_faiss-a52c9fe.txt)
+- [stress-2026-03-08_225319_before_faiss-a52c9fe.txt](../benchmarks/results/stress-2026-03-08_225319_before_faiss-a52c9fe.txt)
+- [latency-2026-03-09_033453_after_faiss-fc52178.txt](../benchmarks/results/latency-2026-03-09_033453_after_faiss-fc52178.txt)
+- [stress-2026-03-09_033453_after_faiss-30f4a53.txt](../benchmarks/results/stress-2026-03-09_033453_after_faiss-30f4a53.txt)
+
+**Analysis**:
+
+The FAISS cutover eliminates txtai's query-compilation and
+internal SQLite overhead on every search. The biggest wins are:
+
+- **collection\_create** drops from ~335ms to ~19ms (−94%). txtai
+  was eagerly loading the embedding model and initializing its
+  own internal SQLite on every `load_or_init`; FaissBackend only
+  allocates an empty FAISS index (CollectionDB still creates its
+  tables, but that is fast).
+- **Search throughput** jumps 53% (latency) / 79% (stress). The
+  raw FAISS `index.search()` call avoids txtai's SQL parsing,
+  content-store round-trip, and Python-side result
+  deserialization.
+- **health p95** drops from 503ms to 19ms. The health probe calls
+  `load_or_init("_system", "health")` — same collection-create
+  path, same speedup.
+- **Tail latency** improves across the board: search p99 drops
+  48% under mixed load. Ingest p50 drops 32-49% because FAISS
+  `add_with_ids` is cheaper than txtai's `upsert` pipeline.
+
+Similarity scores are slightly lower (e.g. doc1 top hit 0.836 →
+0.697) because txtai applies internal re-normalization that raw
+FAISS with `IndexFlatIP` does not. Ranking order is preserved.
+This is expected and acceptable — the score magnitudes are
+backend-specific; what matters is relative ordering.
+
+Zero errors in both runs.
+
 ---
 
 ## Step 3 — CollectionDB k/v metadata for filtering (v0.5.9)
