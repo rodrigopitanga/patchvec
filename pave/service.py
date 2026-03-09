@@ -361,15 +361,19 @@ def _validate_zip_members(zf: zipfile.ZipFile) -> None:
             raise ValueError(f"invalid archive member: {name}")
 
 
-def _flush_store_caches(store: BaseStore | None) -> None:
+def _flush_store_caches(
+    store: BaseStore | None,
+    *,
+    async_close: bool = True,
+) -> None:
     """Drop all in-memory CollectionDB and Embeddings references.
 
     Called after restore_archive replaces files on disk so that the next
     access re-opens fresh connections from the restored files.
 
-    Old CollectionDB instances are closed in a daemon thread so that
-    ``close()`` can drain any in-flight readers (via ``_state_cv``)
-    without blocking under ``_lock_indexes``.
+    When ``async_close`` is True old CollectionDB instances are closed in
+    a daemon thread. Restore path uses ``async_close=False`` so DB handles
+    are closed before filesystem replacement starts.
     """
     base_store = _unwrap_store(store)
     if base_store is None:
@@ -385,12 +389,21 @@ def _flush_store_caches(store: BaseStore | None) -> None:
     base_store._dbs.clear()
     base_store._emb.clear()
 
-    if old_dbs:
+    if not old_dbs:
+        return
+
+    def _close_all() -> None:
+        for db in old_dbs:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    if async_close:
         import threading
-        threading.Thread(
-            target=lambda: [db.close() for db in old_dbs],
-            daemon=True,
-        ).start()
+        threading.Thread(target=_close_all, daemon=True).start()
+    else:
+        _close_all()
 
 
 def _unwrap_store(store: BaseStore | None) -> BaseStore | None:
@@ -437,8 +450,12 @@ def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
         yield
         return
 
+    # TODO(P1-31): archive locking moves to Store orchestrator;
+    # remove direct _LOCKS/_LOCKS_GUARD access.
     try:
-        from pave.stores.txtai_store import TxtaiStore, get_lock  # type: ignore
+        from threading import Lock as _Lock
+        from pave.stores import txtai_store as store_mod  # type: ignore
+        TxtaiStore = store_mod.TxtaiStore
     except Exception:
         yield
         return
@@ -447,22 +464,47 @@ def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
         yield
         return
 
-    keys = sorted(set(_iter_collection_lock_keys(data_dir)))
-    if not keys:
-        yield
-        return
-
+    guard = store_mod._LOCKS_GUARD
     locks = []
-    for key in keys:
-        lock = get_lock(key)
-        lock.acquire()
-        locks.append(lock)
-
+    guard.acquire()
     try:
+        keys = set(_iter_collection_lock_keys(data_dir))
+        keys.update(store_mod._LOCKS.keys())
+        for key in sorted(keys):
+            if key not in store_mod._LOCKS:
+                store_mod._LOCKS[key] = _Lock()
+            lock = store_mod._LOCKS[key]
+            lock.acquire()
+            locks.append(lock)
         yield
     finally:
         for lock in reversed(locks):
             lock.release()
+        guard.release()
+
+
+def _remove_path(path: Path, *, retries: int = 4) -> None:
+    """Best-effort removal with short retries for transient directory races."""
+
+    for attempt in range(retries):
+        try:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            transient = {
+                errno.ENOENT,
+                errno.ENOTEMPTY,
+                errno.EBUSY,
+            }
+            if exc.errno in transient and attempt < (retries - 1):
+                _time.sleep(0.02 * (attempt + 1))
+                continue
+            raise
 
 
 def dump_archive(
@@ -530,18 +572,16 @@ def restore_archive(
             zf.extractall(extract_dir)
 
         with _lock_indexes(store, data_dir_path):
+            _flush_store_caches(store, async_close=False)
+
             for entry in data_dir_path.iterdir():
-                if entry.is_dir():
-                    shutil.rmtree(entry)
-                else:
-                    entry.unlink()
+                _remove_path(entry)
 
             for entry in extract_dir.iterdir():
-                shutil.move(str(entry), data_dir_path / entry.name)
-
-            # Close stale CollectionDB connections: the files they pointed
-            # to were just deleted and replaced by the archive contents.
-            _flush_store_caches(store)
+                target = data_dir_path / entry.name
+                if target.exists() or target.is_symlink():
+                    _remove_path(target)
+                shutil.move(str(entry), str(target))
 
     return {"ok": True, "data_dir": str(data_dir_path)}
 
