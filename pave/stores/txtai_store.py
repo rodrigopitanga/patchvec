@@ -528,10 +528,16 @@ class TxtaiStore(BaseStore):
                          urid: str) -> str | None:
         p = os.path.join(self._chunks_dir(tenant, collection),
                          self._urid_to_fname(urid))
-        if os.path.isfile(p):
+        if not os.path.isfile(p):
+            return None
+        try:
             with open(p, "rb") as f:
                 return f.read().decode("utf-8")
-        return None
+        except FileNotFoundError:
+            # TOCTOU: file was removed between isfile() and open().
+            return None
+        except OSError:
+            return None
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],

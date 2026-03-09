@@ -90,6 +90,27 @@ def test_chunk_sidecar_preserves_crlf(store):
     stored = store.impl._load_chunk_text("acme", "crlf", "doccrlf::0")
     assert stored == text
 
+
+def test_load_chunk_text_tolerates_toctou_delete(monkeypatch, store):
+    recs = [
+        {"id": "0", "content": "chunk text", "metadata": {"lang": "en"}},
+    ]
+    store.index_records("acme", "race", "docrace", recs)
+    target = os.path.join(
+        store.impl._chunks_dir("acme", "race"),
+        store.impl._urid_to_fname("docrace::0"),
+    )
+    real_open = builtins.open
+
+    def flaky_open(path, mode="r", *args, **kwargs):
+        if "rb" in mode and str(path) == target:
+            raise FileNotFoundError(str(path))
+        return real_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", flaky_open)
+    assert store.impl._load_chunk_text("acme", "race", "docrace::0") is None
+
+
 def test_meta_json_and_filters(store):
     recs = [
         {"id": "docx::0", "content": "Olá mundo", "metadata": {"lang": "pt"}},

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
@@ -326,7 +327,15 @@ def _write_zip(source_dir: Path, target_path: Path) -> None:
             for filename in files:
                 file_path = root_path / filename
                 rel_name = file_path.relative_to(source_dir)
-                zf.write(file_path, rel_name.as_posix())
+                try:
+                    zf.write(file_path, rel_name.as_posix())
+                except FileNotFoundError:
+                    # TOCTOU: file vanished between os.walk and zf.write.
+                    continue
+                except OSError as exc:
+                    if exc.errno == errno.ENOENT:
+                        continue
+                    raise
 
 
 def _validate_zip_members(zf: zipfile.ZipFile) -> None:
