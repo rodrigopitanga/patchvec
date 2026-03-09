@@ -5,14 +5,23 @@
 Search latency benchmark for PatchVec.
 
 Usage:
-    python benchmarks/search_latency.py [--url URL] [--queries N] [--concurrency C]
+    python benchmarks/search_latency.py [options]
 
-Indexes sample data, fires concurrent searches, and reports latency percentiles.
+Options:
+    --url URL            PatchVec base URL
+    --queries N          Number of queries (default 100)
+    --concurrency C      Concurrent requests (default 10)
+    --filtering MODE     none/exact/wildcard/mixed
+                         (default: mixed)
+
+Indexes sample docs with metadata, fires concurrent
+searches, and reports latency percentiles.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 import time
@@ -27,27 +36,98 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import print_run_header  # type: ignore[import]  # noqa: E402
 
 SAMPLE_DOCS = [
-    ("doc1", "Machine learning is a subset of artificial intelligence that "
-     "enables systems to learn from data."),
-    ("doc2", "Natural language processing helps computers understand human "
-     "language and text."),
-    ("doc3", "Deep learning uses neural networks with many layers to model "
-     "complex patterns."),
-    ("doc4", "Vector databases store embeddings for efficient similarity "
-     "search operations."),
-    ("doc5", "Semantic search finds results based on meaning rather than "
-     "exact keyword matches."),
-    ("doc6", "Transformers revolutionized NLP with attention mechanisms and "
-     "parallel processing."),
-    ("doc7", "Embeddings represent text as dense vectors in high-dimensional "
-     "space."),
-    ("doc8", "Retrieval augmented generation combines search with language "
-     "model outputs."),
-    ("doc9", "Cosine similarity measures the angle between two vectors for "
-     "comparison."),
-    ("doc10", "Fine-tuning adapts pre-trained models to specific domains and "
-     "tasks."),
+    (
+        "doc1",
+        "Machine learning is a subset of artificial intelligence that "
+        "enables systems to learn from data.",
+        {"lang": "en", "category": "ml"},
+    ),
+    (
+        "doc2",
+        "Natural language processing helps computers understand human "
+        "language and text.",
+        {"lang": "en", "category": "nlp"},
+    ),
+    (
+        "doc3",
+        "Deep learning uses neural networks with many layers to model "
+        "complex patterns.",
+        {"lang": "en", "category": "ml"},
+    ),
+    (
+        "doc4",
+        "Vector databases store embeddings for efficient similarity "
+        "search operations.",
+        {"lang": "en", "category": "infra"},
+    ),
+    (
+        "doc5",
+        "Semantic search finds results based on meaning rather than "
+        "exact keyword matches.",
+        {"lang": "en", "category": "infra"},
+    ),
+    (
+        "doc6",
+        "Transformers revolutionized NLP with attention mechanisms and "
+        "parallel processing.",
+        {"lang": "en", "category": "nlp"},
+    ),
+    (
+        "doc7",
+        "Embeddings represent text as dense vectors in high-dimensional "
+        "space.",
+        {"lang": "en", "category": "infra"},
+    ),
+    (
+        "doc8",
+        "Retrieval augmented generation combines search with language "
+        "model outputs.",
+        {"lang": "en", "category": "nlp"},
+    ),
+    (
+        "doc9",
+        "Cosine similarity measures the angle between two vectors for "
+        "comparison.",
+        {"lang": "pt", "category": "math"},
+    ),
+    (
+        "doc10",
+        "Fine-tuning adapts pre-trained models to specific domains and "
+        "tasks.",
+        {"lang": "pt", "category": "ml"},
+    ),
 ]
+
+EXACT_FILTERS = [
+    {"lang": "en"},
+    {"category": "ml"},
+    {"category": "nlp"},
+    {"lang": "en", "category": "infra"},
+    {"lang": "pt"},
+]
+
+WILDCARD_FILTERS = [
+    {"category": "ml*"},
+    {"category": "*lp"},
+    {"lang": "e*"},
+    {"category": "*nfra"},
+    {"lang": "p*"},
+]
+
+MIXED_FILTERS = [
+    {"lang": "en", "category": "ml*"},
+    {"lang": "p*", "category": "nlp"},
+    {"category": "*nfra", "lang": "e*"},
+    {"lang": "en", "category": "*ath"},
+    {"lang": "p*", "category": "ml"},
+]
+
+_FILTERS_FOR: dict[str, list[dict] | None] = {
+    "none": None,
+    "exact": EXACT_FILTERS,
+    "wildcard": WILDCARD_FILTERS,
+    "mixed": MIXED_FILTERS,
+}
 
 QUERIES = [
     "machine learning artificial intelligence",
@@ -105,17 +185,28 @@ async def setup_collection(
         attempts=attempts,
     )
     if resp.status_code >= 400:
-        raise RuntimeError(f"create collection failed: {_parse_error(resp)}")
-    for docid, text in SAMPLE_DOCS:
+        raise RuntimeError(
+            f"create collection failed: {_parse_error(resp)}"
+        )
+    for docid, text, meta in SAMPLE_DOCS:
+        data = {"docid": docid, "metadata": json.dumps(meta)}
         resp = await _post_with_retries(
             client,
             f"/collections/{tenant}/{collection}/documents",
             attempts=attempts,
-            files={"file": (f"{docid}.txt", text.encode(), "text/plain")},
-            data={"docid": docid},
+            files={
+                "file": (
+                    f"{docid}.txt",
+                    text.encode(),
+                    "text/plain",
+                )
+            },
+            data=data,
         )
         if resp.status_code >= 400:
-            raise RuntimeError(f"seed ingest failed: {_parse_error(resp)}")
+            raise RuntimeError(
+                f"seed ingest failed: {_parse_error(resp)}"
+            )
 
 
 def _parse_error(resp: httpx.Response) -> str:
@@ -127,7 +218,10 @@ def _parse_error(resp: httpx.Response) -> str:
         code = payload.get("code")
         error = payload.get("error")
         if code or error:
-            return f"{code or 'error'}: {error or 'request failed'}"
+            return (
+                f"{code or 'error'}: "
+                f"{error or 'request failed'}"
+            )
     return f"http_{resp.status_code}"
 
 
@@ -136,16 +230,20 @@ async def search(
     tenant: str,
     collection: str,
     query: str,
+    filters: dict | None = None,
 ) -> tuple[float, bool | None, str, list[dict]]:
-    """Perform a search and return latency, ok flag, detail, and hits.
+    """Return (latency_ms, ok, detail, hits).
 
-    Returns ok=None for 429 rate-limited responses so callers can track them
-    separately from genuine errors.
+    ok=None for 429 (rate-limited).
     """
+    body: dict[str, object] = {"q": query, "k": 5}
+    if filters:
+        body["filters"] = filters
+
     start = time.perf_counter()
     r = await client.post(
         f"/collections/{tenant}/{collection}/search",
-        json={"q": query, "k": 5},
+        json=body,
     )
     latency_ms = (time.perf_counter() - start) * 1000
     if r.status_code == 429:
@@ -161,84 +259,143 @@ async def run_benchmark(
     concurrency: int,
     api_key: str | None = None,
     debug: bool = False,
-):
+    *,
+    filtering: str = "mixed",
+    summary_line: str | None = None,
+) -> list[float]:
     bench_start = time.perf_counter()
     tenant = "bench"
     collection = f"lat_{int(time.time())}"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    headers = (
+        {"Authorization": f"Bearer {api_key}"}
+        if api_key else {}
+    )
+    filters_pool = _FILTERS_FOR[filtering]
+    label = (
+        "search" if filtering == "none"
+        else f"search_{filtering}"
+    )
 
     async with httpx.AsyncClient(
         base_url=base_url, timeout=30.0, headers=headers
     ) as client:
-        await print_run_header(client, base_url, "search_latency")
-        print(f"Setting up collection {tenant}/{collection}...")
+        await print_run_header(
+            client, base_url, "search_latency"
+        )
+        print(
+            f"Setting up collection {tenant}/{collection}..."
+        )
         try:
-            await setup_collection(client, tenant, collection)
+            await setup_collection(
+                client, tenant, collection
+            )
         except RuntimeError as exc:
             print(f"Setup failed: {exc}")
             if debug:
                 print(traceback.format_exc())
             return []
         print(f"Indexed {len(SAMPLE_DOCS)} documents.")
+        print(
+            f"Running {num_queries} queries "
+            f"with concurrency={concurrency}..."
+        )
 
-        print(f"Running {num_queries} queries with concurrency={concurrency}...")
-        latencies: list[float] = []
-        errors: list[str] = []
-        rate_limited: int = 0
-        samples: dict[str, list[dict]] = {}  # query → hits, up to 3 unique
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def bounded_search(query: str) -> tuple[float, bool | None, str, list[dict]]:
+        async def bounded_search(
+            query: str, filt: dict | None,
+        ) -> tuple[float, bool | None, str, list[dict]]:
             async with semaphore:
-                return await search(client, tenant, collection, query)
+                return await search(
+                    client, tenant, collection,
+                    query, filters=filt,
+                )
 
-        query_list = [QUERIES[i % len(QUERIES)] for i in range(num_queries)]
-        tasks = [bounded_search(q) for q in query_list]
+        query_list = [
+            QUERIES[i % len(QUERIES)]
+            for i in range(num_queries)
+        ]
+        if filters_pool:
+            filter_list: list[dict | None] = [
+                filters_pool[i % len(filters_pool)]
+                for i in range(num_queries)
+            ]
+        else:
+            filter_list = [None] * num_queries
 
+        tasks = [
+            bounded_search(q, f)
+            for q, f in zip(query_list, filter_list)
+        ]
         results = await asyncio.gather(*tasks)
-        for (latency_ms, ok, detail, hits), query in zip(results, query_list):
+
+        latencies: list[float] = []
+        errors: list[str] = []
+        rate_limited = 0
+        total_hits = 0
+        samples: dict[str, list[dict]] = {}
+
+        for (lat, ok, detail, hits), query in zip(
+            results, query_list
+        ):
             if ok is True:
-                latencies.append(latency_ms)
-                if len(samples) < 3 and query not in samples and hits:
+                latencies.append(lat)
+                total_hits += len(hits)
+                if (len(samples) < 3
+                        and query not in samples and hits):
                     samples[query] = hits
             elif ok is None:
                 rate_limited += 1
             else:
                 errors.append(detail)
 
-        # Report results
+        # Report
         elapsed = time.perf_counter() - bench_start
         total = len(results)
-        ok_count = len(latencies)
         err_count = len(errors)
+        err_pct = 100 * err_count / max(total, 1)
 
         print()
         print("=" * 94)
-        print(f"  SEARCH LATENCY RESULTS  ({elapsed:.1f}s elapsed)")
+        print(
+            f"  SEARCH LATENCY RESULTS  "
+            f"({elapsed:.1f}s elapsed)"
+        )
         print("=" * 94)
         print(f"  Total queries  : {total}")
-        print(f"  Throughput     : {total / elapsed:.1f} ops/s")
+        print(f"  Total hits     : {total_hits}")
+        thrpt = total / elapsed if elapsed > 0 else 0
+        print(f"  Throughput     : {thrpt:.1f} ops/s")
         print(f"  Concurrency    : {concurrency}")
         if rate_limited:
+            rl_pct = 100 * rate_limited / max(total, 1)
             print(
-                f"  Rate limited   : {rate_limited} "
-                f"({100 * rate_limited / max(total, 1):.1f}%) "
-                f"— raise tenants.default_max_concurrent or use auth.mode=none"
+                f"  Rate limited   : {rate_limited}"
+                f" ({rl_pct:.1f}%)"
+                " - raise tenants.default_max_concurrent"
+                " or use auth.mode=none"
             )
-        print(f"  Errors         : {err_count} ({100 * err_count / max(total, 1):.1f}%)")
+        print(
+            f"  Errors         : {err_count}"
+            f" ({err_pct:.1f}%)"
+        )
         print()
 
         header = (
-            f"{'Operation':<22} {'Count':>6} {'OK':>6} {'Err (%)':>11} "
-            f"{'Min':>9} {'p50':>9} {'p95':>9} {'p99':>9} {'Max':>9}"
+            f"{'Operation':<22} {'Count':>6} {'OK':>6} "
+            f"{'Hits':>8} {'Err (%)':>11} "
+            f"{'Min':>9} {'p50':>9} {'p95':>9} "
+            f"{'p99':>9} {'Max':>9}"
         )
         print(header)
         print("-" * len(header))
         if latencies:
-            row_count = ok_count + err_count
-            err_str = f"{err_count} ({100 * err_count / max(row_count, 1):.1f}%)"
+            ok_count = len(latencies)
+            e_str = f"{err_count} ({err_pct:.1f}%)"
             print(
-                f"{'search':<22} {row_count:>6} {ok_count:>6} {err_str:>11} "
+                f"{label:<22} {total:>6} "
+                f"{ok_count:>6} {total_hits:>8} "
+                f"{e_str:>11} "
                 f"{min(latencies):>8.1f}ms "
                 f"{percentile(latencies, 50):>8.1f}ms "
                 f"{percentile(latencies, 95):>8.1f}ms "
@@ -246,18 +403,26 @@ async def run_benchmark(
                 f"{max(latencies):>8.1f}ms"
             )
         else:
-            print("  No successful queries to report latencies.")
+            print("  No successful queries to report.")
         print("-" * len(header))
         print()
 
         if samples:
             print("Sample results:")
             for query, hits in samples.items():
-                print(f"  q: \"{query}\"")
+                print(f'  q: "{query}"')
                 for hit in hits[:2]:
                     text = hit.get("text") or ""
-                    excerpt = text[:90] + "…" if len(text) > 90 else text
-                    print(f"     [{hit.get('id','?')}  {hit.get('score', 0):.3f}]  {excerpt}")
+                    excerpt = (
+                        text[:90] + "..."
+                        if len(text) > 90 else text
+                    )
+                    rid = hit.get("id", "?")
+                    score = hit.get("score", 0)
+                    print(
+                        f"     [{rid}  {score:.3f}]"
+                        f"  {excerpt}"
+                    )
             print()
 
         if errors:
@@ -267,8 +432,38 @@ async def run_benchmark(
             print()
 
         # Cleanup
-        await client.delete(f"/collections/{tenant}/{collection}")
-        print(f"\nCleaned up collection {tenant}/{collection}")
+        await client.delete(
+            f"/collections/{tenant}/{collection}"
+        )
+        print(
+            f"\nCleaned up collection"
+            f" {tenant}/{collection}"
+        )
+
+        if summary_line:
+            with open(summary_line, "a") as sl:
+                if latencies:
+                    sl.write(
+                        f"{label}|{total}"
+                        f"|{len(latencies)}"
+                        f"|{total_hits}"
+                        f"|{err_count}"
+                        f"|{err_pct:.1f}"
+                        f"|{min(latencies):.1f}"
+                        f"|{percentile(latencies, 50):.1f}"
+                        f"|{percentile(latencies, 95):.1f}"
+                        f"|{percentile(latencies, 99):.1f}"
+                        f"|{max(latencies):.1f}"
+                        f"|{thrpt:.1f}\n"
+                    )
+                else:
+                    sl.write(
+                        f"{label}|{total}|0"
+                        f"|{total_hits}"
+                        f"|{err_count}"
+                        f"|{err_pct:.1f}"
+                        f"|0|0|0|0|0|0\n"
+                    )
 
         return latencies
 
@@ -286,13 +481,24 @@ def main():
         "--queries",
         type=int,
         default=100,
-        help="Number of queries to run",
+        help="Number of queries",
     )
     parser.add_argument(
         "--concurrency",
         type=int,
         default=10,
         help="Concurrent requests",
+    )
+    parser.add_argument(
+        "--filtering",
+        choices=["none", "exact", "wildcard", "mixed"],
+        default="mixed",
+        help="Filter mode (default: mixed)",
+    )
+    parser.add_argument(
+        "--summary-line",
+        default=None,
+        help="Append pipe-delimited summary to file",
     )
     parser.add_argument(
         "--api-key",
@@ -315,6 +521,8 @@ def main():
         args.concurrency,
         api_key=args.api_key,
         debug=args.debug,
+        filtering=args.filtering,
+        summary_line=args.summary_line,
     ))
 
 

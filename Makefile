@@ -104,8 +104,8 @@ help:
 	echo ""; \
 	echo "Benchmarks:"; \
 	echo "  $${B}benchmark$${R}       Run latency + stress (reuse :8086, else fresh ephemeral per bench; flags: BENCH_FORCE_EPHEMERAL=1, BENCH_SERVER_URL=URL)"; \
-	echo "  bench-latency    Search latency benchmark"; \
-	echo "  bench-stress     Concurrent stress test"; \
+	echo "  bench-latency    Search latency (LAT_LENGTH=queries/variant, LAT_CONCUR, LAT_FILTERS=x,y)"; \
+	echo "  bench-stress     Stress test (STR_LENGTH=seconds, STR_CONCUR)"; \
 	echo "    BENCH_SAVE=1 to save outputs in benchmarks/results/"; \
 	echo "    BENCH_TAG=<tag> adds suffix to saved filenames"; \
 	echo ""; \
@@ -645,36 +645,37 @@ check: install
 	@$(MAKE) -o install _check-with-server
 
 # -------- benchmarks --------
-BENCH_DEFAULT_HOST ?= 127.0.0.1
-BENCH_DEFAULT_PORT ?= 8086
-BENCH_DEFAULT_URL  ?= http://$(BENCH_DEFAULT_HOST):$(BENCH_DEFAULT_PORT)
-BENCH_EPHEMERAL_HOST ?= 127.0.0.1
-BENCH_EPHEMERAL_PORT ?= 18086
-BENCH_EPHEMERAL_URL  ?= http://$(BENCH_EPHEMERAL_HOST):$(BENCH_EPHEMERAL_PORT)
-BENCH_URL         ?= $(BENCH_DEFAULT_URL)
+_default_host ?= 127.0.0.1
+_default_port ?= 8086
+_default_url  ?= http://$(_default_host):$(_default_port)
+_ephemeral_host ?= 127.0.0.1
+_ephemeral_port ?= 18086
+_ephemeral_url  ?= http://$(_ephemeral_host):$(_ephemeral_port)
+_url         ?= $(_default_url)
 BENCH_FORCE_EPHEMERAL ?= 0
 BENCH_SERVER_URL  ?=
 BENCH_API_KEY     ?=
-BENCH_QUERIES     ?= 1200
-BENCH_CONCUR      ?= 42
-STRESS_DURATION   ?= 90
-STRESS_CONCUR     ?= 8
+LAT_LENGTH        ?= 1200
+LAT_CONCUR        ?= 42
+LAT_FILTERS       ?= none,exact,wildcard,mixed
+STR_LENGTH        ?= 90
+STR_CONCUR        ?= 8
 BENCH_TAG         ?=
-BENCH_TS          ?= $(shell date -u +%Y-%m-%d_%H%M%S)
-BENCH_RESULTS_DIR ?= benchmarks/results
+_ts          ?= $(shell date -u +%Y-%m-%d_%H%M%S)
+_results_dir ?= benchmarks/results
 BENCH_SAVE        ?= 0
-BENCH_STARTUP_TIMEOUT_S ?= 30
-BENCH_SERVER_LOG_LEVEL ?= warning
+_startup_timeout_s ?= 30
+_server_log_level ?= warning
 
 .PHONY: _bench-with-server
 _bench-with-server:
-	@if [ -z "$(BENCH_RUN_TARGET)" ]; then echo "ERROR: BENCH_RUN_TARGET is not set."; exit 1; fi
+	@if [ -z "$(_run_target)" ]; then echo "ERROR: _run_target is not set."; exit 1; fi
 	@set -e; \
 	if [ -n "$(BENCH_SERVER_URL)" ] && [ "$(BENCH_FORCE_EPHEMERAL)" = "1" ]; then \
 	  echo "ERROR: BENCH_SERVER_URL and BENCH_FORCE_EPHEMERAL=1 are mutually exclusive."; \
 	  exit 1; \
 	fi; \
-	bench_url="$(BENCH_DEFAULT_URL)"; \
+	bench_url="$(_default_url)"; \
 	managed=0; \
 	data_dir=""; \
 	log_file=""; \
@@ -688,7 +689,7 @@ _bench-with-server:
 	  echo "==> Using configured benchmark server on $$bench_url"; \
 	elif [ "$(BENCH_FORCE_EPHEMERAL)" = "1" ]; then \
 	  managed=1; \
-	  bench_url="$(BENCH_EPHEMERAL_URL)"; \
+	  bench_url="$(_ephemeral_url)"; \
 	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-bench.XXXXXX")"; \
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> BENCH_FORCE_EPHEMERAL=1; starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
@@ -696,26 +697,26 @@ _bench-with-server:
 	  PATCHVEC_DEV=1 \
 	  PATCHVEC_DATA_DIR="$$data_dir" \
 	  PATCHVEC_AUTH__MODE=none \
-	  PATCHVEC_LOG__LEVEL=$(BENCH_SERVER_LOG_LEVEL) \
-	  PATCHVEC_SERVER__HOST=$(BENCH_EPHEMERAL_HOST) \
-	  PATCHVEC_SERVER__PORT=$(BENCH_EPHEMERAL_PORT) \
+	  PATCHVEC_LOG__LEVEL=$(_server_log_level) \
+	  PATCHVEC_SERVER__HOST=$(_ephemeral_host) \
+	  PATCHVEC_SERVER__PORT=$(_ephemeral_port) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
 	  srv_pid=$$!; \
 	elif curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
 	  echo "==> Using active server on $$bench_url"; \
 	else \
 	  managed=1; \
-	  bench_url="$(BENCH_EPHEMERAL_URL)"; \
+	  bench_url="$(_ephemeral_url)"; \
 	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-bench.XXXXXX")"; \
 	  log_file="$$data_dir/server.log"; \
-	  echo "==> No active server on $(BENCH_DEFAULT_URL); starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
+	  echo "==> No active server on $(_default_url); starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
 	  PATCHVEC_DEV=1 \
 	  PATCHVEC_DATA_DIR="$$data_dir" \
 	  PATCHVEC_AUTH__MODE=none \
-	  PATCHVEC_LOG__LEVEL=$(BENCH_SERVER_LOG_LEVEL) \
-	  PATCHVEC_SERVER__HOST=$(BENCH_EPHEMERAL_HOST) \
-	  PATCHVEC_SERVER__PORT=$(BENCH_EPHEMERAL_PORT) \
+	  PATCHVEC_LOG__LEVEL=$(_server_log_level) \
+	  PATCHVEC_SERVER__HOST=$(_ephemeral_host) \
+	  PATCHVEC_SERVER__PORT=$(_ephemeral_port) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
 	  srv_pid=$$!; \
 	fi; \
@@ -728,7 +729,7 @@ _bench-with-server:
 	}; \
 	trap cleanup EXIT INT TERM; \
 	if [ "$$managed" = "1" ]; then \
-	  for i in $$(seq 1 $(BENCH_STARTUP_TIMEOUT_S)); do \
+	  for i in $$(seq 1 $(_startup_timeout_s)); do \
 	    if curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
 	      ready=1; \
 	      break; \
@@ -736,22 +737,50 @@ _bench-with-server:
 	    sleep 1; \
 	  done; \
 	  if [ "$${ready:-0}" != "1" ]; then \
-	    echo "ERROR: benchmark server did not become ready in $(BENCH_STARTUP_TIMEOUT_S)s."; \
+	    echo "ERROR: benchmark server did not become ready in $(_startup_timeout_s)s."; \
 	    tail -n 80 "$$log_file" || true; \
 	    exit 1; \
 	  fi; \
 	fi; \
-	$(MAKE) -o install-dev BENCH_URL="$$bench_url" BENCH_TS="$(BENCH_TS)" $(BENCH_RUN_TARGET)
+	$(MAKE) -o install-dev _url="$$bench_url" _ts="$(_ts)" $(_run_target)
 
 .PHONY: bench-latency bench-latency-run
 bench-latency: install-dev
-	@$(MAKE) -o install-dev BENCH_RUN_TARGET=bench-latency-run BENCH_TS="$(BENCH_TS)" _bench-with-server
+	@summary=$$(mktemp /tmp/patchvec-bench-summary.XXXXXX); \
+	for filt in $$(echo "$(LAT_FILTERS)" | tr ',' ' '); do \
+	  echo ""; \
+	  echo "==> Latency: filtering=$$filt"; \
+	  $(MAKE) -o install-dev \
+	    _run_target=bench-latency-run \
+	    _filt=$$filt \
+	    _summary_file=$$summary \
+	    _ts="$(_ts)" \
+	    _bench-with-server; \
+	done; \
+	awk -F'|' ' \
+	  BEGIN { \
+	    s=""; for(i=1;i<=108;i++) s=s"="; print "\n" s; \
+	    print "  SEARCH LATENCY — consolidated"; print s; \
+	    h="%-18s %6s %6s %8s %11s %9s %9s %9s %9s %9s %9s\n"; \
+	    printf h,"Variant","Count","OK","Hits","Err (%)","Min","p50","p95","p99","Max","Ops/s"; \
+	    gsub(/=/,"-",s); print s \
+	  } \
+	  { e=sprintf("%d (%.1f%%)",$$5,$$6); \
+	    printf "%-18s %6d %6d %8d %11s %8.1fms %8.1fms %8.1fms %8.1fms %8.1fms %8.1f\n", \
+	      $$1,$$2,$$3,$$4,e,$$7,$$8,$$9,$$10,$$11,$$12 } \
+	  END { s=""; for(i=1;i<=108;i++) s=s"-"; print s }' \
+	  $$summary; \
+	rm -f $$summary
 
 bench-latency-run:
 	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
 	tag="$(BENCH_TAG)"; \
 	api_arg=""; \
+	summary_arg=""; \
 	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
+	if [ -n "$(_summary_file)" ]; then \
+	  summary_arg="--summary-line $(_summary_file)"; \
+	fi; \
 	if [ -z "$$tag" ]; then \
 	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
 	  tag="$$branch-$$sha"; \
@@ -759,24 +788,26 @@ bench-latency-run:
 	  tag="$$tag-$$sha"; \
 	fi; \
 	if [ "$(BENCH_SAVE)" = "1" ]; then \
-	  echo "==> Saving: yes (ts=$(BENCH_TS), tag=$$tag)"; \
-	  mkdir -p $(BENCH_RESULTS_DIR); \
+	  echo "==> Saving: yes (ts=$(_ts), tag=$$tag)"; \
+	  mkdir -p $(_results_dir); \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/search_latency.py \
-	    --url $(BENCH_URL) --queries $(BENCH_QUERIES) \
-	    --concurrency $(BENCH_CONCUR) \
-	    $$api_arg \
-	    | tee $(BENCH_RESULTS_DIR)/latency-$(BENCH_TS)_$$tag.txt; \
+	    --url $(_url) --queries $(LAT_LENGTH) \
+	    --concurrency $(LAT_CONCUR) \
+	    --filtering $(_filt) \
+	    $$api_arg $$summary_arg \
+	    | tee $(_results_dir)/latency-$(_ts)_$$tag-$(_filt).txt; \
 	else \
-	  echo "==> Saving: no (ts=$(BENCH_TS), tag=$$tag)"; \
+	  echo "==> Saving: no (ts=$(_ts), tag=$$tag)"; \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/search_latency.py \
-	    --url $(BENCH_URL) --queries $(BENCH_QUERIES) \
-	    --concurrency $(BENCH_CONCUR) \
-	    $$api_arg; \
+	    --url $(_url) --queries $(LAT_LENGTH) \
+	    --concurrency $(LAT_CONCUR) \
+	    --filtering $(_filt) \
+	    $$api_arg $$summary_arg; \
 	fi
 
 .PHONY: bench-stress bench-stress-run
 bench-stress: install-dev
-	@$(MAKE) -o install-dev BENCH_RUN_TARGET=bench-stress-run BENCH_TS="$(BENCH_TS)" _bench-with-server
+	@$(MAKE) -o install-dev _run_target=bench-stress-run _ts="$(_ts)" _bench-with-server
 
 bench-stress-run:
 	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
@@ -790,25 +821,25 @@ bench-stress-run:
 	  tag="$$tag-$$sha"; \
 	fi; \
 	if [ "$(BENCH_SAVE)" = "1" ]; then \
-	  echo "==> Saving: yes (ts=$(BENCH_TS), tag=$$tag)"; \
-	  mkdir -p $(BENCH_RESULTS_DIR); \
+	  echo "==> Saving: yes (ts=$(_ts), tag=$$tag)"; \
+	  mkdir -p $(_results_dir); \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
-	    --url $(BENCH_URL) --duration $(STRESS_DURATION) \
-	    --concurrency $(STRESS_CONCUR) \
+	    --url $(_url) --duration $(STR_LENGTH) \
+	    --concurrency $(STR_CONCUR) \
 	    $$api_arg \
-	    | tee $(BENCH_RESULTS_DIR)/stress-$(BENCH_TS)_$$tag.txt; \
+	    | tee $(_results_dir)/stress-$(_ts)_$$tag.txt; \
 	else \
-	  echo "==> Saving: no (ts=$(BENCH_TS), tag=$$tag)"; \
+	  echo "==> Saving: no (ts=$(_ts), tag=$$tag)"; \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
-	    --url $(BENCH_URL) --duration $(STRESS_DURATION) \
-	    --concurrency $(STRESS_CONCUR) \
+	    --url $(_url) --duration $(STR_LENGTH) \
+	    --concurrency $(STR_CONCUR) \
 	    $$api_arg; \
 	fi
 
 .PHONY: benchmark
 benchmark: install-dev
-	@ts="$(BENCH_TS)"; \
-	$(MAKE) -o install-dev BENCH_TS="$$ts" bench-latency bench-stress
+	@ts="$(_ts)"; \
+	$(MAKE) -o install-dev _ts="$$ts" bench-latency bench-stress
 
 .PHONY: pypi-push pypitest-push
 
