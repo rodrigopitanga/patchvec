@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from pave.backends.faiss import FaissBackend
 
@@ -72,3 +73,14 @@ def test_flush_and_initialize_restore_index_state(tmp_path: Path) -> None:
     b2.add(["r3"], _v([0, 0, 1, 0]))
     hits2 = b2.search(_v([0, 0, 1, 0])[0], 10)
     assert hits2[0][0] == "r3"
+
+
+def test_initialize_raises_on_dimension_mismatch(tmp_path: Path) -> None:
+    storage = tmp_path / "idx"
+    b1 = FaissBackend(4, storage_dir=storage)
+    b1.add(["r1"], _v([1, 0, 0, 0]))
+    b1.flush()
+
+    b2 = FaissBackend(8, storage_dir=storage)
+    with pytest.raises(ValueError, match="dimension mismatch"):
+        b2.initialize()

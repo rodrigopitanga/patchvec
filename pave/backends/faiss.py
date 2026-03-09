@@ -39,7 +39,14 @@ class FaissBackend:
         if not self._index_file.is_file() or not self._map_file.is_file():
             return
 
-        self._index = faiss.read_index(str(self._index_file))
+        loaded = faiss.read_index(str(self._index_file))
+        loaded_dim = int(getattr(loaded, "d", -1))
+        if loaded_dim != self._dimension:
+            raise ValueError(
+                "FAISS index dimension mismatch: "
+                f"expected {self._dimension}, found {loaded_dim}"
+            )
+        self._index = loaded
         data = json.loads(self._map_file.read_text(encoding="utf-8"))
         rid_to_id_raw = data.get("rid_to_id", {})
         id_to_rid_raw = data.get("id_to_rid", {})
