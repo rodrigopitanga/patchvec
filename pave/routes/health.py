@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import nullcontext
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -38,7 +39,16 @@ def build_health_router(cfg, version: str) -> APIRouter:
             set_error(f"fs: {e}")
         try:
             request_store = request.app.state.store
-            request_store.load_or_init("_system", "health")
+            lock_cm = nullcontext()
+            # TODO(P1-31): collection_lock moves to Store orchestrator;
+            # remove direct txtai_store import.
+            try:
+                from pave.stores.txtai_store import collection_lock
+                lock_cm = collection_lock("_system", "health")
+            except Exception:
+                pass
+            with lock_cm:
+                request_store.load_or_init("_system", "health")
             details["vector_backend_init"] = True
         except Exception as e:
             details["vector_backend_init"] = False

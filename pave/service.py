@@ -11,7 +11,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone as tz
 from pathlib import Path
 from collections.abc import Iterable, Iterator
@@ -37,8 +37,19 @@ class ServiceError(RuntimeError):
 
 def create_collection(store, tenant: str, name: str) -> dict[str, Any]:
     try:
-        store.load_or_init(tenant, name)
-        store.save(tenant, name)
+        lock_cm = nullcontext()
+        base_store = _unwrap_store(store)
+        # TODO(P1-31): collection_lock moves to Store orchestrator;
+        # remove isinstance guard and direct txtai_store import.
+        try:
+            from pave.stores.txtai_store import TxtaiStore, collection_lock
+        except Exception:
+            TxtaiStore = None  # type: ignore[assignment]
+        if TxtaiStore is not None and isinstance(base_store, TxtaiStore):
+            lock_cm = collection_lock(tenant, name)
+        with lock_cm:
+            store.load_or_init(tenant, name)
+            store.save(tenant, name)
         m_inc("collections_created_total", 1.0)
         return {
             "ok": True,

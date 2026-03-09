@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 from pave.stores import txtai_store
-from pave.service import dump_archive, _flush_store_caches
+from pave.service import create_collection, dump_archive, _flush_store_caches
 
 
 def test_dump_endpoint_returns_zip(client, temp_data_dir):
@@ -93,6 +93,38 @@ def test_flush_store_caches_closes_old_dbs():
 
     assert col_db._rconn is None
     assert col_db._wconn is None
+
+
+def test_create_collection_uses_collection_lock(monkeypatch):
+    store = txtai_store.TxtaiStore()
+    events: list[tuple[str, str, str]] = []
+
+    class _SpyLock:
+        def __init__(self, tenant: str, collection: str) -> None:
+            self.tenant = tenant
+            self.collection = collection
+
+        def __enter__(self):
+            events.append(("enter", self.tenant, self.collection))
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            events.append(("exit", self.tenant, self.collection))
+            return False
+
+    def fake_collection_lock(tenant: str, collection: str):
+        return _SpyLock(tenant, collection)
+
+    monkeypatch.setattr(
+        txtai_store,
+        "collection_lock",
+        fake_collection_lock,
+    )
+
+    out = create_collection(store, "acme", "locked")
+    assert out["ok"] is True
+    assert ("enter", "acme", "locked") in events
+    assert ("exit", "acme", "locked") in events
 
 
 def test_restore_endpoint_replaces_data_dir(client, temp_data_dir):
