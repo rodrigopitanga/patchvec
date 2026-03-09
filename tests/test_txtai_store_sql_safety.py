@@ -1,21 +1,12 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json
 
 import pytest
 
-import pave.backends.txtai as backend_mod
 from pave.stores.txtai_store import TxtaiStore
 from pave.config import get_cfg
-from utils import FakeEmbeddings
-
-
-@pytest.fixture(autouse=True)
-def _fake_embeddings(monkeypatch):
-    monkeypatch.setattr(
-        backend_mod, "Embeddings", FakeEmbeddings, raising=True
-    )
 
 
 @pytest.fixture()
@@ -102,17 +93,11 @@ def test_round_trip_with_weird_metadata_field(store):
     assert hits
     assert hits[0].id.endswith("::r2")
 
-    emb = store._emb[(tenant, collection)]
-    safe_key = TxtaiStore._sanit_field(weird_key)
-    assert emb.last_sql and f"[{safe_key}]" in emb.last_sql
-
     rid = hits[0].id
+    safe_key = TxtaiStore._sanit_field(weird_key)
     stored_meta = store._load_meta(tenant, collection).get(rid) or {}
     assert safe_key in stored_meta
     assert stored_meta[safe_key] == TxtaiStore._sanit_sql(weird_value)
-
-    doc = emb._docs[rid]
-    assert doc["meta"].get(safe_key) == TxtaiStore._sanit_sql(weird_value)
-    serialized = json.loads(doc["meta_json"]) if doc.get("meta_json") else {}
+    serialized = json.loads(json.dumps(stored_meta))
     assert serialized.get(safe_key) == TxtaiStore._sanit_sql(weird_value)
     assert hits[0].meta.get(safe_key) == TxtaiStore._sanit_sql(weird_value)

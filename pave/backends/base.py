@@ -3,18 +3,27 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, Sequence
+import numpy as np
+from numpy.typing import NDArray
+from typing import Protocol
 
 
-IndexRecord = tuple[str, dict[str, Any], str]
 SearchHit = tuple[str, float]
 
 
 class VectorBackend(Protocol):
     def initialize(self) -> None: ...
-    def index(self, records: list[IndexRecord]) -> None: ...
-    def search(self, vector: Sequence[float], k: int) -> list[SearchHit]: ...
-    def delete(self, rids: list[str] | str) -> None: ...
-    def lookup(self, rids: list[str]) -> dict[str, Any]: ...
+
+    def add(self, rids: list[str], vectors: NDArray[np.float32]) -> None: ...
+
+    def search(
+        self,
+        vector: NDArray[np.float32],
+        k: int,
+    ) -> list[SearchHit]: ...
+
+    def delete(self, rids: list[str]) -> None: ...
+
     def flush(self) -> None: ...
+
     def close(self) -> None: ...

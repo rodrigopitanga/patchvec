@@ -1,18 +1,17 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import pytest
 from pave.service import ingest_document as svc_ingest, ServiceError
 from pave.stores.txtai_store import TxtaiStore
-import pave.backends.txtai as backend_mod
-from utils import FakeEmbeddings
 
 @pytest.fixture
 def store(monkeypatch, tmp_path):
-    # isolate data dir + swap Embeddings to a fake
+    # isolate data dir; embedder is monkeypatched in global conftest
     from pave import config as cfg_mod
     class DummyCFG:
         data_dir = str(tmp_path / "data")
+
         def get(self, key, default=None):
             if key.endswith("embed_model"):
                 return (
@@ -22,10 +21,8 @@ def store(monkeypatch, tmp_path):
             if key.endswith("vector_backend"):
                 return "faiss"
             return default
+
     monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
-    monkeypatch.setattr(
-        backend_mod, "Embeddings", FakeEmbeddings, raising=True
-    )
     return TxtaiStore()
 
 def _csv_bytes(s: str) -> bytes:

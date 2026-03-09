@@ -1,5 +1,6 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
+# TRANSITIONAL: wraps txtai.Embeddings (coupled encode+index).
 
 from __future__ import annotations
 
@@ -8,7 +9,8 @@ from typing import Any, Sequence
 
 from txtai.embeddings import Embeddings
 
-from .base import IndexRecord
+
+IndexRecord = tuple[str, dict[str, Any], str]
 
 
 class TxtaiVectorBackend:

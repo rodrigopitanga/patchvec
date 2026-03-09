@@ -1,9 +1,16 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import os, json, shutil
+import hashlib
+import json
+import os
+import re
+import shutil
 from collections.abc import Iterable
 from typing import Any
+
+import numpy as np
+
 from pave.stores.base import BaseStore, Record, SearchResult
 from pave.config import get_cfg
 
@@ -105,6 +112,40 @@ class FakeEmbeddings:
         if os.path.isfile(p):
             with open(p, "r", encoding="utf-8") as f:
                 self._docs = json.load(f)
+
+
+class FakeEmbedder:
+    def __init__(self, dim: int = 64):
+        self._dim = int(dim)
+
+    @property
+    def dimension(self) -> int:
+        return self._dim
+
+    def _encode_one(self, text: str) -> np.ndarray:
+        vec = np.zeros(self._dim, dtype=np.float32)
+        tokens = re.findall(r"\w+", (text or "").lower())
+        if not tokens:
+            vec[0] = 1.0
+            return vec
+        for tok in tokens:
+            digest = hashlib.blake2b(
+                tok.encode("utf-8"),
+                digest_size=8,
+            ).digest()
+            idx = int.from_bytes(digest[:4], "little") % self._dim
+            sign = 1.0 if (digest[4] & 1) == 0 else -1.0
+            vec[idx] += sign
+        norm = float(np.linalg.norm(vec))
+        if norm > 0.0:
+            vec /= norm
+        return vec
+
+    def encode(self, texts: list[str]) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, self._dim), dtype=np.float32)
+        rows = [self._encode_one(text) for text in texts]
+        return np.stack(rows).astype(np.float32, copy=False)
 
 
 class DummyStore(BaseStore):

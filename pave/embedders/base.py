@@ -1,12 +1,21 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
-from __future__ import annotations
-from abc import ABC, abstractmethod
 
-class BaseEmbedder(ABC):
-    @abstractmethod
-    def encode(self, texts: list[str]) -> list[list[float]]: ...
+from __future__ import annotations
+
+from typing import Protocol
+
+import numpy as np
+from numpy.typing import NDArray
+
+
+class Embedder(Protocol):
+    def encode(self, texts: list[str]) -> NDArray[np.float32]:
+        """(N, dim) matrix of embedding vectors."""
 
     @property
-    @abstractmethod
-    def dim(self) -> int | None: ...
+    def dimension(self) -> int:
+        """Embedding dimensionality (e.g. 384)."""
+
+
+BaseEmbedder = Embedder  # deprecated alias

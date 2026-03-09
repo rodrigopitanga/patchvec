@@ -1,10 +1,16 @@
-# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
+
 from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
 from txtai.embeddings import Embeddings
+
 from ..config import CFG
+
 
 class TxtaiEmbedder:
     """
@@ -25,34 +31,38 @@ class TxtaiEmbedder:
 
           # any other txtai Embeddings config fields can be passed through here.
     """
-    def __init__(self):
-        # Back-compat: fall back to top-level embed_model if txtai section missing
-        section = CFG.get("embedder.txtai", {}) or {}
-        path = section.get("path") or CFG.get("embedder.model") or CFG.get("embed_model")
 
-        # Build the embeddings config for txtai
+    def __init__(self) -> None:
+        section = CFG.get("embedder.txtai", {}) or {}
+        path = (
+            section.get("path")
+            or CFG.get("embedder.model")
+            or CFG.get("embed_model")
+        )
+
         cfg: dict[str, Any] = dict(section)
         if "path" not in cfg and path:
             cfg["path"] = path
-        # If method omitted, txtai will infer based on path; that’s fine.
 
-        # Ensure we’re only using txtai to embed (no index path persistence here)
-        # txtai will lazy-load the model as needed.
         self._emb = Embeddings(cfg)
 
-        # Try to capture dim if available (not guaranteed)
         try:
-            # Some txtai models expose : self._emb.model.get_sentence_embedding_dimension()
-            # We don’t rely on it; just best-effort.
-            dim = getattr(getattr(self._emb, "model", None), "get_sentence_embedding_dimension", None)
-            self._dim = int(dim()) if callable(dim) else None
+            dim_fn = getattr(
+                getattr(self._emb, "model", None),
+                "get_sentence_embedding_dimension",
+                None,
+            )
+            self._dim = int(dim_fn()) if callable(dim_fn) else None
         except Exception:
             self._dim = None
 
     @property
-    def dim(self) -> int | None:
-        return self._dim
+    def dimension(self) -> int:
+        if self._dim is None:
+            probe = self.encode(["_"])
+            self._dim = int(probe.shape[1])
+        return int(self._dim)
 
-    def encode(self, texts: list[str]) -> list[list[float]]:
-        # txtai expects list[str], returns list[list[float]]
-        return self._emb.embed(texts)
+    def encode(self, texts: list[str]) -> NDArray[np.float32]:
+        raw = self._emb.batchtransform(texts)
+        return np.array(raw, dtype=np.float32)

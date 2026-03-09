@@ -11,7 +11,7 @@ def _seed_records(count: int) -> list[tuple[str, str, dict]]:
     ]
 
 
-def test_search_fetches_meta_only_for_top_k_without_post_filters():
+def test_search_fetches_meta_for_all_candidates_without_post_filters():
     store = TxtaiStore()
     tenant, collection = "tenant", "meta_scope_plain"
     store.index_records(tenant, collection, "doc", _seed_records(12))
@@ -29,7 +29,7 @@ def test_search_fetches_meta_only_for_top_k_without_post_filters():
     hits = store.search(tenant, collection, "shared", k=5)
     assert len(hits) == 5
     assert seen_batches
-    assert len(seen_batches[0]) == 5
+    assert len(seen_batches[0]) > 5
 
 
 def test_search_fetches_extended_meta_batch_with_post_filters():

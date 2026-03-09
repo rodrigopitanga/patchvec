@@ -1,4 +1,4 @@
-# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import sys
@@ -15,7 +15,8 @@ except ModuleNotFoundError:
     class _MissingEmbeddings:  # pragma: no cover - test fallback
         def __init__(self, *args, **kwargs):
             raise RuntimeError(
-                "txtai is required for TxtaiStore. Install txtai or monkeypatch Embeddings for tests."
+                "txtai is required for TxtaiStore. "
+                "Install txtai or monkeypatch Embeddings for tests."
             )
 
     embeddings_mod.Embeddings = _MissingEmbeddings  # type: ignore[attr-defined]
@@ -24,7 +25,7 @@ except ModuleNotFoundError:
     sys.modules.setdefault("txtai", txtai_mod)
     sys.modules.setdefault("txtai.embeddings", embeddings_mod)
 
-from utils import DummyStore, SpyStore, FakeEmbeddings
+from utils import DummyStore, SpyStore, FakeEmbeddings, FakeEmbedder
 
 if not _txtai_available:
     emb_mod = sys.modules.get("txtai.embeddings")
@@ -58,16 +59,24 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
         # Real embeddings for end-to-end pipeline tests; small fast model.
         cfg.set("vector_store.txtai.embed_model", _FAST_MODEL)
         if not _txtai_available:
-            import pave.backends.txtai as backend_mod
+            import pave.stores.txtai_store as store_mod
+
             monkeypatch.setattr(
-                backend_mod, "Embeddings", FakeEmbeddings, raising=True
+                store_mod,
+                "get_embedder",
+                lambda: FakeEmbedder(),
+                raising=True,
             )
     else:
-        # Fast path: always use FakeEmbeddings; no model loaded.
+        # Fast path: deterministic fake embedder, no model load.
         cfg.set("vector_store.txtai.embed_model", "fake")
-        import pave.backends.txtai as backend_mod
+        import pave.stores.txtai_store as store_mod
+
         monkeypatch.setattr(
-            backend_mod, "Embeddings", FakeEmbeddings, raising=True
+            store_mod,
+            "get_embedder",
+            lambda: FakeEmbedder(),
+            raising=True,
         )
     yield
 

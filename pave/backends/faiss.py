@@ -1,0 +1,146 @@
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import faiss
+import numpy as np
+from numpy.typing import NDArray
+
+from .base import SearchHit
+
+
+class FaissBackend:
+    def __init__(
+        self,
+        dimension: int,
+        *,
+        storage_dir: Path,
+    ) -> None:
+        self._dimension = int(dimension)
+        self._storage_dir = storage_dir
+        self._index = faiss.IndexIDMap2(faiss.IndexFlatIP(self._dimension))
+        self._rid_to_id: dict[str, int] = {}
+        self._id_to_rid: dict[int, str] = {}
+        self._next_id = 0
+
+    @property
+    def _index_file(self) -> Path:
+        return self._storage_dir / "faiss.index"
+
+    @property
+    def _map_file(self) -> Path:
+        return self._storage_dir / "id_map.json"
+
+    def initialize(self) -> None:
+        if not self._index_file.is_file() or not self._map_file.is_file():
+            return
+
+        self._index = faiss.read_index(str(self._index_file))
+        data = json.loads(self._map_file.read_text(encoding="utf-8"))
+        rid_to_id_raw = data.get("rid_to_id", {})
+        id_to_rid_raw = data.get("id_to_rid", {})
+        self._rid_to_id = {
+            str(rid): int(iid)
+            for rid, iid in rid_to_id_raw.items()
+        }
+        self._id_to_rid = {
+            int(iid): str(rid)
+            for iid, rid in id_to_rid_raw.items()
+        }
+        self._next_id = int(data.get("next_id", 0))
+
+    def add(self, rids: list[str], vectors: NDArray[np.float32]) -> None:
+        if not rids:
+            return
+        if len(rids) != int(vectors.shape[0]):
+            raise ValueError("rids and vectors length mismatch")
+
+        unique_rids: list[str] = []
+        rid_to_vector: dict[str, NDArray[np.float32]] = {}
+        for idx, rid in enumerate(rids):
+            srid = str(rid)
+            if srid not in rid_to_vector:
+                unique_rids.append(srid)
+            rid_to_vector[srid] = vectors[idx]
+
+        reindex_rids = [rid for rid in unique_rids if rid in self._rid_to_id]
+        if reindex_rids:
+            self.delete(reindex_rids)
+
+        matrix = np.vstack([rid_to_vector[rid] for rid in unique_rids]).astype(
+            np.float32,
+            copy=False,
+        )
+        normed = matrix.copy()
+        faiss.normalize_L2(normed)
+
+        int_ids: list[int] = []
+        for rid in unique_rids:
+            iid = self._next_id
+            self._next_id += 1
+            self._rid_to_id[rid] = iid
+            self._id_to_rid[iid] = rid
+            int_ids.append(iid)
+
+        ids = np.array(int_ids, dtype=np.int64)
+        self._index.add_with_ids(normed, ids)
+
+    def search(
+        self,
+        vector: NDArray[np.float32],
+        k: int,
+    ) -> list[SearchHit]:
+        if self._index.ntotal == 0:
+            return []
+
+        q = np.asarray(vector, dtype=np.float32).reshape(1, -1).copy()
+        faiss.normalize_L2(q)
+
+        limit = min(int(k), int(self._index.ntotal))
+        scores, ids = self._index.search(q, limit)
+
+        out: list[SearchHit] = []
+        for iid, score in zip(ids[0], scores[0], strict=False):
+            if int(iid) < 0:
+                continue
+            rid = self._id_to_rid.get(int(iid))
+            if rid is None:
+                continue
+            out.append((rid, float(score)))
+        return out
+
+    def delete(self, rids: list[str]) -> None:
+        if not rids:
+            return
+        int_ids: list[int] = []
+        for rid in rids:
+            srid = str(rid)
+            iid = self._rid_to_id.pop(srid, None)
+            if iid is None:
+                continue
+            self._id_to_rid.pop(iid, None)
+            int_ids.append(iid)
+
+        if int_ids:
+            self._index.remove_ids(np.array(int_ids, dtype=np.int64))
+
+    def flush(self) -> None:
+        self._storage_dir.mkdir(parents=True, exist_ok=True)
+        faiss.write_index(self._index, str(self._index_file))
+
+        payload = {
+            "rid_to_id": self._rid_to_id,
+            "id_to_rid": {str(iid): rid for iid, rid in self._id_to_rid.items()},
+            "next_id": self._next_id,
+        }
+        self._map_file.write_text(
+            json.dumps(payload, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def close(self) -> None:
+        self.flush()

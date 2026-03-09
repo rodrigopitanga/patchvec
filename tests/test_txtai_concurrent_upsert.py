@@ -1,8 +1,9 @@
-# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import pytest
 import time
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pave.stores.txtai_store import TxtaiStore, Record, collection_lock
 from pave.config import get_cfg
@@ -10,7 +11,12 @@ from pave.config import get_cfg
 REC0 = ("doc::0", "texto A", "{}")
 REC1 = ("doc::1", "texto B", "{}")
 
-@pytest.mark.skip(reason="Intentional race condition can cause SQLite segfault on Python 3.14+")
+@pytest.mark.skip(
+    reason=(
+        "Intentional race condition can cause SQLite segfault on "
+        "Python 3.14+"
+    )
+)
 def test_concurrent_upsert_without_lock_eventually_fails(cfg):
     store = TxtaiStore()
     tenant, coll = "tenantX", "collRace"
@@ -39,13 +45,21 @@ def test_concurrent_upsert_with_manual_lock(cfg):
     store = TxtaiStore()
     tenant, coll = "tenantY", "collSafe"
     store.load_or_init(tenant, coll)
-    emb = store._emb[(tenant, coll)]
+    backend = store._emb[(tenant, coll)]
+    col_db = store._dbs[(tenant, coll)]
 
     def safe_upsert(data):
         with collection_lock(tenant, coll):
-            id, _, _ = data
-            emb.delete(id)
-            emb.upsert([data])
+            rid, text, meta = data
+            chunk_path = f"chunks/{store._urid_to_fname(rid)}"
+            parsed_meta = json.loads(meta) if isinstance(meta, str) else meta
+            parsed_meta = dict(parsed_meta or {})
+            parsed_meta["docid"] = "doc"
+            store._save_chunk_text(tenant, coll, rid, text)
+            col_db.upsert_chunks("doc", [(rid, chunk_path, parsed_meta)])
+            backend.delete([rid])
+            vectors = store._embedder.encode([text])
+            backend.add([rid], vectors)
             time.sleep(0.05)
             store.save(tenant, coll)
 

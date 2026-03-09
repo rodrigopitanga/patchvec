@@ -1,4 +1,4 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json
@@ -10,8 +10,6 @@ import pytest
 from pathlib import Path
 
 pytestmark = pytest.mark.slow
-from utils import FakeEmbeddings
-
 # --- Fixtures ----------------------------------------------------------------
 @pytest.fixture(autouse=True)
 def store(app):
@@ -21,8 +19,16 @@ def store(app):
 def test_index_and_search_pt_text(store):
     # Portuguese content; ensure non-null texts returned
     recs = [
-        {"id": "doc::0", "content": "Um avião sobrevoa o oceano.", "metadata": {"lang": "pt"}},
-        {"id": "doc::1", "content": "Mapas do fundo do mar são fascinantes.", "metadata": {"lang": "pt"}},
+        {
+            "id": "doc::0",
+            "content": "Um avião sobrevoa o oceano.",
+            "metadata": {"lang": "pt"},
+        },
+        {
+            "id": "doc::1",
+            "content": "Mapas do fundo do mar são fascinantes.",
+            "metadata": {"lang": "pt"},
+        },
     ]
     n = store.index_records("acme", "undersea", "d1", recs)
     assert n == 2
@@ -97,9 +103,6 @@ def test_meta_json_and_filters(store):
     print(f"debug:: HITS: {hits}")
     assert hits[0].meta["lang"] == "en"
 
-    # Ensure meta was JSON-encoded internally (FakeEmbeddings asserts this)
-
-
 def test_doc_level_meta_persists_in_documents_table(store):
     tenant, coll, docid = "acme", "docmeta", "DOCMETA"
     recs = [
@@ -147,8 +150,8 @@ def test_purge_doc_removes_ids(store):
 
 def test_load_or_init_handles_empty_index_dir(store, tmp_path):
     """
-    Repro of FAISS crash: empty ./data/T/C/index/ existed -> em.load() tried to read
-    non-existent embeddings. Expectation: store should initialize fresh instead of loading.
+    Repro of FAISS crash: empty ./data/T/C/index/ existed before backend load.
+    Expectation: store should initialize fresh instead of failing.
     """
     tenant, coll = "tnew", "cnew"
 
@@ -161,11 +164,13 @@ def test_load_or_init_handles_empty_index_dir(store, tmp_path):
     n = store.index_records(tenant, coll, "DOC", recs)
     assert n == 1
 
-    # force a save; the fake backend writes a sentinel file we can assert on
+    # force a save; backend writes persisted FAISS artifacts
     store.save(tenant, coll)
 
     # resolve base via the store (avoid tmp_path vs CFG.data_dir drift)
     # ok to use a protected helper in tests - remember we're using SpyStore
     base = store.impl._base_path(tenant, coll)
-    f_idx = os.path.join(base, "index", "embeddings")
-    assert os.path.isfile(f_idx), "index file must exist after save"
+    f_index = os.path.join(base, "index", "faiss.index")
+    f_map = os.path.join(base, "index", "id_map.json")
+    assert os.path.isfile(f_index), "FAISS index file must exist after save"
+    assert os.path.isfile(f_map), "ID map file must exist after save"

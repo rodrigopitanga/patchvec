@@ -1,4 +1,4 @@
-# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from threading import Lock
 from contextlib import contextmanager
 from pave.meta_store import CollectionDB
 from pave.stores.base import BaseStore, Record, SearchResult
-from pave.backends import TxtaiVectorBackend, VectorBackend
+from pave.backends import FaissBackend, VectorBackend
+from pave.embedders import get_embedder
 from pave.config import CFG as c, get_logger
 
 log = get_logger()
@@ -97,7 +98,7 @@ class TxtaiStore(BaseStore):
     def __init__(self):
         self._emb: dict[tuple[str, str], VectorBackend] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
-        self._models: dict = {}
+        self._embedder = get_embedder()
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(c.get("data_dir"), f"t_{tenant}", f"c_{collection}")
@@ -133,6 +134,7 @@ class TxtaiStore(BaseStore):
 
     @staticmethod
     def _config():
+        # Legacy: used by TxtaiVectorBackend path only.
         model = c.get(
             "vector_store.txtai.embed_model",
             "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -159,26 +161,24 @@ class TxtaiStore(BaseStore):
         base = self._base_path(tenant, collection)
         os.makedirs(base, exist_ok=True)
 
-        idxpath = os.path.join(base, "index")
-        backend = TxtaiVectorBackend(
-            self._config(),
-            index_path=idxpath,
-            models=self._models,
+        idx_dir = Path(os.path.join(base, "index"))
+        backend = FaissBackend(
+            self._embedder.dimension,
+            storage_dir=idx_dir,
         )
 
         try:
             backend.initialize()
-            if getattr(backend, "loaded_existing", False):
-                _migrate_schema(backend, tenant, collection)
         except Exception:
             log.warning(
-                f"Corrupt or unreadable index at {idxpath} "
-                f"for {tenant}/{collection}, starting fresh"
+                "Corrupt index at %s for %s/%s, starting fresh",
+                idx_dir,
+                tenant,
+                collection,
             )
-            backend = TxtaiVectorBackend(
-                self._config(),
-                index_path=idxpath,
-                models=self._models,
+            backend = FaissBackend(
+                self._embedder.dimension,
+                storage_dir=idx_dir,
             )
 
         self._emb[key] = backend
@@ -546,7 +546,8 @@ class TxtaiStore(BaseStore):
             key = (tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]
-            prepared: list[tuple[str, Any, str]] = []
+            rids_to_add: list[str] = []
+            texts_to_encode: list[str] = []
             chunk_rows: list[tuple[str, str | None, dict[str, Any]]] = []
 
             for r in records:
@@ -582,23 +583,20 @@ class TxtaiStore(BaseStore):
 
                 try:
                     safe_meta = self._sanit_meta_dict(md)
-                    meta_json = json.dumps(safe_meta, ensure_ascii=False)
                 except Exception:
                     safe_meta = {}
-                    meta_json = ""
 
                 rid = str(rid)
                 txt = str(txt)
                 if not rid.startswith(f"{docid}::"):
                     rid = f"{docid}::{rid}"
 
-                md_for_index = {k: v for k, v in safe_meta.items()
-                                if k != "text"}
                 chunk_path = os.path.join(
                     "chunks", self._urid_to_fname(rid)
                 )
                 chunk_rows.append((rid, chunk_path, safe_meta))
-                prepared.append((rid, {"text": txt, **md_for_index}, meta_json))
+                rids_to_add.append(rid)
+                texts_to_encode.append(txt)
 
                 self._save_chunk_text(tenant, collection, rid, txt)
                 loaded = self._load_chunk_text(tenant, collection, rid) or ""
@@ -608,19 +606,20 @@ class TxtaiStore(BaseStore):
                         f"saved {len(txt)} chars, loaded {len(loaded)} chars"
                     )
 
-            if not prepared:
+            if not rids_to_add:
                 return 0
 
             # Write metadata to SQLite (inside collection_lock)
             col_db.upsert_chunks(docid, chunk_rows, doc_meta=doc_meta)
-            backend.index(prepared)
+            vectors = self._embedder.encode(texts_to_encode)
+            backend.add(rids_to_add, vectors)
             self.save(tenant, collection)
-            _rids = [r[0] for r in prepared[:3]]
-            _sfx = " ..." if len(prepared) > 3 else ""
+            _rids = rids_to_add[:3]
+            _sfx = " ..." if len(rids_to_add) > 3 else ""
             log.debug(
-                f"INGEST-PREPARED: {len(prepared)} chunks {_rids}{_sfx}"
+                f"INGEST-PREPARED: {len(rids_to_add)} chunks {_rids}{_sfx}"
             )
-            return len(prepared)
+            return len(rids_to_add)
 
     @staticmethod
     def _matches_filters(m: dict[str, Any],
@@ -694,6 +693,7 @@ class TxtaiStore(BaseStore):
 
     @staticmethod
     def _split_filters(filters: dict[str, Any] | None) -> tuple[dict, dict]:
+        # Legacy: retained for TxtaiVectorBackend migration path.
         """Split filters into pre (handled by txtai) and post (handled in
         Python)."""
         if not filters:
@@ -789,6 +789,7 @@ class TxtaiStore(BaseStore):
                    columns: list[str],
                    with_similarity: bool = True,
                    avoid_duplicates=True) -> str:
+        # Legacy: retained for TxtaiVectorBackend migration path.
         """
         Builds a generic txtai >=8 query
         Eg SELECT id, text, score FROM txtai WHERE similar('foo')
@@ -851,72 +852,47 @@ class TxtaiStore(BaseStore):
         kk = max(1, int(k))
 
         fetch_k = max(50, kk * 5)
-        pre_f, pos_f = self._split_filters(filters)
-        cols = ["id", "text", "score", "docid"]
-        sql = self._build_sql(query, fetch_k, pre_f, cols)
+        normed_filters: dict[str, list[Any]] = {}
+        for key, vals in (filters or {}).items():
+            safe_key = self._sanit_field(key)
+            if not safe_key:
+                continue
+            if isinstance(vals, list):
+                normed_filters[safe_key] = vals
+            else:
+                normed_filters[safe_key] = [vals]
 
         with collection_lock(tenant, collection):
             self.load_or_init(tenant, collection)
             key = (tenant, collection)
             backend = self._emb[key]
-            raw = backend.search(sql)  # type: ignore[arg-type]
-
-            # Normalize to (id, score, maybe_text)
-            if raw and isinstance(raw[0], dict):
-                triples = [
-                    (r.get("id"), float(r.get("score", 0.0)), r.get("text"))
-                    for r in raw
-                ]
-            else:  # if raw is a tuple:
-                triples = [
-                    (rid, float(score), None)
-                    for rid, score in (raw or [])
-                ]
-
-            # Extract candidate rids for meta lookup (outside lock)
-            candidate_rids = [rid for rid, _, _ in triples if rid]
-            # We only need top-k metadata when there is no post-filter.
-            # With post-filters, we need metadata for all candidates to
-            # evaluate predicates before truncating to k.
-            meta_rids = (
-                candidate_rids if pos_f
-                else [rid for rid, _, _ in triples if rid][:kk]
-            )
-
-            lookup: dict[str, Any] = {}
-            # Collect which rids need text lookup (txt is None)
-            _need_txt = {
-                rid for rid, _, txt in triples if rid and txt is None
-            }
-            if _need_txt:
-                lookup = backend.lookup(list(_need_txt)) or {}
+            q_vec = self._embedder.encode([query])[0]
+            raw = backend.search(q_vec, fetch_k)
+            candidate_rids = [rid for rid, _ in raw if rid]
 
         # --- OUTSIDE lock: WAL meta read is concurrent ---
-        meta_batch = self._read_meta_batch_safe(tenant, collection, meta_rids)
+        meta_batch = self._read_meta_batch_safe(tenant, collection, candidate_rids)
 
-        kept: list[tuple[str, float, Any]] = []
-        if pos_f:
-            log.debug(f"SEARCH-FILTER-POST: {pos_f}")
-        for rid, score, txt in triples:
+        kept: list[tuple[str, float]] = []
+        if normed_filters:
+            log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
+        for rid, score in raw:
             if not rid:
                 continue
             rid_meta = meta_batch.get(rid, {})
-            if self._matches_filters(rid_meta, pos_f):
-                kept.append((rid, score, txt))
+            if self._matches_filters(rid_meta, normed_filters):
+                kept.append((rid, score))
                 if len(kept) >= kk:
                     break
 
         out: list[SearchResult] = []
-        for rid, score, txt in kept:
-            if txt is None:
-                txt = lookup.get(rid)
-            if txt is None:
-                txt = self._load_chunk_text(tenant, collection, rid)
+        for rid, score in kept:
+            txt = self._load_chunk_text(tenant, collection, rid)
             rid_meta = meta_batch.get(rid, {})
             out.append(SearchResult(
                 id=rid,
                 score=score,
-                text=txt.get("text") if isinstance(txt, dict) else txt,
+                text=txt,
                 tenant=tenant,
                 collection=collection,
                 meta=rid_meta,
