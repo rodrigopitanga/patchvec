@@ -872,9 +872,23 @@ class TxtaiStore(BaseStore):
             self.load_or_init(tenant, collection)
             key = (tenant, collection)
             backend = self._emb[key]
+            col_db = self._dbs.get(key)
             q_vec = self._embedder.encode([query])[0]
             raw = backend.search(q_vec, fetch_k)
             candidate_rids = [rid for rid, _ in raw if rid]
+
+        pre_filters, _post_filters = self._split_filters(normed_filters)
+        pushdown = {
+            fkey: [value for value in values if isinstance(value, str)]
+            for fkey, values in pre_filters.items()
+        }
+        pushdown = {
+            fkey: values for fkey, values in pushdown.items() if values
+        }
+        if pushdown and col_db is not None:
+            surviving = col_db.filter_by_meta(candidate_rids, pushdown)
+            raw = [(rid, score) for rid, score in raw if rid in surviving]
+            candidate_rids = [rid for rid, _score in raw if rid]
 
         # --- OUTSIDE lock: WAL meta read is concurrent ---
         meta_batch = self._read_meta_batch_safe(tenant, collection, candidate_rids)

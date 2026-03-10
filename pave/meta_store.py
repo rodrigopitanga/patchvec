@@ -347,6 +347,89 @@ class CollectionDB:
                 return (0, 0)
             return (int(row[0] or 0), int(row[1] or 0))
 
+    def _chunk_meta_matches(
+        self,
+        conn: sqlite3.Connection,
+        candidate_rids: list[str],
+        key: str,
+        value: str,
+    ) -> set[str]:
+        matches: set[str] = set()
+        for i in range(0, len(candidate_rids), 999):
+            batch = candidate_rids[i : i + 999]
+            placeholders = ",".join(["?"] * len(batch))
+            cur = conn.execute(
+                f"SELECT rid FROM chunk_meta "
+                f"WHERE key=? AND value=? "
+                f"AND rid IN ({placeholders})",
+                [key, value, *batch],
+            )
+            matches.update(row[0] for row in cur.fetchall())
+        return matches
+
+    def filter_by_meta(
+        self,
+        candidate_rids: list[str],
+        filters: dict[str, list[str]],
+    ) -> set[str]:
+        """Reduce candidates via SQL on chunk_meta.
+
+        Handles exact-match and negation (!value) only.
+        Values with *, >, <, >=, <= are skipped (left for
+        caller's canonical post-filter).
+        Returns subset of candidate_rids passing all
+        pushdown-able conditions.
+        """
+        if not candidate_rids:
+            return set()
+        if not filters:
+            return set(candidate_rids)
+
+        current = set(candidate_rids)
+        skip_prefixes = (">=", "<=", "!=", ">", "<")
+
+        with self._reader() as conn:
+            for key, values in filters.items():
+                if not current:
+                    break
+
+                current_batch = list(current)
+                key_matches: set[str] = set()
+                saw_pushdown = False
+
+                for raw_value in values:
+                    if not isinstance(raw_value, str):
+                        continue
+                    if "*" in raw_value:
+                        continue
+                    if raw_value.startswith(skip_prefixes):
+                        continue
+
+                    if raw_value.startswith("!") and len(raw_value) > 1:
+                        matched = self._chunk_meta_matches(
+                            conn,
+                            current_batch,
+                            key,
+                            raw_value[1:],
+                        )
+                        key_matches.update(current - matched)
+                        saw_pushdown = True
+                        continue
+
+                    matched = self._chunk_meta_matches(
+                        conn,
+                        current_batch,
+                        key,
+                        raw_value,
+                    )
+                    key_matches.update(matched)
+                    saw_pushdown = True
+
+                if saw_pushdown:
+                    current.intersection_update(key_matches)
+
+        return current
+
     def get_meta_batch(self, rids: list[str]) -> dict[str, dict[str, Any]]:
         """Fetch per-chunk metadata for *rids*.
 
