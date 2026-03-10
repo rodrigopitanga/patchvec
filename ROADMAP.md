@@ -69,7 +69,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
 | P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
-| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.5.9 |
+| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.6 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
 | P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.6 |
@@ -78,7 +78,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-14 | Response envelope standardization | 🧱 | SDK-friendly API | v0.6 |
 | P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v0.7 |
 | P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v0.7 |
-| P1-17 | Get document by ID | 🧩 | Visibility, library mode | v0.7 |
+| P1-17 | Get document by ID | 🧩 | Visibility, library mode | v0.6 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
 | P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation
@@ -97,10 +97,10 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
   `rate_limit_buckets` table (Phase 3); seeded from `tenants.max_rpm` config field
   | post-SQLite |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | ~~Initial backend seam for store split~~ | v0.5.9 |
-| P1-29b | Clean protocol + Faiss path | 🔧 | Finish FAISS cutover | v0.5.9 |
+| P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | ~~Finish FAISS cutover~~ | v0.5.9 |
 | P1-29c | CollectionDB k/v pre-filter | 🔧 | First pushdown stage | v0.5.9 |
 | P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | ~~Superseded by Step 2 in PLAN-STORE~~ | superseded |
-| P1-31 | Store orchestrator | 🧱 | Orchestrate backend + meta + catalog | v0.6 |
+| P1-31 | Store orchestrator | 🧱 | Orchestrate backend + meta + catalog | v0.5.9 |
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
 | P1-33 | GlobalDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.6 |
 
@@ -108,7 +108,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
-| P2-11 | `meta.priority` boosts |  | Surface priority items | v0.5.9 |
+| P2-11 | `meta.priority` boosts |  | Surface priority items | v0.7 |
 | P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v0.6 |
 | P2-13 | Collection log export | 🧱 | Search analytics | v0.7b |
 | P2-14 | Document versioning | 🧱 | Audit trails | v0.8 |
@@ -271,13 +271,13 @@ latency on every search/ingest/delete.~~
 
 ### v0.5.9 — Relevance
 
-- Honor `meta.priority` boosts during scoring (P2-11).
 - ~~Extract VectorBackend protocol seam (P1-29).~~
 - ~~Set backend seam to `search(vector, k)` and split `pave/backends/`
   (P1-29b slice A).~~
-- Finish `P1-29b` with Faiss backend cutover and SQL-path removal.
+- ~~Finish `P1-29b` with Faiss backend cutover and SQL-path removal.~~
 - Add first `CollectionDB` k/v pre-filter stage (P1-29c).
-- Add hybrid reranking (vector similarity + BM25/token matching) (P1-07).
+- Build store orchestrator: CollectionDB + FaissBackend
+  + embedder (P1-31).
 - Build multilingual relevance fixtures (P2-29).
 - Add benchmark CI gate + p99 latency SLO (P2-30).
 - `make build-check`: install from local wheel in temp venv, alive test (P3-52).
@@ -292,10 +292,12 @@ latency on every search/ingest/delete.~~
 
 - Define embedder/store separation contract (P3-26).
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
+- Add hybrid reranking (vector similarity + BM25/token
+  matching) (P1-07).
 - GlobalDB + catalog separation (PLAN-SQLITE Phase 2), including
   collection backend/embedder config wiring (P1-33).
-- Build store orchestrator (depends on P1-33) (P1-31).
 - Per-collection embeddings (P1-32).
+- Get document by ID endpoint (P1-17).
 - Response envelope standardization (P1-14).
 - Per-collection hot caches with isolation (P1-22).
 - Global `request_id` echo across endpoints and responses (P1-11).
@@ -322,7 +324,7 @@ latency on every search/ingest/delete.~~
 - Embedded/library mode: run PatchVec in-process without HTTP server (expose
   service + store layer as a Python API; single-tenant default).
 - Batch ingest endpoint (list of documents in one call).
-- Get document by ID endpoint (retrieve text + metadata for a known docid).
+- Honor `meta.priority` boosts during scoring (P2-11).
 
 ### 0.7b — Reach
 - `pavecli --host`: route CLI commands through the HTTP client instead of the service

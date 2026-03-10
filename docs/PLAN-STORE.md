@@ -459,7 +459,7 @@ Pushdown is an optimization layer. `_sanit_sql`, `_sanit_field`,
 
 ---
 
-## Step 4 — Store orchestrator (v0.6)
+## Step 4 — Store orchestrator (v0.5.9)
 
 ### Problem
 
@@ -628,7 +628,7 @@ Step 1  VectorBackend protocol (v0.5.9) ✓
          │
          └──→ Step 3  CollectionDB k/v metadata (v0.5.9)
                 │
-                └──→ Step 4  Store orchestrator (v0.6)
+                └──→ Step 4  Store orchestrator (v0.5.9)
                        │
                        ├──→ Step 5  GlobalDB (PLAN-SQLITE P2)
                        │
@@ -650,7 +650,7 @@ Store-plan-owned items (revised):
 | P1-29b | Clean protocol + FaissBackend + Embedder | 🔧 | v0.5.9 | P1-29 |
 | P1-29c | CollectionDB k/v metadata for filtering | 🔧 | v0.5.9 | — |
 | P1-30 | ~~Activate embedder factory + model caching~~ | — | — | superseded by P1-29b |
-| P1-31 | Store orchestrator | 🧱 | v0.6 | P1-29b, P1-29c |
+| P1-31 | Store orchestrator | 🧱 | v0.5.9 | P1-29b, P1-29c |
 | P1-32 | Per-collection embeddings | 🧱 | v0.6 | P1-31, P1-33 |
 
 Existing items affected:
