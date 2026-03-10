@@ -22,10 +22,16 @@ def test_open_creates_schema(tmp_path):
     assert conn is not None
     cur = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND name IN ('schema_migrations', 'documents', 'chunks')"
+        "AND name IN "
+        "('schema_migrations', 'documents', 'chunks', 'chunk_meta')"
     )
     names = {row[0] for row in cur.fetchall()}
-    assert {"schema_migrations", "documents", "chunks"} <= names
+    assert {
+        "schema_migrations",
+        "documents",
+        "chunks",
+        "chunk_meta",
+    } <= names
     db.close()
 
 
@@ -43,16 +49,24 @@ def test_upsert_and_get_meta(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))
     chunks = [
-        ("doc1::c0", "chunks/doc1::c0.txt", {"docid": "doc1", "chunk": 0}),
-        ("doc1::c1", "chunks/doc1::c1.txt", {"docid": "doc1", "chunk": 1}),
+        (
+            "doc1::chunk_0",
+            "chunks/doc1__chunk_0.txt",
+            {"docid": "doc1", "chunk": 0},
+        ),
+        (
+            "doc1::chunk_1",
+            "chunks/doc1__chunk_1.txt",
+            {"docid": "doc1", "chunk": 1},
+        ),
     ]
     db.upsert_chunks("doc1", chunks, doc_meta={"docid": "doc1"})
     assert db.has_doc("doc1") is True
     rids = db.get_rids_for_doc("doc1")
-    assert set(rids) == {"doc1::c0", "doc1::c1"}
+    assert set(rids) == {"doc1::chunk_0", "doc1::chunk_1"}
     meta = db.get_meta_batch(rids)
-    assert meta["doc1::c0"]["chunk"] == 0
-    assert meta["doc1::c1"]["chunk"] == 1
+    assert meta["doc1::chunk_0"]["chunk"] == 0
+    assert meta["doc1::chunk_1"]["chunk"] == 1
     assert db.get_doc_version("doc1") == 1
     db.close()
 
@@ -61,11 +75,11 @@ def test_delete_doc(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))
     chunks = [
-        ("doc2::c0", "chunks/doc2::c0.txt", {"docid": "doc2"}),
+        ("doc2::chunk_0", "chunks/doc2__chunk_0.txt", {"docid": "doc2"}),
     ]
     db.upsert_chunks("doc2", chunks, doc_meta={"docid": "doc2"})
     deleted = db.delete_doc("doc2")
-    assert deleted == ["doc2::c0"]
+    assert deleted == ["doc2::chunk_0"]
     assert db.has_doc("doc2") is False
     db.close()
 
@@ -77,7 +91,7 @@ def test_open_read_only_skips_wconn_and_migrations(tmp_path):
     db.open(db_path)
     db.upsert_chunks(
         "doc1",
-        [("doc1::c0", "chunks/doc1__c0.txt", {"docid": "doc1"})],
+        [("doc1::chunk_0", "chunks/doc1__chunk_0.txt", {"docid": "doc1"})],
         doc_meta={"docid": "doc1"},
     )
     db.close()
@@ -88,8 +102,8 @@ def test_open_read_only_skips_wconn_and_migrations(tmp_path):
     assert ro._rconn is not None
     assert ro._wconn is None
     assert ro.has_doc("doc1") is True
-    meta = ro.get_meta_batch(["doc1::c0"])
-    assert meta["doc1::c0"]["docid"] == "doc1"
+    meta = ro.get_meta_batch(["doc1::chunk_0"])
+    assert meta["doc1::chunk_0"]["docid"] == "doc1"
     ro.close()
 
 
@@ -107,15 +121,68 @@ def test_get_doc_chunk_counts(tmp_path):
     db.upsert_chunks(
         "doc3",
         [
-            ("doc3::c0", "chunks/doc3::c0.txt", {"docid": "doc3"}),
-            ("doc3::c1", "chunks/doc3::c1.txt", {"docid": "doc3"}),
+            ("doc3::chunk_0", "chunks/doc3__chunk_0.txt", {"docid": "doc3"}),
+            ("doc3::chunk_1", "chunks/doc3__chunk_1.txt", {"docid": "doc3"}),
         ],
         doc_meta={"docid": "doc3"},
     )
     db.upsert_chunks(
         "doc4",
-        [("doc4::c0", "chunks/doc4::c0.txt", {"docid": "doc4"})],
+        [("doc4::chunk_0", "chunks/doc4__chunk_0.txt", {"docid": "doc4"})],
         doc_meta={"docid": "doc4"},
     )
     assert db.get_doc_chunk_counts() == (2, 3)
+    db.close()
+
+
+def test_chunk_meta_populated_on_upsert(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"docid": "doc1", "lang": "en", "chunk": 0},
+            ),
+        ],
+        doc_meta={"docid": "doc1"},
+    )
+
+    conn = db._conn
+    assert conn is not None
+    rows = conn.execute(
+        "SELECT rid, key, value FROM chunk_meta ORDER BY rid, key"
+    ).fetchall()
+
+    assert rows == [
+        ("doc1::chunk_0", "chunk", "0"),
+        ("doc1::chunk_0", "docid", "doc1"),
+        ("doc1::chunk_0", "lang", "en"),
+    ]
+    db.close()
+
+
+def test_chunk_meta_cleaned_on_delete(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"docid": "doc1", "lang": "en"},
+            ),
+        ],
+        doc_meta={"docid": "doc1"},
+    )
+
+    db.delete_doc("doc1")
+
+    conn = db._conn
+    assert conn is not None
+    count = conn.execute("SELECT COUNT(*) FROM chunk_meta").fetchone()[0]
+    assert count == 0
     db.close()
