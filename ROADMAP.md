@@ -99,6 +99,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | ~~Initial backend seam for store split~~ | v0.5.9 |
 | P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | ~~Finish FAISS cutover~~ | v0.5.9 |
 | P1-29c | CollectionDB k/v pre-filter | 🔧 | First pushdown stage | v0.5.9 |
+| P1-36 | Reject empty/colliding sanitized metadata keys | 🧩 | Avoid silent key drops/coalescing under current sanitization rules | v0.5.9 |
 | P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | ~~Superseded by Step 2 in PLAN-STORE~~ | superseded |
 | P1-31 | Store orchestrator | 🧱 | Orchestrate backend + meta + catalog | v0.5.9 |
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
@@ -276,6 +277,8 @@ latency on every search/ingest/delete.~~
   (P1-29b slice A).~~
 - ~~Finish `P1-29b` with Faiss backend cutover and SQL-path removal.~~
 - Add first `CollectionDB` k/v pre-filter stage (P1-29c).
+- Reject empty/colliding sanitized metadata keys instead of silently
+  dropping/coalescing them (P1-36).
 - Build store orchestrator: CollectionDB + FaissBackend
   + embedder (P1-31).
 - Build multilingual relevance fixtures (P2-29).

@@ -879,7 +879,11 @@ class TxtaiStore(BaseStore):
 
         pre_filters, _post_filters = self._split_filters(normed_filters)
         pushdown = {
-            fkey: [value for value in values if isinstance(value, str)]
+            fkey: [
+                self._sanit_meta_value(value)
+                for value in values
+                if isinstance(value, str)
+            ]
             for fkey, values in pre_filters.items()
         }
         pushdown = {
