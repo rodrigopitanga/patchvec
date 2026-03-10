@@ -55,6 +55,23 @@ _MIGRATIONS: dict[int, list[str]] = {
         """,
         "CREATE INDEX IF NOT EXISTS chunks_docid ON chunks (docid)",
     ],
+    2: [
+        """
+        CREATE TABLE IF NOT EXISTS chunk_meta (
+            rid   TEXT NOT NULL,
+            key   TEXT NOT NULL,
+            value TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS chunk_meta_rid
+            ON chunk_meta (rid)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS chunk_meta_kv
+            ON chunk_meta (key, value)
+        """,
+    ],
 }
 
 
@@ -243,6 +260,26 @@ class CollectionDB:
                 """,
                 rows,
             )
+            if chunks:
+                rids = [rid for rid, _chunk_path, _meta in chunks]
+                for i in range(0, len(rids), 999):
+                    batch = rids[i : i + 999]
+                    placeholders = ",".join(["?"] * len(batch))
+                    conn.execute(
+                        f"DELETE FROM chunk_meta "
+                        f"WHERE rid IN ({placeholders})",
+                        batch,
+                    )
+            kv_rows: list[tuple[str, str, str]] = []
+            for rid, _chunk_path, meta in chunks:
+                for mk, mv in meta.items():
+                    kv_rows.append((rid, str(mk), str(mv)))
+            if kv_rows:
+                conn.executemany(
+                    "INSERT OR REPLACE INTO chunk_meta "
+                    "(rid, key, value) VALUES (?, ?, ?)",
+                    kv_rows,
+                )
 
     def delete_doc(self, docid: str) -> list[str]:
         """Delete all chunks and the document row for *docid*.
@@ -259,6 +296,15 @@ class CollectionDB:
         # Write using _wconn
         conn = self._require_wconn()
         with self._write_lock, conn:
+            if rids:
+                for i in range(0, len(rids), 999):
+                    batch = rids[i : i + 999]
+                    placeholders = ",".join(["?"] * len(batch))
+                    conn.execute(
+                        f"DELETE FROM chunk_meta "
+                        f"WHERE rid IN ({placeholders})",
+                        batch,
+                    )
             conn.execute("DELETE FROM chunks WHERE docid=?", (docid,))
             conn.execute("DELETE FROM documents WHERE docid=?", (docid,))
         return rids
