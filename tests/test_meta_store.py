@@ -186,3 +186,130 @@ def test_chunk_meta_cleaned_on_delete(tmp_path):
     count = conn.execute("SELECT COUNT(*) FROM chunk_meta").fetchone()[0]
     assert count == 0
     db.close()
+
+
+def test_chunk_meta_reupsert_replaces_stale_rows(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"docid": "doc1", "lang": "en", "category": "ml"},
+            ),
+        ],
+        doc_meta={"docid": "doc1"},
+    )
+
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"docid": "doc1", "lang": "pt"},
+            ),
+        ],
+        doc_meta={"docid": "doc1"},
+    )
+
+    conn = db._conn
+    assert conn is not None
+    rows = conn.execute(
+        "SELECT rid, key, value FROM chunk_meta ORDER BY rid, key"
+    ).fetchall()
+
+    assert rows == [
+        ("doc1::chunk_0", "docid", "doc1"),
+        ("doc1::chunk_0", "lang", "pt"),
+    ]
+    db.close()
+
+
+def test_filter_by_meta_applies_exact_negation_or_and_semantics(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"docid": "doc1", "lang": "en", "category": "ml"},
+            ),
+            (
+                "doc1::chunk_1",
+                "chunks/doc1__chunk_1.txt",
+                {"docid": "doc1", "lang": "en", "category": "infra"},
+            ),
+        ],
+        doc_meta={"docid": "doc1"},
+    )
+    db.upsert_chunks(
+        "doc2",
+        [
+            (
+                "doc2::chunk_0",
+                "chunks/doc2__chunk_0.txt",
+                {"docid": "doc2", "lang": "pt", "category": "ml"},
+            ),
+            (
+                "doc2::chunk_1",
+                "chunks/doc2__chunk_1.txt",
+                {"docid": "doc2", "lang": "de", "category": "infra"},
+            ),
+        ],
+        doc_meta={"docid": "doc2"},
+    )
+
+    matched = db.filter_by_meta(
+        [
+            "doc1::chunk_0",
+            "doc1::chunk_1",
+            "doc2::chunk_0",
+            "doc2::chunk_1",
+        ],
+        {
+            "lang": ["en", "!pt"],
+            "category": ["ml"],
+        },
+    )
+
+    assert matched == {"doc1::chunk_0"}
+    db.close()
+
+
+def test_filter_by_meta_ignores_non_pushdown_values(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"docid": "doc1", "lang": "en", "category": "ml"},
+            ),
+            (
+                "doc1::chunk_1",
+                "chunks/doc1__chunk_1.txt",
+                {"docid": "doc1", "lang": "en", "category": "infra"},
+            ),
+        ],
+        doc_meta={"docid": "doc1"},
+    )
+
+    candidates = ["doc1::chunk_0", "doc1::chunk_1"]
+    matched = db.filter_by_meta(
+        candidates,
+        {
+            "lang": ["en"],
+            "category": ["*fra", "ml*"],
+            "size": [">100"],
+        },
+    )
+
+    assert matched == set(candidates)
+    db.close()

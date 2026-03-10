@@ -57,3 +57,84 @@ def test_search_fetches_extended_meta_batch_with_post_filters():
     assert len(hits) == 5
     assert seen_batches
     assert len(seen_batches[0]) > 5
+
+
+def test_search_pushdown_passes_only_supported_filters():
+    store = TxtaiStore()
+    tenant, collection = "tenant", "meta_scope_pushdown_mix"
+    store.index_records(
+        tenant,
+        collection,
+        "doc",
+        [
+            (
+                "r1",
+                "shared query token",
+                {"lang": "en", "category": "ml", "size": 50},
+            ),
+            (
+                "r2",
+                "shared query token",
+                {"lang": "en", "category": "infra", "size": 150},
+            ),
+            (
+                "r3",
+                "shared query token",
+                {"lang": "pt", "category": "infra", "size": 250},
+            ),
+        ],
+    )
+
+    col_db = store._dbs[(tenant, collection)]
+    seen: dict[str, object] = {}
+    orig_filter_by_meta = col_db.filter_by_meta
+
+    def _spy_filter_by_meta(rids: list[str], filters: dict[str, list[str]]):
+        seen["rids"] = list(rids)
+        seen["filters"] = filters
+        return orig_filter_by_meta(rids, filters)
+
+    col_db.filter_by_meta = _spy_filter_by_meta  # type: ignore[method-assign]
+
+    hits = store.search(
+        tenant,
+        collection,
+        "shared",
+        k=5,
+        filters={
+            "lang": ["en", "!pt"],
+            "category": ["*fra"],
+            "size": [">100"],
+        },
+    )
+
+    assert seen["filters"] == {"lang": ["en", "!pt"]}
+    assert seen["rids"]
+    assert [hit.id.split("::")[-1] for hit in hits] == ["r2"]
+
+
+def test_search_skips_pushdown_for_postfilter_only_conditions():
+    store = TxtaiStore()
+    tenant, collection = "tenant", "meta_scope_post_only"
+    store.index_records(tenant, collection, "doc", _seed_records(6))
+
+    col_db = store._dbs[(tenant, collection)]
+    called = False
+
+    def _spy_filter_by_meta(_rids: list[str], _filters: dict[str, list[str]]):
+        nonlocal called
+        called = True
+        return set()
+
+    col_db.filter_by_meta = _spy_filter_by_meta  # type: ignore[method-assign]
+
+    hits = store.search(
+        tenant,
+        collection,
+        "shared",
+        k=5,
+        filters={"lang": "*n"},
+    )
+
+    assert called is False
+    assert len(hits) == 5
