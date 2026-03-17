@@ -23,7 +23,8 @@ def test_open_creates_schema(tmp_path):
     cur = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name IN "
-        "('schema_migrations', 'documents', 'chunks', 'chunk_meta')"
+        "('schema_migrations', 'documents', 'chunks', "
+        "'chunk_meta', 'document_meta')"
     )
     names = {row[0] for row in cur.fetchall()}
     assert {
@@ -31,6 +32,7 @@ def test_open_creates_schema(tmp_path):
         "documents",
         "chunks",
         "chunk_meta",
+        "document_meta",
     } <= names
     db.close()
 
@@ -164,6 +166,35 @@ def test_chunk_meta_populated_on_upsert(tmp_path):
     db.close()
 
 
+def test_document_meta_populated_on_upsert(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"chunk": 0},
+            ),
+        ],
+        doc_meta={"docid": "doc1", "lang": "en", "source": "api"},
+    )
+
+    conn = db._conn
+    assert conn is not None
+    rows = conn.execute(
+        "SELECT docid, key, value FROM document_meta ORDER BY docid, key"
+    ).fetchall()
+
+    assert rows == [
+        ("doc1", "docid", "doc1"),
+        ("doc1", "lang", "en"),
+        ("doc1", "source", "api"),
+    ]
+    db.close()
+
+
 def test_chunk_meta_cleaned_on_delete(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))
@@ -185,6 +216,10 @@ def test_chunk_meta_cleaned_on_delete(tmp_path):
     assert conn is not None
     count = conn.execute("SELECT COUNT(*) FROM chunk_meta").fetchone()[0]
     assert count == 0
+    doc_count = conn.execute(
+        "SELECT COUNT(*) FROM document_meta"
+    ).fetchone()[0]
+    assert doc_count == 0
     db.close()
 
 
@@ -278,6 +313,99 @@ def test_filter_by_meta_applies_exact_negation_or_and_semantics(tmp_path):
     )
 
     assert matched == {"doc1::chunk_0"}
+    db.close()
+
+
+def test_filter_by_meta_matches_document_level_fields(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"chunk": 0, "category": "ml"},
+            ),
+            (
+                "doc1::chunk_1",
+                "chunks/doc1__chunk_1.txt",
+                {"chunk": 1, "category": "infra"},
+            ),
+        ],
+        doc_meta={"docid": "doc1", "lang": "en", "source": "api"},
+    )
+
+    matched = db.filter_by_meta(
+        ["doc1::chunk_0", "doc1::chunk_1"],
+        {"lang": ["en"], "source": ["api"]},
+    )
+
+    assert matched == {"doc1::chunk_0", "doc1::chunk_1"}
+    db.close()
+
+
+def test_filter_by_meta_negates_document_level_fields(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"chunk": 0},
+            ),
+        ],
+        doc_meta={"docid": "doc1", "lang": "en"},
+    )
+    db.upsert_chunks(
+        "doc2",
+        [
+            (
+                "doc2::chunk_0",
+                "chunks/doc2__chunk_0.txt",
+                {"chunk": 0},
+            ),
+        ],
+        doc_meta={"docid": "doc2", "lang": "pt"},
+    )
+
+    all_rids = ["doc1::chunk_0", "doc2::chunk_0"]
+
+    matched = db.filter_by_meta(all_rids, {"lang": ["!pt"]})
+    assert matched == {"doc1::chunk_0"}
+
+    matched = db.filter_by_meta(all_rids, {"lang": ["!en"]})
+    assert matched == {"doc2::chunk_0"}
+    db.close()
+
+
+def test_get_meta_batch_merges_document_and_chunk_metadata(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"chunk": 0, "lang": "pt"},
+            ),
+        ],
+        doc_meta={"docid": "doc1", "filename": "meta.txt", "lang": "en"},
+    )
+
+    meta = db.get_meta_batch(["doc1::chunk_0"])
+
+    assert meta == {
+        "doc1::chunk_0": {
+            "docid": "doc1",
+            "filename": "meta.txt",
+            "lang": "pt",
+            "chunk": 0,
+        }
+    }
     db.close()
 
 

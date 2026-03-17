@@ -218,8 +218,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                 filename, content, csv_options=csv_options
             ):
                 rid = f"{baseid}::{local_id}"
-                meta = {**doc_meta, **extra}
-                records.append((rid, text, meta))
+                records.append((rid, text, extra))
             if not records:
                 log.info(
                     "ingest no_text_extracted tenant=%s "

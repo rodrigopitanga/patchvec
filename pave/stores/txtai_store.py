@@ -492,7 +492,7 @@ class TxtaiStore(BaseStore):
     def _load_meta(
         self, tenant: str, collection: str
     ) -> dict[str, dict[str, Any]]:
-        """Backward-compat helper: load all chunk metadata from CollectionDB.
+        """Backward-compat helper: load all merged metadata from CollectionDB.
 
         Returns a dict keyed by rid. Retained so existing tests that
         access this method continue to work after JSON files were replaced
@@ -505,14 +505,9 @@ class TxtaiStore(BaseStore):
         conn = col_db._conn
         if conn is None:
             return {}
-        cur = conn.execute("SELECT rid, meta_json FROM chunks")
-        out: dict[str, dict[str, Any]] = {}
-        for rid, meta_json in cur.fetchall():
-            try:
-                out[rid] = json.loads(meta_json) if meta_json else {}
-            except Exception:
-                out[rid] = {}
-        return out
+        cur = conn.execute("SELECT rid FROM chunks")
+        rids = [rid for rid, in cur.fetchall()]
+        return col_db.get_meta_batch(rids)
 
     def _save_chunk_text(self, tenant: str, collection: str,
                          urid: str, t: str) -> None:
@@ -552,6 +547,12 @@ class TxtaiStore(BaseStore):
             key = (tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]
+            raw_doc_meta = dict(doc_meta or {})
+            raw_doc_meta.setdefault("docid", docid)
+            try:
+                safe_doc_meta = self._sanit_meta_dict(raw_doc_meta)
+            except Exception:
+                safe_doc_meta = {"docid": docid}
             rids_to_add: list[str] = []
             texts_to_encode: list[str] = []
             chunk_rows: list[tuple[str, str | None, dict[str, Any]]] = []
@@ -585,8 +586,6 @@ class TxtaiStore(BaseStore):
                         except:
                             md = {}
 
-                md["docid"] = docid
-
                 try:
                     safe_meta = self._sanit_meta_dict(md)
                 except Exception:
@@ -616,7 +615,7 @@ class TxtaiStore(BaseStore):
                 return 0
 
             # Write metadata to SQLite (inside collection_lock)
-            col_db.upsert_chunks(docid, chunk_rows, doc_meta=doc_meta)
+            col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
             vectors = self._embedder.encode(texts_to_encode)
             backend.add(rids_to_add, vectors)
             self.save(tenant, collection)

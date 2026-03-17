@@ -72,6 +72,23 @@ _MIGRATIONS: dict[int, list[str]] = {
             ON chunk_meta (key, value)
         """,
     ],
+    3: [
+        """
+        CREATE TABLE IF NOT EXISTS document_meta (
+            docid TEXT NOT NULL,
+            key   TEXT NOT NULL,
+            value TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS document_meta_docid
+            ON document_meta (docid)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS document_meta_kv
+            ON document_meta (key, value)
+        """,
+    ],
 }
 
 
@@ -227,7 +244,8 @@ class CollectionDB:
         Must be called inside collection_lock.
         """
         conn = self._require_wconn()
-        doc_meta_json = json.dumps(doc_meta or {}, ensure_ascii=False)
+        doc_meta_dict = doc_meta or {}
+        doc_meta_json = json.dumps(doc_meta_dict, ensure_ascii=False)
         now = datetime.now(tz.utc).isoformat(timespec="seconds")
         rows = []
         for rid, chunk_path, meta in chunks:
@@ -252,6 +270,20 @@ class CollectionDB:
                 """,
                 (docid, docid, now, doc_meta_json),
             )
+            conn.execute(
+                "DELETE FROM document_meta WHERE docid=?",
+                (docid,),
+            )
+            doc_kv_rows = [
+                (docid, str(mk), str(mv))
+                for mk, mv in doc_meta_dict.items()
+            ]
+            if doc_kv_rows:
+                conn.executemany(
+                    "INSERT INTO document_meta "
+                    "(docid, key, value) VALUES (?, ?, ?)",
+                    doc_kv_rows,
+                )
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO chunks
@@ -305,6 +337,7 @@ class CollectionDB:
                         f"WHERE rid IN ({placeholders})",
                         batch,
                     )
+            conn.execute("DELETE FROM document_meta WHERE docid=?", (docid,))
             conn.execute("DELETE FROM chunks WHERE docid=?", (docid,))
             conn.execute("DELETE FROM documents WHERE docid=?", (docid,))
         return rids
@@ -367,12 +400,51 @@ class CollectionDB:
             matches.update(row[0] for row in cur.fetchall())
         return matches
 
+    def _document_meta_matches(
+        self,
+        conn: sqlite3.Connection,
+        candidate_rids: list[str],
+        key: str,
+        value: str,
+    ) -> set[str]:
+        matches: set[str] = set()
+        for i in range(0, len(candidate_rids), 999):
+            batch = candidate_rids[i : i + 999]
+            placeholders = ",".join(["?"] * len(batch))
+            cur = conn.execute(
+                f"SELECT c.rid FROM chunks AS c "
+                f"JOIN document_meta AS dm ON dm.docid = c.docid "
+                f"WHERE dm.key=? AND dm.value=? "
+                f"AND c.rid IN ({placeholders})",
+                [key, value, *batch],
+            )
+            matches.update(row[0] for row in cur.fetchall())
+        return matches
+
+    def _docid_matches(
+        self,
+        conn: sqlite3.Connection,
+        candidate_rids: list[str],
+        value: str,
+    ) -> set[str]:
+        matches: set[str] = set()
+        for i in range(0, len(candidate_rids), 999):
+            batch = candidate_rids[i : i + 999]
+            placeholders = ",".join(["?"] * len(batch))
+            cur = conn.execute(
+                f"SELECT rid FROM chunks "
+                f"WHERE docid=? AND rid IN ({placeholders})",
+                [value, *batch],
+            )
+            matches.update(row[0] for row in cur.fetchall())
+        return matches
+
     def filter_by_meta(
         self,
         candidate_rids: list[str],
         filters: dict[str, list[str]],
     ) -> set[str]:
-        """Reduce candidates via SQL on chunk_meta.
+        """Reduce candidates via SQL on chunk/document metadata.
 
         Handles exact-match and negation (!value) only.
         Values with *, >, <, >=, <= are skipped (left for
@@ -406,22 +478,53 @@ class CollectionDB:
                         continue
 
                     if raw_value.startswith("!") and len(raw_value) > 1:
-                        matched = self._chunk_meta_matches(
-                            conn,
-                            current_batch,
-                            key,
-                            raw_value[1:],
-                        )
+                        neg_val = raw_value[1:]
+                        if key == "docid":
+                            matched = self._docid_matches(
+                                conn,
+                                current_batch,
+                                neg_val,
+                            )
+                        else:
+                            matched = self._chunk_meta_matches(
+                                conn,
+                                current_batch,
+                                key,
+                                neg_val,
+                            )
+                            matched.update(
+                                self._document_meta_matches(
+                                    conn,
+                                    current_batch,
+                                    key,
+                                    neg_val,
+                                )
+                            )
                         key_matches.update(current - matched)
                         saw_pushdown = True
                         continue
 
-                    matched = self._chunk_meta_matches(
-                        conn,
-                        current_batch,
-                        key,
-                        raw_value,
-                    )
+                    if key == "docid":
+                        matched = self._docid_matches(
+                            conn,
+                            current_batch,
+                            raw_value,
+                        )
+                    else:
+                        matched = self._chunk_meta_matches(
+                            conn,
+                            current_batch,
+                            key,
+                            raw_value,
+                        )
+                        matched.update(
+                            self._document_meta_matches(
+                                conn,
+                                current_batch,
+                                key,
+                                raw_value,
+                            )
+                        )
                     key_matches.update(matched)
                     saw_pushdown = True
 
@@ -431,7 +534,7 @@ class CollectionDB:
         return current
 
     def get_meta_batch(self, rids: list[str]) -> dict[str, dict[str, Any]]:
-        """Fetch per-chunk metadata for *rids*.
+        """Fetch merged document + chunk metadata for *rids*.
 
         Called OUTSIDE collection_lock — WAL reads via _rconn are concurrent.
         Chunks the rid list into groups of 999 (SQLite variable limit).
@@ -445,13 +548,30 @@ class CollectionDB:
                 batch = rids[i : i + chunk_size]
                 placeholders = ",".join(["?"] * len(batch))
                 cur = conn.execute(
-                    f"SELECT rid, meta_json FROM chunks "
-                    f"WHERE rid IN ({placeholders})",
+                    f"SELECT c.rid, c.meta_json, d.meta_json "
+                    f"FROM chunks AS c "
+                    f"LEFT JOIN documents AS d ON d.docid = c.docid "
+                    f"WHERE c.rid IN ({placeholders})",
                     batch,
                 )
-                for rid, meta_json in cur.fetchall():
+                for rid, chunk_meta_json, doc_meta_json in cur.fetchall():
+                    merged: dict[str, Any] = {}
                     try:
-                        out[rid] = json.loads(meta_json) if meta_json else {}
+                        doc_meta = (
+                            json.loads(doc_meta_json) if doc_meta_json else {}
+                        )
                     except Exception:
-                        out[rid] = {}
+                        doc_meta = {}
+                    if isinstance(doc_meta, dict):
+                        merged.update(doc_meta)
+                    try:
+                        chunk_meta = (
+                            json.loads(chunk_meta_json)
+                            if chunk_meta_json else {}
+                        )
+                    except Exception:
+                        chunk_meta = {}
+                    if isinstance(chunk_meta, dict):
+                        merged.update(chunk_meta)
+                    out[rid] = merged
             return out
