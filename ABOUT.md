@@ -12,7 +12,7 @@ Upload → chunk → index (with metadata) → search via REST and CLI.
 - Metadata filters on search (`{"filters": {"docid": "DOC-1"}}`)
 - REST and CLI entry points
 - Health/metrics endpoints + Prometheus exporter
-- Pluggable embeddings and stores; default backend is local
+- Pluggable embeddings and stores; default stack is local FAISS + SBERT
 
 ## Requirements
 - Python 3.10–3.14
@@ -51,9 +51,9 @@ By default PatchVec runs with sensible local defaults. To customize, create
 `config.yml`:
 ```yaml
 vector_store:
-  type: default
+  type: faiss
 embedder:
-  type: default
+  type: sbert
 auth:
   mode: static
   global_key: ${PATCHVEC_GLOBAL_KEY}
@@ -67,7 +67,7 @@ export PATCHVEC_GLOBAL_KEY="your-secret"
 ## CLI example
 ```bash
 pavecli create-collection demo books
-pavecli upload demo books demo/20k_leagues.txt --docid=verne-20k \
+pavecli ingest demo books demo/20k_leagues.txt --docid=verne-20k \
   --metadata='{"lang":"en"}'
 pavecli search demo books "captain nemo" -k 5
 ```

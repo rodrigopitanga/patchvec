@@ -72,7 +72,7 @@ breakdown:
 ```
 [core] Add collection rename across all layers
 
-- Store: abstract method + TxtaiStore implementation with deadlock-safe locking
+- Store: abstract method + FaissStore implementation with deadlock-safe locking
 - Service: rename_collection() with error handling
 - API: PUT /collections/{tenant}/{name} endpoint
 - CLI: rename-collection command
@@ -110,7 +110,7 @@ include the plan ID in parentheses at the end of the first line:
 
 ```
 chore: update copyright headers
-chore(deps): bump txtai to 8.x
+chore(deps): bump sentence-transformers to 5.x
 ```
 
 **Changelog:** Only commits starting with `[tag]` or `chore:` are included. Release
@@ -177,10 +177,9 @@ asking for permission to ask.
 
 ## Architecture
 
-- Stores live under `pave/stores/*` (default txtai/FAISS today, Qdrant stub
-ready).
-- Embedding adapters reside in `pave/embedders/*` (txtai,
-sentence-transformers, OpenAI, etc.).
+- Stores live under `pave/stores/*` (`FaissStore` today, Qdrant stub ready).
+- Embedding adapters reside in `pave/embedders/*`
+  (`SbertEmbedder`, `OpenAIEmbedder`).
 - `pave/service.py` wires the FastAPI application and injects the store into
 `app.state`.
 - CLI entrypoints are defined in `pave/cli.py`; shell shims `pavecli.sh`/`pavesrv.sh`
@@ -215,22 +214,22 @@ what action was taken (e.g. "starting fresh", "skipping record").
 The suite is split into **fast** (default) and **slow** tests:
 
 ```bash
-make test-fast   # seconds — no model loaded, FakeEmbeddings only
+make test-fast   # seconds — no model loaded, FakeEmbedder only
 make test        # full suite, loads real embeddings for slow tests
 ```
 
 ### Fast vs slow tests
 
-Non-slow tests have `FakeEmbeddings` injected automatically by the `conftest`
-autouse fixture. `FakeEmbeddings` stores chunks in memory and uses **substring
-matching** — deterministic and instant, but not semantically meaningful.
+Non-slow tests have `FakeEmbedder` injected automatically by the `conftest`
+autouse fixture. `FakeEmbedder` is deterministic and instant, but not
+semantically meaningful.
 
-Slow tests use the real `TxtaiStore` with a small sentence-transformers model
-(`paraphrase-MiniLM-L3-v2`).
+Slow tests use the real `FaissStore` with `SbertEmbedder` and a small
+sentence-transformers model (`paraphrase-MiniLM-L3-v2`).
 
 **Mark a test (or a whole module) as slow when it:**
 
-- creates a real `TxtaiStore` directly (`TxtaiStore(...)` in the test/fixture)
+- creates a real `FaissStore` directly (`FaissStore()` in the test/fixture)
 - needs real semantic similarity (filter ordering, multilingual, ranking)
 - is an end-to-end upload-and-search pipeline test
 
@@ -255,26 +254,32 @@ The autouse fixture in `conftest.py` checks for the `slow` marker:
 
 | Test type | Embeddings class | Model |
 |-----------|-----------------|-------|
-| fast (default) | `FakeEmbeddings` (monkeypatched) | none |
-| `@pytest.mark.slow` | real `txtai.embeddings.Embeddings` | `paraphrase-MiniLM-L3-v2` |
+| fast (default) | `FakeEmbedder` (monkeypatched) | none |
+| `@pytest.mark.slow` | `SbertEmbedder` | `paraphrase-MiniLM-L3-v2` |
 
-Because `FakeEmbeddings` is injected at the module level, tests that create
-`TxtaiStore()` directly (instead of using the `app` fixture) **must** be marked
-slow — otherwise `TxtaiStore` will receive `FakeEmbeddings` and real txtai
-features (persistence format, filter SQL, etc.) will not work.
+Because `FakeEmbedder` is injected at the module level, tests that create
+`FaissStore()` directly (instead of using the `app` fixture) **must** be marked
+slow — otherwise `FaissStore` will receive `FakeEmbedder` and real semantic
+search behaviour will not be exercised.
 
-### Forcing FakeEmbeddings in a single test
+### Forcing FakeEmbedder in a single test
 
-If you need to unit-test non-embedding logic inside `TxtaiStore` without
-loading a model, patch `Embeddings` explicitly and skip the slow marker:
+If you need to unit-test non-embedding logic inside `FaissStore` without
+loading a model, patch `get_embedder()` explicitly and skip the slow marker:
 
 ```python
-from tests.utils import FakeEmbeddings
-import pave.stores.txtai_store as store_mod
+from tests.utils import FakeEmbedder
+import pave.stores.faiss as store_mod
+from pave.stores.faiss import FaissStore
 
 def test_purge_clears_index(monkeypatch, tmp_path):
-    monkeypatch.setattr(store_mod, "Embeddings", FakeEmbeddings, raising=True)
-    store = TxtaiStore(...)
+    monkeypatch.setattr(
+        store_mod,
+        "get_embedder",
+        lambda: FakeEmbedder(),
+        raising=True,
+    )
+    store = FaissStore()
     ...
 ```
 

@@ -116,7 +116,6 @@ This document is generated from the current local environment and is for depende
 | torch | 2.10.0+cpu | BSD-3-Clause | - |
 | transformers | 5.2.0 | Apache 2.0 License | - |
 | twine | 6.2.0 | Apache-2.0 | - |
-| txtai | 9.5.0 | Apache 2.0: http://www.apache.org/licenses/LICENSE-2.0 | - |
 | typer | 0.24.0 | MIT | - |
 | typer-slim | 0.24.0 | MIT | - |
 | typing-inspection | 0.4.2 | MIT | - |
@@ -217,7 +216,6 @@ This document is generated from the current local environment and is for depende
 | tqdm | tqdm | 4.67.3 | - | MPL-2.0 AND MIT | - | copyleft_or_weak_copyleft |
 | transformers | transformers | 5.2.0 | - | Apache 2.0 License | - | permissive_or_other |
 | twine | twine | 6.2.0 | Apache-2.0 | - | - | permissive_or_other |
-| txtai | txtai | 9.5.0 | - | Apache 2.0: http://www.apache.org/licenses/LICENSE-2.0 | License :: OSI Approved :: Apache Software License | permissive_or_other |
 | typer | typer | 0.24.0 | MIT | - | - | permissive_or_other |
 | typer-slim | typer-slim | 0.24.0 | MIT | - | - | permissive_or_other |
 | typing-inspection | typing-inspection | 0.4.2 | MIT | - | - | permissive_or_other |
