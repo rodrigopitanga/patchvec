@@ -4,12 +4,10 @@
 from .base import SearchHit, VectorBackend
 from .faiss import FaissBackend
 from .qdrant import QdrantVectorBackend
-from .txtai import TxtaiVectorBackend
 
 __all__ = [
     "FaissBackend",
     "QdrantVectorBackend",
     "SearchHit",
-    "TxtaiVectorBackend",
     "VectorBackend",
 ]

@@ -141,15 +141,6 @@ def test_negation_in_split_filters(store):
     assert "name" not in post
     assert "size" not in post
 
-
-def test_negation_sql_generation(store):
-    """Verify SQL generates <> for negation values."""
-    s, _, _ = store
-    sql = s._build_sql("test", 10, {"name": ["!excluded"]}, ["id", "text"])
-    assert "[name] <> 'excluded'" in sql
-    assert "[name] = '!excluded'" not in sql
-
-
 def test_negation_combined_with_exact(store):
     """Negation combined with exact match in OR."""
     s, tenant, coll = store

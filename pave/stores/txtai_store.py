@@ -132,27 +132,6 @@ class TxtaiStore(BaseStore):
                 pass
             raise
 
-    @staticmethod
-    def _config():
-        # Legacy: used by TxtaiVectorBackend path only.
-        model = c.get(
-            "vector_store.txtai.embed_model",
-            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-        )
-        backend = c.get("vector_store.txtai.backend", "faiss")
-        return {
-            "path": model,
-            "backend": backend,
-            "content": True,
-            "store": True,
-            "dynamic": True,
-            # Disable meta-device loading so that Pooling.to(device) works
-            # on newer PyTorch (>=2.6) where copying out of meta tensors is
-            # forbidden.  The kwarg is forwarded through HFVectors → modelargs
-            # → AutoModel.from_pretrained(…, low_cpu_mem_usage=False).
-            "vectors": {"low_cpu_mem_usage": False},
-        }
-
     def load_or_init(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
         if key in self._emb:
@@ -698,7 +677,7 @@ class TxtaiStore(BaseStore):
 
     @staticmethod
     def _split_filters(filters: dict[str, Any] | None) -> tuple[dict, dict]:
-        # Legacy: retained for TxtaiVectorBackend migration path.
+        # Legacy: retained until the filter-path cleanup lands.
         """Split filters into pre (handled by txtai) and post (handled in
         Python)."""
         if not filters:
@@ -788,61 +767,6 @@ class TxtaiStore(BaseStore):
             if ch.isalnum() or ch in {"_", "-"}:
                 safe.append(ch)
         return "".join(safe)
-
-    @staticmethod
-    def _build_sql(query: str, k: int, filters: dict[str, Any],
-                   columns: list[str],
-                   with_similarity: bool = True,
-                   avoid_duplicates=True) -> str:
-        # Legacy: retained for TxtaiVectorBackend migration path.
-        """
-        Builds a generic txtai >=8 query
-        Eg SELECT id, text, score FROM txtai WHERE similar('foo')
-        AND (t1='x' OR t1='y')
-        """
-        cols = ", ".join(columns or ["id", "docid", "text", "score"])
-        sql = f"SELECT {cols} FROM txtai"
-
-        wheres = []
-        if with_similarity and query:
-            max_len_cfg = c.get("vector_store.txtai.max_query_chars", 512)
-            try:
-                max_len = int(max_len_cfg)
-            except (TypeError, ValueError):
-                max_len = 512
-            limit = max_len if max_len > 0 else None
-            q_safe = TxtaiStore._sanit_sql(query, max_len=limit)
-            wheres.append(f"similar('{q_safe}')")
-
-        for key, vals in filters.items():
-            safe_key = TxtaiStore._sanit_field(key)
-            if not safe_key:
-                continue
-            ors = []
-            for v in vals:
-                # Handle negation: !value => [field] <> 'value'
-                if isinstance(v, str) and v.startswith("!") and len(v) > 1:
-                    safe_v = TxtaiStore._sanit_sql(v[1:])
-                    ors.append(f"[{safe_key}] <> '{safe_v}'")
-                else:
-                    safe_v = TxtaiStore._sanit_sql(v)
-                    ors.append(f"[{safe_key}] = '{safe_v}'")
-            or_safe = " OR ".join(ors)
-            wheres.append(f"({or_safe})")
-
-        if wheres:
-            sql += " WHERE " + " AND ".join(wheres) + " AND id <> '' "
-        else:
-            sql += " WHERE id <> '' "
-
-        if avoid_duplicates and cols:
-            sql += " GROUP by " + cols
-
-        if k is not None:
-            sql += f" LIMIT {int(k)}"
-
-        log.debug(f"SEARCH-SQL: query={query!r} sql={sql!r}")
-        return sql
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> list[SearchResult]:
