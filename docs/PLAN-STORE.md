@@ -520,7 +520,81 @@ only the latency benchmark is reported here.
 
 ---
 
-## Step 4 — Store orchestrator (v0.5.9)
+## Step 3b — Pre-orchestrator cleanup (v0.5.9, P1-37)
+
+### Problem
+
+After Steps 1–3, txtai is scaffold with no load-bearing role:
+FaissBackend owns vectors, CollectionDB owns metadata and
+pushdown, SbertEmbedder owns encoding. Yet the codebase still
+carries the txtai name (`TxtaiStore`, `txtai_store.py`,
+`TxtaiEmbedder`, `TxtaiVectorBackend`), dead code paths that
+served the txtai integration (`_config()`, `_build_sql()`,
+`_split_filters()`), and a `txtai>=6.3.0` install dependency
+that pulls ~150 MB for a single `batchtransform()` call that
+SbertEmbedder already replaces.
+
+The filter path has a vestigial indirection: `_split_filters()`
+splits filters into pre/post sets, but the post set is discarded
+and `filter_by_meta()` already knows what it can push down.
+
+### What changes
+
+1. **Dead code removal.** Delete `TxtaiVectorBackend`
+   (`pave/backends/txtai.py`), `_config()`, `_build_sql()`, and
+   their tests. Qdrant backend stub stays as protocol enforcer.
+
+2. **Filter path simplification.** Delete `_split_filters()`.
+   Pass `normed_filters` directly to `filter_by_meta()`, which
+   already skips non-pushdown values internally. Widen its type
+   signature to `dict[str, list[Any]]`. This makes
+   `filter_by_meta()` the single pushdown entry point — adding
+   wildcard GLOB or range pushdown (P1-35) means editing
+   `filter_by_meta()` only; `search()` stays unchanged.
+
+3. **Drop txtai dependency.** Delete `TxtaiEmbedder`, promote
+   `SbertEmbedder` to default. Remove `txtai>=6.3.0` from
+   `setup.py`. Fix `Embedder` protocol property to `dim` (matches
+   FAISS `.d`, PyTorch convention). Fix `OpenAIEmbedder.dim`
+   return type to `int` (protocol requires non-optional).
+
+4. **Rename to match reality.** `TxtaiStore` → `FaissStore`.
+   Simplify file names by dropping redundant suffixes
+   (`txtai_store.py` → `faiss.py`, `sbert_emb.py` → `sbert.py`,
+   `meta_store.py` → `metadb.py`). Config keys follow:
+   `vector_store.type: faiss`, `embedder.type: sbert`. No
+   `"default"` aliases — pre-1.0, config must be explicit.
+
+### What does NOT change
+
+- `_matches_filters()` — canonical post-filter, untouched.
+- `_sanit_sql`, `_sanit_field`, `_sanit_meta_dict` — reused.
+- `BaseStore` ABC — redefined at Step 4, not here.
+- External API — no changes.
+- Layer violations in `service.py` (`_unwrap_store`,
+  `_flush_store_caches`, `_lock_indexes`) — fixed at Step 4 when
+  the orchestrator absorbs them.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `pave/backends/txtai.py` | Deleted |
+| `pave/embedders/txtai_emb.py` | Deleted |
+| `pave/stores/txtai_store.py` | → `pave/stores/faiss.py` (`FaissStore`); dead methods removed |
+| `pave/embedders/sbert_emb.py` | → `pave/embedders/sbert.py` |
+| `pave/embedders/openai_emb.py` | → `pave/embedders/openai.py` |
+| `pave/meta_store.py` | → `pave/metadb.py` |
+| `pave/embedders/base.py` | `dimension` → `dim` |
+| `pave/embedders/factory.py` | Drop `"default"` / `"txtai"` aliases |
+| `pave/stores/factory.py` | Drop `"default"` / `"txtai"` aliases |
+| `setup.py` | Remove `txtai>=6.3.0` |
+| `config.yml.example` | `vector_store.faiss.*`, `embedder.type: sbert` |
+| tests | Rename `test_txtai_*` → `test_faiss_*`; delete `test_txtai_store_sql_safety.py` |
+
+---
+
+## Step 4 — LocalStore orchestrator (v0.5.9)
 
 ### Problem
 
@@ -533,8 +607,8 @@ catalog + concurrency.
 ### Interface
 
 ```python
-# pave/store.py (new — the orchestrator)
-class Store:
+# pave/stores/local.py (new — the orchestrator)
+class LocalStore:
     def __init__(
         self,
         data_dir: str,
@@ -575,24 +649,29 @@ pattern as today's `TxtaiStore.search()`.
 
 | Concern | From | To |
 |---------|------|----|
-| `collection_lock` registry | `txtai_store.py` module scope | `Store` instance |
-| `_flush_store_caches` | `service.py` | `Store.flush_caches()` |
-| `_lock_indexes` | `service.py` | `Store._lock_all_indexes()` |
+| `collection_lock` registry | `faiss.py` module scope | `LocalStore` instance |
+| `_flush_store_caches` | `service.py` | `LocalStore.flush_caches()` |
+| `_lock_indexes` | `service.py` | `LocalStore._lock_all_indexes()` |
 | `_unwrap_store` | `service.py` | deleted |
-| archive mechanics | `service.py` | `Store` methods |
-| listing | `TxtaiStore` | `Store` (filesystem or `GlobalDB`) |
-| chunk text sidecars | `TxtaiStore` | `Store` |
-| filter logic | `TxtaiStore` | `pave/filters.py` + `CollectionDB` |
+| archive mechanics | `service.py` | `LocalStore` methods |
+| listing | `FaissStore` | `LocalStore` (filesystem or `GlobalDB`) |
+| chunk text sidecars | `FaissStore` | `LocalStore` |
+| filter logic | `FaissStore` | `pave/filters.py` + `CollectionDB` |
 
-### What `TxtaiStore` becomes
+### What `FaissStore` becomes
 
-Deleted. `FaissBackend` + `SentenceTransformerEmbedder` +
-`CollectionDB` + `Store` orchestrator replace it entirely.
+Deleted. `FaissBackend` + `SbertEmbedder` +
+`CollectionDB` + `LocalStore` orchestrator replace it entirely.
+
+Note: `FaissStore` is the interim name introduced in P1-37 (was
+`TxtaiStore` before that). The name `LocalStore` anticipates a
+future `RemoteStore` orchestrator (e.g. postgres metadata + remote
+vector service).
 
 ### `BaseStore` becomes the orchestrator interface
 
 `BaseStore` is redefined (or replaced by `StoreProtocol`) with
-the `Store` signature above. Signature changes:
+the `LocalStore` signature above. Signature changes:
 - `list_tenants(data_dir)` → `list_tenants()` (data_dir known)
 - `catalog_metrics(data_dir)` → `catalog_metrics()`
 - `load_or_init`, `save` become internal
@@ -602,12 +681,12 @@ the `Store` signature above. Signature changes:
 
 | File | Change |
 |------|--------|
-| `pave/store.py` | New — `Store` orchestrator |
+| `pave/stores/local.py` | New — `LocalStore` orchestrator |
 | `pave/filters.py` | New — `split_filters`, `matches_filters`, `_sanit_*` extracted |
-| `pave/stores/txtai_store.py` | Deleted; replaced by orchestrator + backends |
+| `pave/stores/faiss.py` | Deleted; replaced by orchestrator + backends |
 | `pave/stores/base.py` | Redefined as orchestrator interface |
 | `pave/service.py` | Remove store internals; archive ops delegate to `store` |
-| `pave/main.py` | Minor — construct `Store` with `FaissBackend` + embedder |
+| `pave/main.py` | Minor — construct `LocalStore` with `FaissBackend` + embedder |
 | tests | `SpyStore` updated; `DummyStore` rebuilt or retired |
 
 ---
@@ -621,7 +700,7 @@ tracked as roadmap item `P1-33`.
 - `GlobalDB` becomes the source of truth for listing/catalog.
 - `get_collection_config()` provides per-collection embedder
   config.
-- `Store` orchestrator integrates that interface.
+- `LocalStore` orchestrator integrates that interface.
 
 ---
 
@@ -685,19 +764,23 @@ not auto-migrate).
 ```
 Step 1  VectorBackend protocol (v0.5.9) ✓
   │
-  └──→ Step 2  Clean protocol + FaissBackend + Embedder (v0.5.9)
+  └──→ Step 2  Clean protocol + FaissBackend + Embedder (v0.5.9) ✓
          │
-         └──→ Step 3  CollectionDB k/v metadata (v0.5.9)
+         └──→ Step 3  CollectionDB k/v metadata (v0.5.9) ✓
                 │
-                └──→ Step 4  Store orchestrator (v0.5.9)
+                ├──→ Step 3b  Pre-orchestrator cleanup (P1-37)
+                │
+                └──→ Step 4  LocalStore orchestrator (v0.5.9)
                        │
                        ├──→ Step 5  GlobalDB (PLAN-SQLITE P2)
                        │
                        └──→ Step 6  Per-collection embeddings
 ```
 
-Steps 2 and 3 are independent (parallel branches). Step 4
-integrates both. Steps 5 and 6 are features enabled by Step 4.
+Steps 2 and 3 are complete. Step 3b (P1-37) is housekeeping
+that unblocks Step 4: drops txtai dependency, renames
+TxtaiStore → FaissStore, simplifies filter path, removes dead
+code. Step 4 then replaces FaissStore with LocalStore.
 
 ---
 
@@ -708,10 +791,11 @@ Store-plan-owned items (revised):
 | ID | Task | Effort | Version | Depends on |
 |----|------|--------|---------|------------|
 | P1-29 | ~~Extract VectorBackend protocol~~ | 🔧 | v0.5.9 | — |
-| P1-29b | Clean protocol + FaissBackend + Embedder | 🔧 | v0.5.9 | P1-29 |
-| P1-29c | CollectionDB k/v metadata for filtering | 🔧 | v0.5.9 | — |
+| P1-29b | ~~Clean protocol + FaissBackend + Embedder~~ | 🔧 | v0.5.9 | P1-29 |
+| P1-29c | ~~CollectionDB k/v metadata for filtering~~ | 🔧 | v0.5.9 | — |
 | P1-30 | ~~Activate embedder factory + model caching~~ | — | — | superseded by P1-29b |
-| P1-31 | Store orchestrator | 🧱 | v0.5.9 | P1-29b, P1-29c |
+| P1-37 | Pre-orchestrator cleanup | 🔧 | v0.5.9 | P1-29c |
+| P1-31 | LocalStore orchestrator | 🧱 | v0.5.9 | P1-37 |
 | P1-32 | Per-collection embeddings | 🧱 | v0.6 | P1-31, P1-33 |
 
 Existing items affected:
@@ -747,3 +831,41 @@ Existing items affected:
 
 6. **Negation pre-filter path drift**: avoid backend-specific semantic
    drift by enforcing canonical post-filter after any pushdown.
+
+---
+
+## Retrospective: from txtai scaffold to owned stack
+
+txtai was the right bootstrap choice. A single dependency gave
+PatchVec a FAISS vector index, sentence-transformers embeddings, a
+content store, SQL-based filtering, and an ID mapping layer. The
+project shipped its first five versions (v0.1–v0.5.6) on txtai
+without writing any of those subsystems.
+
+The cost became clear as PatchVec matured: txtai's internal SQLite
+conflicted with CollectionDB, its content store conflicted with
+chunk text sidecars, its SQL filtering was opaque and
+non-extensible, and its model caching was incompatible with
+per-collection embeddings. Every new feature required working
+around txtai rather than with it.
+
+The replacement followed a strangler fig pattern — each layer was
+replaced independently while the running system never broke and
+tests passed at every commit:
+
+| Version | Step | What replaced txtai |
+|---------|------|---------------------|
+| v0.5.8 | P1-09 | CollectionDB replaces txtai internal SQLite + JSON metadata files |
+| v0.5.9 | P1-29b | FaissBackend replaces txtai vector index (`em.search()` → `index.search()`) |
+| v0.5.9 | P1-29c | `filter_by_meta()` replaces txtai SQL WHERE clauses |
+| v0.5.9 | P1-37 | SbertEmbedder replaces TxtaiEmbedder; txtai dependency dropped |
+| v0.5.9 | P1-31 | LocalStore orchestrator replaces TxtaiStore (final deletion) |
+
+At no point was a "big bang rewrite" needed. The seams
+(`BaseStore` ABC, `Embedder` protocol, `VectorBackend` protocol,
+`CollectionDB`) were cut incrementally, each shipped as a
+self-contained change with benchmarks proving no regression.
+
+The lesson: choose a scaffold dependency that gives you velocity
+early, but design your own interfaces from day one so you can
+replace it piece by piece when the scaffold becomes the ceiling.
