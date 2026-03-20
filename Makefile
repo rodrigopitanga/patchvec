@@ -77,6 +77,9 @@ endif
 
 .ONESHELL:
 SHELL := /bin/bash
+# With .ONESHELL enabled, keep recipe failure semantics strict so later
+# status messages do not run after an earlier command has already failed.
+.SHELLFLAGS := -e -o pipefail -c
 
 .PHONY: help
 help:
@@ -154,7 +157,7 @@ install: venv
 
 .PHONY: install-dev
 install-dev: install
-	$(PIP_BIN) install -q ".[test]"
+	@$(PIP_BIN) install -q ".[test]"
 	@echo "✅ Dev/test deps installed."
 
 # -------- test / serve / cli --------
