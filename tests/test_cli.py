@@ -2,17 +2,27 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json
+import importlib
 import zipfile
 from pathlib import Path
 
 import pytest
-from pave import cli as pvcli
 from pave.config import get_cfg
+from pave.stores import factory as store_factory
 from utils import DummyStore, SpyStore
 
 @pytest.fixture
-def cli_env(temp_data_dir, tmp_path):
+def cli_env(temp_data_dir, tmp_path, monkeypatch):
     store = SpyStore(DummyStore())
+    monkeypatch.setattr(
+        store_factory,
+        "get_store",
+        lambda *_args, **_kwargs: store,
+        raising=True,
+    )
+    from pave import cli as pvcli_mod
+
+    pvcli = importlib.reload(pvcli_mod)
     pvcli.store = store
     return pvcli, store, tmp_path
 

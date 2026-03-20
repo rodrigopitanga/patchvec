@@ -8,12 +8,8 @@ from ..config import CFG
 
 
 def get_embedder(cfg: CFG = CFG) -> Embedder:
-    etype = (cfg.get("embedder.type", "default") or "default").lower()
+    etype = (cfg.get("embedder.type", "sbert") or "sbert").lower()
     match etype:
-        case "default" | "txtai":
-            from .txtai_emb import TxtaiEmbedder
-
-            return TxtaiEmbedder()
         case "sbert":
             from .sbert_emb import SbertEmbedder
 

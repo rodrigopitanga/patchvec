@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse, json, uuid, pathlib
 from datetime import datetime, timezone
 from pave.stores.factory import get_store
+from pave.stores.base import BaseStore
 from pave.service import (
     create_collection as svc_create_collection,
     dump_archive as svc_dump_archive,
@@ -21,7 +22,14 @@ from pave.service import (
 from pave.config import get_cfg, reload_cfg
 from pave import metrics
 
-store = get_store(get_cfg())
+store: BaseStore | None = None
+
+
+def _get_store() -> BaseStore:
+    global store
+    if store is None:
+        store = get_store(get_cfg())
+    return store
 
 def _dump(out, pretty: bool = True):
     if pretty:
@@ -33,7 +41,7 @@ def _read(path: str) -> bytes:
     return pathlib.Path(path).read_bytes()
 
 def cmd_create(args):
-    out = svc_create_collection(store, args.tenant, args.collection)
+    out = svc_create_collection(_get_store(), args.tenant, args.collection)
     _dump(out, pretty=not args.compact)
 
 def cmd_ingest(args):
@@ -51,27 +59,43 @@ def cmd_ingest(args):
         }
 
     out = svc_ingest_document(
-        store, args.tenant, args.collection, args.file, content,
+        _get_store(), args.tenant, args.collection, args.file, content,
         baseid if args.docid else None, meta, csv_options=csv_opts
     )
     _dump(out, pretty=not args.compact)
 
 def cmd_search(args):
     filters = json.loads(args.filters) if args.filters else None
-    out = svc_search(store, args.tenant, args.collection, args.query, args.k,
-                     filters=filters)
+    out = svc_search(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.query,
+        args.k,
+        filters=filters,
+    )
     _dump(out, pretty=not args.compact)
 
 def cmd_delete(args):
-    out = svc_delete_collection(store, args.tenant, args.collection)
+    out = svc_delete_collection(_get_store(), args.tenant, args.collection)
     _dump(out, pretty=not args.compact)
 
 def cmd_rename(args):
-    out = svc_rename_collection(store, args.tenant, args.old_name, args.new_name)
+    out = svc_rename_collection(
+        _get_store(),
+        args.tenant,
+        args.old_name,
+        args.new_name,
+    )
     _dump(out, pretty=not args.compact)
 
 def cmd_delete_document(args):
-    out = svc_delete_document(store, args.tenant, args.collection, args.docid)
+    out = svc_delete_document(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.docid,
+    )
     _dump(out, pretty=not args.compact)
 
 def cmd_dump_archive(args):
@@ -82,7 +106,7 @@ def cmd_dump_archive(args):
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = args.output or f"patchvec-data-{stamp}.zip"
-    archive_path, _ = svc_dump_archive(store, data_dir, output)
+    archive_path, _ = svc_dump_archive(_get_store(), data_dir, output)
     out = {
         "ok": True,
         "archive": archive_path,
@@ -97,7 +121,7 @@ def cmd_restore_archive(args):
         raise SystemExit("data directory is not configured")
 
     content = _read(args.file)
-    out = svc_restore_archive(store, data_dir, content)
+    out = svc_restore_archive(_get_store(), data_dir, content)
     _dump(out, pretty=not args.compact)
 
 def cmd_reset_metrics(args):
@@ -113,11 +137,11 @@ def cmd_list_tenants(args):
     data_dir = cfg.get("data_dir")
     if not data_dir:
         raise SystemExit("data directory is not configured")
-    out = svc_list_tenants(store, data_dir)
+    out = svc_list_tenants(_get_store(), data_dir)
     _dump(out, pretty=not args.compact)
 
 def cmd_list_collections(args):
-    out = svc_list_collections(store, args.tenant)
+    out = svc_list_collections(_get_store(), args.tenant)
     _dump(out, pretty=not args.compact)
 
 def main_cli(argv=None):

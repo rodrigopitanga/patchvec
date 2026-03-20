@@ -119,7 +119,7 @@ class FakeEmbedder:
         self._dim = int(dim)
 
     @property
-    def dimension(self) -> int:
+    def dim(self) -> int:
         return self._dim
 
     def _encode_one(self, text: str) -> np.ndarray:

@@ -2,8 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 import os
+
+import numpy as np
+
 from openai import OpenAI
+
 from ..config import CFG
+
 
 class OpenAIEmbedder:
     def __init__(self):
@@ -16,15 +21,21 @@ class OpenAIEmbedder:
         self.client = OpenAI(api_key=api_key)
 
     @property
-    def dim(self) -> int | None:
+    def dim(self) -> int:
         try:
-            return int(self._dim) if self._dim is not None else None
+            if self._dim is None:
+                raise RuntimeError(
+                    "embedder.dim must be configured for OpenAIEmbedder"
+                )
+            return int(self._dim)
         except Exception:
-            return None
+            raise RuntimeError(
+                "embedder.dim must be configured for OpenAIEmbedder"
+            )
 
-    def encode(self, texts: list[str]) -> list[list[float]]:
+    def encode(self, texts: list[str]) -> np.ndarray:
         kwargs = {"model": self.model, "input": texts}
         if self._dim is not None:
             kwargs["dimensions"] = int(self._dim)
         res = self.client.embeddings.create(**kwargs)
-        return [d.embedding for d in res.data]
+        return np.array([d.embedding for d in res.data], dtype=np.float32)

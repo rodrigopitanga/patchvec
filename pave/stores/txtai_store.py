@@ -142,7 +142,7 @@ class TxtaiStore(BaseStore):
 
         idx_dir = Path(os.path.join(base, "index"))
         backend = FaissBackend(
-            self._embedder.dimension,
+            self._embedder.dim,
             storage_dir=idx_dir,
         )
 
@@ -156,7 +156,7 @@ class TxtaiStore(BaseStore):
                 collection,
             )
             backend = FaissBackend(
-                self._embedder.dimension,
+                self._embedder.dim,
                 storage_dir=idx_dir,
             )
 

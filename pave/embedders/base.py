@@ -14,7 +14,7 @@ class Embedder(Protocol):
         """(N, dim) matrix of embedding vectors."""
 
     @property
-    def dimension(self) -> int:
+    def dim(self) -> int:
         """Embedding dimensionality (e.g. 384)."""
 
 

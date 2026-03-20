@@ -31,7 +31,6 @@ setup(
     install_requires=[
         "fastapi>=0.115.0",
         "uvicorn[standard]>=0.30.6",
-        "txtai>=6.3.0",
         "pydantic>=2.8.2",
         "python-multipart>=0.0.9",
         "pypdf>=5.0.0",
