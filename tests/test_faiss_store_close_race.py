@@ -3,12 +3,12 @@
 
 from unittest.mock import patch
 
-from pave.meta_store import CollectionDB
-from pave.stores.txtai_store import TxtaiStore
+from pave.metadb import CollectionDB
+from pave.stores.faiss import FaissStore
 
 
 def test_has_doc_recovers_from_closed_cached_db():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection, docid = "acme", "race_has_doc", "DOC-1"
     store.index_records(
         tenant,
@@ -25,7 +25,7 @@ def test_has_doc_recovers_from_closed_cached_db():
 
 
 def test_search_recovers_from_closed_cached_db():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection, docid = "acme", "race_search", "DOC-2"
     store.index_records(
         tenant,
@@ -43,7 +43,7 @@ def test_search_recovers_from_closed_cached_db():
 
 
 def test_delete_collection_evicts_cache_before_close():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection = "acme", "delete_order"
     store.load_or_init(tenant, collection)
     key = (tenant, collection)
@@ -63,7 +63,7 @@ def test_delete_collection_evicts_cache_before_close():
 
 
 def test_rename_collection_evicts_old_cache_before_close():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, old_name, new_name = "acme", "old_order", "new_order"
     store.load_or_init(tenant, old_name)
     old_key = (tenant, old_name)
@@ -84,7 +84,7 @@ def test_rename_collection_evicts_old_cache_before_close():
 
 def test_has_doc_fallback_opens_read_only():
     """Fallback CollectionDB opens read-only (no _wconn)."""
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection = "acme", "ro_fallback"
     docid = "DOC-RO"
     store.index_records(

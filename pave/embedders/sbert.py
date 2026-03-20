@@ -26,11 +26,13 @@ class SbertEmbedder:
 
     def __init__(self) -> None:
         model_name = CFG.get(
-            "embedder.model",
+            "embedder.sbert.model",
             "sentence-transformers/all-MiniLM-L6-v2",
         )
-        device = self._resolve_device(CFG.get("embedder.device", "auto"))
-        self.batch_size = int(CFG.get("embedder.batch_size", 64))
+        device = self._resolve_device(
+            CFG.get("embedder.sbert.device", "auto")
+        )
+        self.batch_size = int(CFG.get("embedder.sbert.batch_size", 64))
         self.model = SentenceTransformer(model_name, device=device)
         try:
             self._dim = int(self.model.get_sentence_embedding_dimension())

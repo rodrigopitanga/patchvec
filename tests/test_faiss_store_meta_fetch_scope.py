@@ -3,7 +3,7 @@
 
 from typing import Any
 
-from pave.stores.txtai_store import TxtaiStore
+from pave.stores.faiss import FaissStore
 
 
 def _seed_records(count: int) -> list[tuple[str, str, dict]]:
@@ -14,7 +14,7 @@ def _seed_records(count: int) -> list[tuple[str, str, dict]]:
 
 
 def test_search_fetches_meta_for_all_candidates_without_post_filters():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection = "tenant", "meta_scope_plain"
     store.index_records(tenant, collection, "doc", _seed_records(12))
 
@@ -35,7 +35,7 @@ def test_search_fetches_meta_for_all_candidates_without_post_filters():
 
 
 def test_search_fetches_extended_meta_batch_with_post_filters():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection = "tenant", "meta_scope_post"
     store.index_records(tenant, collection, "doc", _seed_records(12))
 
@@ -62,7 +62,7 @@ def test_search_fetches_extended_meta_batch_with_post_filters():
 
 
 def test_search_pushdown_receives_full_normed_filters():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection = "tenant", "meta_scope_pushdown_mix"
     store.index_records(
         tenant,
@@ -120,7 +120,7 @@ def test_search_pushdown_receives_full_normed_filters():
 
 
 def test_search_calls_pushdown_for_postfilter_only_conditions():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection = "tenant", "meta_scope_post_only"
     store.index_records(tenant, collection, "doc", _seed_records(6))
 

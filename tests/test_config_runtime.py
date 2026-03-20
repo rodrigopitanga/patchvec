@@ -4,7 +4,7 @@
 def test_overlay_get_set_snapshot(cfg):
     # baseline efetivo (sem depender de arquivo em dev)
     assert cfg.get("auth.mode", "none") == "none"
-    assert cfg.get("vector_store.type", "xpto") == "default"
+    assert cfg.get("vector_store.type", "xpto") == "faiss"
 
     # runtime overlay supersedes codebase and data
     cfg.set("auth.mode", "static")
@@ -16,7 +16,7 @@ def test_overlay_get_set_snapshot(cfg):
     assert snap["auth"]["mode"] == "static"
     assert snap["vector_store"]["type"] == "qdrant"
     cfg.set("auth.mode", "none")
-    cfg.set("vector_store.type", "default")
+    cfg.set("vector_store.type", "faiss")
 
 
 def test_runtime_overlay_reflected_in_app(app, client):
@@ -38,4 +38,4 @@ def test_effective_defaults_when_missing(cfg, app, client):
     assert r.status_code == 200
     j = r.json()
     assert j["auth"] == "none"
-    assert j["vector_store"] == "default"
+    assert j["vector_store"] == "faiss"

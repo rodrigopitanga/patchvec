@@ -1,11 +1,11 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from pave.stores.txtai_store import TxtaiStore
+from pave.stores.faiss import FaissStore
 
 
 def test_has_doc_uses_atomic_cache_lookup_under_flush_race():
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, collection, docid = "acme", "race", "DOC-1"
     records = [("0", "cache race probe", {"lang": "en"})]
     store.index_records(tenant, collection, docid, records)

@@ -5,7 +5,7 @@ import pytest
 import time
 import json
 from concurrent.futures import ThreadPoolExecutor
-from pave.stores.txtai_store import TxtaiStore, Record, collection_lock
+from pave.stores.faiss import FaissStore, Record, collection_lock
 from pave.config import get_cfg
 
 REC0 = ("doc::0", "texto A", "{}")
@@ -18,7 +18,7 @@ REC1 = ("doc::1", "texto B", "{}")
     )
 )
 def test_concurrent_upsert_without_lock_eventually_fails(cfg):
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, coll = "tenantX", "collRace"
     store.load_or_init(tenant, coll)
     emb = store._emb[(tenant, coll)]
@@ -42,7 +42,7 @@ def test_concurrent_upsert_without_lock_eventually_fails(cfg):
     assert failed_once, "Race condition not detected"
 
 def test_concurrent_upsert_with_manual_lock(cfg):
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, coll = "tenantY", "collSafe"
     store.load_or_init(tenant, coll)
     backend = store._emb[(tenant, coll)]
@@ -73,7 +73,7 @@ def test_concurrent_upsert_with_manual_lock(cfg):
             "Inconsistent state detected despite locking (manual test)"
 
 def test_concurrent_upsert_with_lock_always_consistent(cfg):
-    store = TxtaiStore()
+    store = FaissStore()
     tenant, coll = "tenantZ", "collSafe"
     store.load_or_init(tenant, coll)
     emb = store._emb[(tenant, coll)]

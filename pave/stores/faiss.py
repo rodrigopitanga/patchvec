@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import Any
 
 # Python 3.12 deprecated the default sqlite3 datetime adapters.
-# Register explicit ISO adapters so txtai's internal DB doesn't warn.
+# Register explicit ISO adapters so sqlite I/O doesn't warn.
 sqlite3.register_adapter(date, date.isoformat)
 sqlite3.register_adapter(datetime, datetime.isoformat)
 
 from threading import Lock
 from contextlib import contextmanager
-from pave.meta_store import CollectionDB
+from pave.metadb import CollectionDB
 from pave.stores.base import BaseStore, Record, SearchResult
 from pave.backends import FaissBackend, VectorBackend
 from pave.embedders import get_embedder
@@ -50,48 +50,7 @@ def collection_lock(tenant: str, collection: str):
     finally:
         lock.release()
 
-def _migrate_schema(em, tenant: str, collection: str) -> None:
-    """
-    Applies missing-table migrations for indexes created before txtai added
-    the documents/objects/sections tables (txtai >=9.x). No-op if all present.
-    """
-    db = getattr(em, "database", None)
-    conn = getattr(db, "connection", None)
-    if conn is None:
-        return
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    existing = {row[0] for row in cur.fetchall()}
-    missing = {"documents", "objects", "sections"} - existing
-    if not missing:
-        return
-    log.warning(
-        f"Legacy index {tenant}/{collection}: adding missing tables "
-        f"{missing} (txtai schema migration)"
-    )
-    if "documents" in missing:
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS documents "
-            "(id TEXT PRIMARY KEY, data JSON, tags TEXT, entry DATETIME)"
-        )
-    if "objects" in missing:
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS objects "
-            "(id TEXT PRIMARY KEY, object BLOB, tags TEXT, entry DATETIME)"
-        )
-    if "sections" in missing:
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS sections "
-            "(indexid INTEGER PRIMARY KEY, id TEXT, text TEXT, "
-            "tags TEXT, entry DATETIME)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS section_id ON sections(id)"
-        )
-    conn.commit()
-
-
-class TxtaiStore(BaseStore):
+class FaissStore(BaseStore):
     # Maximum depth for recursive collection traversal in filter matching
     _FILTER_MATCH_MAX_DEPTH = 10
 
@@ -452,9 +411,8 @@ class TxtaiStore(BaseStore):
                 try:
                     backend.delete(ids)
                 except Exception:
-                    # if the installed txtai doesn't expose delete(ids),
-                    # skip silently. index still consistent via sidecars;
-                    # searches hydrate from saved text
+                    # Skip silently. Metadata-side cleanup already happened
+                    # and searches hydrate text from sidecars.
                     pass
 
             self.save(tenant, collection)
@@ -621,10 +579,10 @@ class TxtaiStore(BaseStore):
 
         def match(have: Any, cond: Any, depth: int = 0) -> bool:
             # Prevent infinite recursion with deeply nested collections
-            if depth >= TxtaiStore._FILTER_MATCH_MAX_DEPTH:
+            if depth >= FaissStore._FILTER_MATCH_MAX_DEPTH:
                 log.warning(
                     f"Filter match depth limit "
-                    f"({TxtaiStore._FILTER_MATCH_MAX_DEPTH}) "
+                    f"({FaissStore._FILTER_MATCH_MAX_DEPTH}) "
                     f"exceeded for value: {type(have)}"
                 )
                 return False
@@ -634,7 +592,7 @@ class TxtaiStore(BaseStore):
             if isinstance(have, (list, tuple, set)):
                 return any(match(item, cond, depth + 1) for item in have)
             if isinstance(cond, str):
-                s = TxtaiStore._sanit_sql(cond)
+                s = FaissStore._sanit_sql(cond)
             else:
                 s = str(cond)
             hv = str(have)
@@ -670,7 +628,7 @@ class TxtaiStore(BaseStore):
 
         for k, vals in filters.items():
             if not any(
-                match(TxtaiStore._lookup_meta(m, k), v) for v in vals
+                match(FaissStore._lookup_meta(m, k), v) for v in vals
             ):
                 return False
         return True
@@ -682,19 +640,19 @@ class TxtaiStore(BaseStore):
         if key in meta:
             return meta.get(key)
         for raw_key, value in meta.items():
-            if TxtaiStore._sanit_field(raw_key) == key:
+            if FaissStore._sanit_field(raw_key) == key:
                 return value
         return None
 
     @staticmethod
     def _sanit_meta_value(value: Any) -> Any:
         if isinstance(value, dict):
-            return TxtaiStore._sanit_meta_dict(value)
+            return FaissStore._sanit_meta_dict(value)
         if isinstance(value, (list, tuple, set)):
-            return [TxtaiStore._sanit_meta_value(v) for v in value]
+            return [FaissStore._sanit_meta_value(v) for v in value]
         if isinstance(value, (int, float, bool)) or value is None:
             return value
-        return TxtaiStore._sanit_sql(value)
+        return FaissStore._sanit_sql(value)
 
     @staticmethod
     def _sanit_meta_dict(meta: dict[str, Any] | None) -> dict[str, Any]:
@@ -702,10 +660,10 @@ class TxtaiStore(BaseStore):
         if not isinstance(meta, dict):
             return safe
         for raw_key, raw_value in meta.items():
-            safe_key = TxtaiStore._sanit_field(raw_key)
+            safe_key = FaissStore._sanit_field(raw_key)
             if not safe_key or safe_key == "text":
                 continue
-            safe[safe_key] = TxtaiStore._sanit_meta_value(raw_value)
+            safe[safe_key] = FaissStore._sanit_meta_value(raw_value)
         return safe
 
     @staticmethod
@@ -734,8 +692,8 @@ class TxtaiStore(BaseStore):
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> list[SearchResult]:
         """
-        Queries txtai for top-k, keeps overfetch inside the store, preserves
-        text from em.search when present, and falls back to lookup if missing.
+        Queries the FAISS backend for top-k and keeps overfetch inside the
+        store.
 
         Key concurrency improvement (Phase 1):
         - FAISS search runs inside collection_lock

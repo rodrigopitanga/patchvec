@@ -12,10 +12,16 @@ from ..config import CFG
 
 class OpenAIEmbedder:
     def __init__(self):
-        self.model = CFG.get("embedder.model", "text-embedding-3-small")
-        self.batch_size = int(CFG.get("embedder.batch_size", 256))
-        self._dim = CFG.get("embedder.dim")
-        api_key = CFG.get("embedder.api_key") or os.environ.get("OPENAI_API_KEY")
+        self.model = CFG.get(
+            "embedder.openai.model",
+            "text-embedding-3-small",
+        )
+        self.batch_size = int(CFG.get("embedder.openai.batch_size", 256))
+        self._dim = CFG.get("embedder.openai.dim")
+        api_key = (
+            CFG.get("embedder.openai.api_key")
+            or os.environ.get("OPENAI_API_KEY")
+        )
         if not api_key:
             raise RuntimeError("OpenAI API key not configured")
         self.client = OpenAI(api_key=api_key)
@@ -25,12 +31,12 @@ class OpenAIEmbedder:
         try:
             if self._dim is None:
                 raise RuntimeError(
-                    "embedder.dim must be configured for OpenAIEmbedder"
+                    "embedder.openai.dim must be configured for OpenAIEmbedder"
                 )
             return int(self._dim)
         except Exception:
             raise RuntimeError(
-                "embedder.dim must be configured for OpenAIEmbedder"
+                "embedder.openai.dim must be configured for OpenAIEmbedder"
             )
 
     def encode(self, texts: list[str]) -> np.ndarray:

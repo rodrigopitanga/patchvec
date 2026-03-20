@@ -11,11 +11,11 @@ def get_embedder(cfg: CFG = CFG) -> Embedder:
     etype = (cfg.get("embedder.type", "sbert") or "sbert").lower()
     match etype:
         case "sbert":
-            from .sbert_emb import SbertEmbedder
+            from .sbert import SbertEmbedder
 
             return SbertEmbedder()
         case "openai":
-            from .openai_emb import OpenAIEmbedder
+            from .openai import OpenAIEmbedder
 
             return OpenAIEmbedder()
         case _:

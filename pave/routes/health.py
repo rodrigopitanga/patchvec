@@ -41,9 +41,9 @@ def build_health_router(cfg, version: str) -> APIRouter:
             request_store = request.app.state.store
             lock_cm = nullcontext()
             # TODO(P1-31): collection_lock moves to Store orchestrator;
-            # remove direct txtai_store import.
+            # remove direct store-module import.
             try:
-                from pave.stores.txtai_store import collection_lock
+                from pave.stores.faiss import collection_lock
                 lock_cm = collection_lock("_system", "health")
             except Exception:
                 pass

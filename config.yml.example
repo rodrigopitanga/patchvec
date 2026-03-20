@@ -69,14 +69,14 @@ auth:
 # ---------------------------------------------------------------------------
 
 vector_store:
-  # default — txtai + FAISS (built-in, no extra services required).
+  # faiss   — local FAISS index (built-in, no extra services required).
   # qdrant  — Qdrant server (requires a running Qdrant instance).
-  type: default
+  type: faiss
 
-  # Options for type=default (txtai-backed FAISS store).
-  txtai:
+  # Options for type=faiss.
+  faiss:
     embed_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-    backend: faiss
+    max_query_chars: 4000
 
   # Options for type=qdrant.
   # NOTE: QdrantStore is currently a stub — all methods raise NotImplementedError.
@@ -92,27 +92,22 @@ vector_store:
 # ---------------------------------------------------------------------------
 # Controls how text is converted to vectors before indexing and querying.
 # The embedder is shared across all collections (per-collection config: v0.6).
-#
-# NOTE: the sbert and openai embedder types are currently stubs — the factory
-# exists but is not wired into the default store. Only type=default (txtai) is
-# fully functional today. Per-collection embedder selection lands in v0.6.
-# Contributions welcome! See pave/embedders/ and pave/stores/factory.py.
 
 embedder:
-  # default — txtai-managed sentence-transformers model (recommended).
-  # sbert   — direct sentence-transformers, more control over batching/device.
-  # openai  — OpenAI text-embedding-ada-002 (requires API key, adds latency).
-  type: default
+  # sbert  — direct sentence-transformers (recommended local default).
+  # openai — OpenAI embeddings API (requires API key, adds latency).
+  type: sbert
 
-  txtai:
-    path: sentence-transformers/paraphrase-MiniLM-L3-v2
-
+  # Used by type=sbert.
   sbert:
     model: sentence-transformers/all-MiniLM-L6-v2
     batch_size: 64
-    device: auto   # cpu | cuda | auto (auto detects CUDA at runtime)
+    device: auto   # cpu | cuda | mps | auto
 
+  # Used by type=openai.
   openai:
+    model: text-embedding-3-small
+    batch_size: 256
     api_key: ${PATCHVEC_OPENAI_API_KEY}
     dim: 1536
 

@@ -19,7 +19,7 @@ from pave.service import (
     dump_archive,
     restore_archive,
 )
-from pave.stores import txtai_store
+from pave.stores import faiss as faiss_store
 
 
 def test_dump_archive_returns_zip(temp_data_dir):
@@ -27,7 +27,7 @@ def test_dump_archive_returns_zip(temp_data_dir):
     sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_text("hello endpoint", encoding="utf-8")
 
-    store = txtai_store.TxtaiStore()
+    store = faiss_store.FaissStore()
     archive_path, tmp_dir = dump_archive(store, temp_data_dir)
     try:
         response_bytes = Path(archive_path).read_bytes()
@@ -48,7 +48,7 @@ def test_lock_indexes_blocks_new_collection_lock(temp_data_dir):
     collection_dir = tenant_dir / "c_invoices"
     collection_dir.mkdir(parents=True, exist_ok=True)
 
-    store = txtai_store.TxtaiStore()
+    store = faiss_store.FaissStore()
     start = threading.Event()
     release = threading.Event()
     acquired = threading.Event()
@@ -59,7 +59,7 @@ def test_lock_indexes_blocks_new_collection_lock(temp_data_dir):
             release.wait(timeout=2.0)
 
     def try_new_lock() -> None:
-        with txtai_store.collection_lock("acme", "new_collection"):
+        with faiss_store.collection_lock("acme", "new_collection"):
             acquired.set()
 
     holder = threading.Thread(target=hold_all_locks, daemon=True)
@@ -78,7 +78,7 @@ def test_lock_indexes_blocks_new_collection_lock(temp_data_dir):
 
 
 def test_create_collection_uses_collection_lock(monkeypatch):
-    store = txtai_store.TxtaiStore()
+    store = faiss_store.FaissStore()
     events: list[tuple[str, str, str]] = []
 
     class _SpyLock:
@@ -98,7 +98,7 @@ def test_create_collection_uses_collection_lock(monkeypatch):
         return _SpyLock(tenant, collection)
 
     monkeypatch.setattr(
-        txtai_store,
+        faiss_store,
         "collection_lock",
         fake_collection_lock,
     )
@@ -110,7 +110,7 @@ def test_create_collection_uses_collection_lock(monkeypatch):
 
 
 def test_flush_store_caches_closes_old_dbs_sync():
-    store = txtai_store.TxtaiStore()
+    store = faiss_store.FaissStore()
     store.index_records(
         "acme",
         "flush_test",
@@ -155,7 +155,7 @@ def test_restore_archive_replaces_data_dir(temp_data_dir):
     sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_text("restore me", encoding="utf-8")
 
-    store = txtai_store.TxtaiStore()
+    store = faiss_store.FaissStore()
     archive_path, tmp_dir = dump_archive(store, temp_data_dir)
     try:
         archive_bytes = Path(archive_path).read_bytes()

@@ -8,12 +8,12 @@ import pytest
 
 pytestmark = pytest.mark.slow
 
-from pave.stores.txtai_store import TxtaiStore
+from pave.stores.faiss import FaissStore
 from pave.config import get_cfg
 
 @pytest.fixture()
 def store(request):
-    s = TxtaiStore()
+    s = FaissStore()
     # Use unique collection per test to avoid conflicts
     tenant, coll = "t1", f"c_{request.node.name}"
     s.load_or_init(tenant, coll)
@@ -128,7 +128,7 @@ def test_negation_combined_with_exact(store):
 @pytest.fixture()
 def multilingual_store(request):
     """Store with multilingual content for testing non-English retrieval."""
-    s = TxtaiStore()
+    s = FaissStore()
     tenant, coll = "t1", f"ml_{request.node.name}"
     s.load_or_init(tenant, coll)
 

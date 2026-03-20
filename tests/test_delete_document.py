@@ -88,7 +88,7 @@ def test_delete_document_cli(tmp_path, monkeypatch):
     cfg = get_cfg()
     monkeypatch.setattr(cfg, "_cfg", {
         "data_dir": str(tmp_path),
-        "vector_store": {"type": "default"},
+        "vector_store": {"type": "faiss"},
         "auth": {"mode": "none"},
     })
 

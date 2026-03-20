@@ -243,7 +243,7 @@ def main_srv():
     log.info(f"┌─ Welcome to PatchVEC 🍰 v{VERSION}")
     log.info(
         f"│  auth={cfg.get('auth.mode','none')} "
-        f"store={cfg.get('vector_store.type','default')} "
+        f"store={cfg.get('vector_store.type','faiss')} "
         f"data_dir={cfg.get('data_dir')} "
         f"bind={host}:{port} workers={workers}"
     )

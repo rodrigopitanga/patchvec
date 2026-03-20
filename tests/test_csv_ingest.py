@@ -3,7 +3,7 @@
 
 import pytest
 from pave.service import ingest_document as svc_ingest, ServiceError
-from pave.stores.txtai_store import TxtaiStore
+from pave.stores.faiss import FaissStore
 
 @pytest.fixture
 def store(monkeypatch, tmp_path):
@@ -23,7 +23,7 @@ def store(monkeypatch, tmp_path):
             return default
 
     monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
-    return TxtaiStore()
+    return FaissStore()
 
 def _csv_bytes(s: str) -> bytes:
     return s.encode("utf-8")

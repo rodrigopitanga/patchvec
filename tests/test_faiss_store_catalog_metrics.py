@@ -3,12 +3,12 @@
 
 from pathlib import Path
 
-from pave.stores.txtai_store import TxtaiStore
+from pave.stores.faiss import FaissStore
 
 
 def test_catalog_metrics_counts_docs_and_chunks(cfg, tmp_path):
     cfg.set("data_dir", str(tmp_path))
-    store = TxtaiStore()
+    store = FaissStore()
     store.index_records(
         "acme",
         "c1",

@@ -27,6 +27,6 @@ def test_health_ready_contains_effective_fields(client):
     j = r.json()
     # never None; when config.yml absent, code defaults fill in
     assert j.get("data_dir") is not None
-    assert j.get("vector_store") == "default"
+    assert j.get("vector_store") == "faiss"
     assert "writable" in j and isinstance(j["writable"], bool)
     assert "vector_backend_init" in j and isinstance(j["vector_backend_init"], bool)

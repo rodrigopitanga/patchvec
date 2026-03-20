@@ -7,7 +7,7 @@ import types
 
 import numpy as np
 
-import pave.embedders.sbert_emb as sbert_emb_mod
+import pave.embedders.sbert as sbert_mod
 
 
 class _DummyCFG:
@@ -44,25 +44,25 @@ def test_encode_returns_float32_ndarray(monkeypatch) -> None:
             return np.array([[1, 2], [3, 4]], dtype=np.float64)
 
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "SentenceTransformer",
         FakeModel,
         raising=True,
     )
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "CFG",
         _DummyCFG(
             {
-                "embedder.model": "sentence-transformers/test-model",
-                "embedder.device": "cpu",
-                "embedder.batch_size": 16,
+                "embedder.sbert.model": "sentence-transformers/test-model",
+                "embedder.sbert.device": "cpu",
+                "embedder.sbert.batch_size": 16,
             }
         ),
         raising=True,
     )
 
-    emb = sbert_emb_mod.SbertEmbedder()
+    emb = sbert_mod.SbertEmbedder()
     out = emb.encode(["a", "b"])
 
     assert isinstance(out, np.ndarray)
@@ -91,18 +91,18 @@ def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch) -> None:
             return np.array([[1.0, 2.0] for _ in texts], dtype=np.float32)
 
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "SentenceTransformer",
         FakeModel,
         raising=True,
     )
     monkeypatch.setattr(
-        sbert_emb_mod.torch.cuda,
+        sbert_mod.torch.cuda,
         "is_available",
         lambda: False,
         raising=True,
     )
-    mps = getattr(sbert_emb_mod.torch.backends, "mps", None)
+    mps = getattr(sbert_mod.torch.backends, "mps", None)
     if mps is not None:
         monkeypatch.setattr(
             mps,
@@ -111,18 +111,18 @@ def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch) -> None:
             raising=True,
         )
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "CFG",
         _DummyCFG(
             {
-                "embedder.model": "sentence-transformers/test-model",
-                "embedder.device": "auto",
+                "embedder.sbert.model": "sentence-transformers/test-model",
+                "embedder.sbert.device": "auto",
             }
         ),
         raising=True,
     )
 
-    sbert_emb_mod.SbertEmbedder()
+    sbert_mod.SbertEmbedder()
 
     assert seen["model_name"] == "sentence-transformers/test-model"
     assert seen["device"] == "cpu"
@@ -143,19 +143,19 @@ def test_dim_reads_model_dimension_without_probe(monkeypatch) -> None:
             return np.array([[0.0] * 7 for _ in texts], dtype=np.float32)
 
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "SentenceTransformer",
         FakeModel,
         raising=True,
     )
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "CFG",
         _DummyCFG({}),
         raising=True,
     )
 
-    emb = sbert_emb_mod.SbertEmbedder()
+    emb = sbert_mod.SbertEmbedder()
     assert emb.dim == 7
     assert calls["encode"] == 0
 
@@ -175,18 +175,18 @@ def test_dim_probes_when_model_dimension_missing(monkeypatch) -> None:
             return np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
 
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "SentenceTransformer",
         FakeModel,
         raising=True,
     )
     monkeypatch.setattr(
-        sbert_emb_mod,
+        sbert_mod,
         "CFG",
         _DummyCFG({}),
         raising=True,
     )
 
-    emb = sbert_emb_mod.SbertEmbedder()
+    emb = sbert_mod.SbertEmbedder()
     assert emb.dim == 3
     assert seen["texts"] == ["_"]

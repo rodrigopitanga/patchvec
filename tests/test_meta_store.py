@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pave.meta_store import CollectionDB, LegacyMetadataError
+from pave.metadb import CollectionDB, LegacyMetadataError
 
 
 def _meta_db(tmp_path: Path) -> Path:

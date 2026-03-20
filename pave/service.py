@@ -40,12 +40,12 @@ def create_collection(store, tenant: str, name: str) -> dict[str, Any]:
         lock_cm = nullcontext()
         base_store = _unwrap_store(store)
         # TODO(P1-31): collection_lock moves to Store orchestrator;
-        # remove isinstance guard and direct txtai_store import.
+        # remove isinstance guard and direct store-module import.
         try:
-            from pave.stores.txtai_store import TxtaiStore, collection_lock
+            from pave.stores.faiss import FaissStore, collection_lock
         except Exception:
-            TxtaiStore = None  # type: ignore[assignment]
-        if TxtaiStore is not None and isinstance(base_store, TxtaiStore):
+            FaissStore = None  # type: ignore[assignment]
+        if FaissStore is not None and isinstance(base_store, FaissStore):
             lock_cm = collection_lock(tenant, name)
         with lock_cm:
             store.load_or_init(tenant, name)
@@ -365,7 +365,7 @@ def _flush_store_caches(
     *,
     async_close: bool = True,
 ) -> None:
-    """Drop all in-memory CollectionDB and Embeddings references.
+    """Drop all in-memory CollectionDB and backend references.
 
     Called after restore_archive replaces files on disk so that the next
     access re-opens fresh connections from the restored files.
@@ -378,10 +378,10 @@ def _flush_store_caches(
     if base_store is None:
         return
     try:
-        from pave.stores.txtai_store import TxtaiStore  # type: ignore
+        from pave.stores.faiss import FaissStore  # type: ignore
     except Exception:
         return
-    if not isinstance(base_store, TxtaiStore):
+    if not isinstance(base_store, FaissStore):
         return
 
     old_dbs = list(base_store._dbs.values())
@@ -423,7 +423,7 @@ def _unwrap_store(store: BaseStore | None) -> BaseStore | None:
 
 
 def _iter_collection_lock_keys(data_dir: Path) -> Iterable[str]:
-    """Yield lock keys for ``TxtaiStore``-style directory layout."""
+    """Yield lock keys for ``FaissStore`` directory layout."""
 
     for tenant_dir in data_dir.iterdir():
         if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
@@ -442,7 +442,7 @@ def _iter_collection_lock_keys(data_dir: Path) -> Iterable[str]:
 
 @contextmanager
 def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
-    """Acquire all known collection locks for ``TxtaiStore`` implementations."""
+    """Acquire all known collection locks for ``FaissStore`` instances."""
 
     base_store = _unwrap_store(store)
     if base_store is None:
@@ -453,13 +453,13 @@ def _lock_indexes(store: BaseStore | None, data_dir: Path) -> Iterator[None]:
     # remove direct _LOCKS/_LOCKS_GUARD access.
     try:
         from threading import Lock as _Lock
-        from pave.stores import txtai_store as store_mod  # type: ignore
-        TxtaiStore = store_mod.TxtaiStore
+        from pave.stores import faiss as store_mod  # type: ignore
+        FaissStore = store_mod.FaissStore
     except Exception:
         yield
         return
 
-    if not isinstance(base_store, TxtaiStore):
+    if not isinstance(base_store, FaissStore):
         yield
         return
 
@@ -516,7 +516,7 @@ def dump_archive(
     ----------
     store:
         Optional vector-store implementation. When provided and it maps to a
-        ``TxtaiStore`` backend all known collection locks are acquired for the
+        ``FaissStore`` backend all known collection locks are acquired for the
         duration of the archive creation to avoid concurrent writes during the
         export.
     data_dir:
