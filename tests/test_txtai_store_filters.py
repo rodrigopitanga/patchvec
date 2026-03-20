@@ -32,18 +32,6 @@ def store(request):
 def _ids(results):
     return [r.id.split("::")[-1] for r in results]
 
-def test_split_filters_basic(store):
-    s, _, _ = store
-    f = {
-        "name": ["foo", "*bar", "baz*"],
-        "size": [">100"],
-        "x": ["!=9"]
-    }
-    pre, post = s._split_filters(f)
-    assert "name" in pre and "name" in post
-    assert "size" not in pre and "x" not in pre
-    assert any(v.startswith(">") for v in post["size"]) or "size" not in post
-
 def test_prefilter(store):
     s, tenant, coll = store
     f1 = {"name": ["fooqux"]}
@@ -125,21 +113,6 @@ def test_negation_prefilter(store):
     assert "r4" not in ids
     assert "r1" in ids or "r2" in ids  # at least some non-zulu results
 
-
-def test_negation_in_split_filters(store):
-    """Verify !value goes to pre-filter, not post-filter."""
-    s, _, _ = store
-    f = {"name": ["!excluded", "exact"], "size": ["!50"]}
-    pre, post = s._split_filters(f)
-    # Both negation and exact values should be in pre-filter
-    assert "name" in pre
-    assert "!excluded" in pre["name"]
-    assert "exact" in pre["name"]
-    assert "size" in pre
-    assert "!50" in pre["size"]
-    # Post-filter should be empty for these
-    assert "name" not in post
-    assert "size" not in post
 
 def test_negation_combined_with_exact(store):
     """Negation combined with exact match in OR."""

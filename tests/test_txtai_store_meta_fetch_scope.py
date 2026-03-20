@@ -1,6 +1,8 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+from typing import Any
+
 from pave.stores.txtai_store import TxtaiStore
 
 
@@ -59,7 +61,7 @@ def test_search_fetches_extended_meta_batch_with_post_filters():
     assert len(seen_batches[0]) > 5
 
 
-def test_search_pushdown_passes_only_supported_filters():
+def test_search_pushdown_receives_full_normed_filters():
     store = TxtaiStore()
     tenant, collection = "tenant", "meta_scope_pushdown_mix"
     store.index_records(
@@ -89,7 +91,7 @@ def test_search_pushdown_passes_only_supported_filters():
     seen: dict[str, object] = {}
     orig_filter_by_meta = col_db.filter_by_meta
 
-    def _spy_filter_by_meta(rids: list[str], filters: dict[str, list[str]]):
+    def _spy_filter_by_meta(rids: list[str], filters: dict[str, list[Any]]):
         seen["rids"] = list(rids)
         seen["filters"] = filters
         return orig_filter_by_meta(rids, filters)
@@ -108,12 +110,16 @@ def test_search_pushdown_passes_only_supported_filters():
         },
     )
 
-    assert seen["filters"] == {"lang": ["en", "!pt"]}
+    assert seen["filters"] == {
+        "lang": ["en", "!pt"],
+        "category": ["*fra"],
+        "size": [">100"],
+    }
     assert seen["rids"]
     assert [hit.id.split("::")[-1] for hit in hits] == ["r2"]
 
 
-def test_search_skips_pushdown_for_postfilter_only_conditions():
+def test_search_calls_pushdown_for_postfilter_only_conditions():
     store = TxtaiStore()
     tenant, collection = "tenant", "meta_scope_post_only"
     store.index_records(tenant, collection, "doc", _seed_records(6))
@@ -121,10 +127,13 @@ def test_search_skips_pushdown_for_postfilter_only_conditions():
     col_db = store._dbs[(tenant, collection)]
     called = False
 
-    def _spy_filter_by_meta(_rids: list[str], _filters: dict[str, list[str]]):
+    seen: dict[str, object] = {}
+
+    def _spy_filter_by_meta(_rids: list[str], _filters: dict[str, list[Any]]):
         nonlocal called
         called = True
-        return set()
+        seen["filters"] = _filters
+        return set(_rids)
 
     col_db.filter_by_meta = _spy_filter_by_meta  # type: ignore[method-assign]
 
@@ -136,5 +145,6 @@ def test_search_skips_pushdown_for_postfilter_only_conditions():
         filters={"lang": "*n"},
     )
 
-    assert called is False
+    assert called is True
+    assert seen["filters"] == {"lang": ["*n"]}
     assert len(hits) == 5

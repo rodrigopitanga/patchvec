@@ -24,6 +24,15 @@ class LegacyMetadataError(RuntimeError):
     pass
 
 
+_FILTER_TRANS = str.maketrans({
+    ";": " ",
+    '"': " ",
+    "`": " ",
+    "\\": " ",
+    "\x00": "",
+})
+
+
 _MIGRATIONS: dict[int, list[str]] = {
     1: [
         """
@@ -439,10 +448,18 @@ class CollectionDB:
             matches.update(row[0] for row in cur.fetchall())
         return matches
 
+    @staticmethod
+    def _normalize_filter_value(value: str) -> str:
+        text = str(value).translate(_FILTER_TRANS)
+        for token in ("--", "/*", "*/"):
+            if token in text:
+                text = text.split(token, 1)[0]
+        return text.strip().replace("'", "''")
+
     def filter_by_meta(
         self,
         candidate_rids: list[str],
-        filters: dict[str, list[str]],
+        filters: dict[str, list[Any]],
     ) -> set[str]:
         """Reduce candidates via SQL on chunk/document metadata.
 
@@ -472,13 +489,14 @@ class CollectionDB:
                 for raw_value in values:
                     if not isinstance(raw_value, str):
                         continue
-                    if "*" in raw_value:
+                    value = self._normalize_filter_value(raw_value)
+                    if "*" in value:
                         continue
-                    if raw_value.startswith(skip_prefixes):
+                    if value.startswith(skip_prefixes):
                         continue
 
-                    if raw_value.startswith("!") and len(raw_value) > 1:
-                        neg_val = raw_value[1:]
+                    if value.startswith("!") and len(value) > 1:
+                        neg_val = value[1:]
                         if key == "docid":
                             matched = self._docid_matches(
                                 conn,
@@ -508,21 +526,21 @@ class CollectionDB:
                         matched = self._docid_matches(
                             conn,
                             current_batch,
-                            raw_value,
+                            value,
                         )
                     else:
                         matched = self._chunk_meta_matches(
                             conn,
                             current_batch,
                             key,
-                            raw_value,
+                            value,
                         )
                         matched.update(
                             self._document_meta_matches(
                                 conn,
                                 current_batch,
                                 key,
-                                raw_value,
+                                value,
                             )
                         )
                     key_matches.update(matched)

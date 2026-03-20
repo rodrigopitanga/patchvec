@@ -676,43 +676,6 @@ class TxtaiStore(BaseStore):
         return True
 
     @staticmethod
-    def _split_filters(filters: dict[str, Any] | None) -> tuple[dict, dict]:
-        # Legacy: retained until the filter-path cleanup lands.
-        """Split filters into pre (handled by txtai) and post (handled in
-        Python)."""
-        if not filters:
-            return {}, {}
-
-        pre_f, pos_f = {}, {}
-        for key, vals in (filters or {}).items():
-            safe_key = TxtaiStore._sanit_field(key)
-            if not safe_key:
-                continue
-            if not isinstance(vals, list):
-                vals = [vals]
-            exacts, extended = [], []
-            for v in vals:
-                # Wildcards and comparison ops => post-filter (Python)
-                if isinstance(v, str) and (
-                    v.startswith("*") or v.endswith("*") or
-                    any(v.startswith(op)
-                        for op in (">=", "<=", ">", "<", "!="))
-                ):
-                    extended.append(v)
-                # Simple negation !value => pre-filter (SQL <>)
-                elif isinstance(v, str) and v.startswith("!") and len(v) > 1:
-                    exacts.append(v)
-                else:
-                    exacts.append(v)
-            if exacts:
-                pre_f[safe_key] = exacts
-            if extended:
-                pos_f[safe_key] = extended
-        if pre_f or pos_f:
-            log.debug(f"SEARCH-FILTER-SPLIT: pre={pre_f} post={pos_f}")
-        return pre_f, pos_f
-
-    @staticmethod
     def _lookup_meta(meta: dict[str, Any] | None, key: str) -> Any:
         if not meta:
             return None
@@ -800,20 +763,11 @@ class TxtaiStore(BaseStore):
             raw = backend.search(q_vec, fetch_k)
             candidate_rids = [rid for rid, _ in raw if rid]
 
-        pre_filters, _post_filters = self._split_filters(normed_filters)
-        pushdown = {
-            fkey: [
-                self._sanit_meta_value(value)
-                for value in values
-                if isinstance(value, str)
-            ]
-            for fkey, values in pre_filters.items()
-        }
-        pushdown = {
-            fkey: values for fkey, values in pushdown.items() if values
-        }
-        if pushdown and col_db is not None:
-            surviving = col_db.filter_by_meta(candidate_rids, pushdown)
+        if normed_filters and col_db is not None:
+            surviving = col_db.filter_by_meta(
+                candidate_rids,
+                normed_filters,
+            )
             raw = [(rid, score) for rid, score in raw if rid in surviving]
             candidate_rids = [rid for rid, _score in raw if rid]
 
