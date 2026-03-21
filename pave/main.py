@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import asyncio, os, logging
+import argparse, asyncio, os, logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import uvicorn
@@ -11,7 +11,7 @@ import uvicorn
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
-from pave.config import get_cfg, get_logger
+from pave.config import get_cfg, get_logger, reload_cfg
 from pave.auth import enforce_policy, resolve_bind
 from pave.metrics import set_data_dir as metrics_set_data_dir, \
     flush as metrics_flush
@@ -26,6 +26,7 @@ from pave.routes import (
     build_search_router,
 )
 from pave.ui import attach_ui
+from pave.runtime_paths import DEFAULT_HOME, apply_runtime_env
 import pave.log as ops_log
 
 VERSION = "0.5.8.1"
@@ -202,13 +203,48 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     return app
 
-def main_srv():
+def main_srv(argv=None):
     """
     HTTP server entrypoint.
     Precedence: CFG (reads env first) > defaults.
     """
-    cfg = get_cfg()
+    p = argparse.ArgumentParser(prog="pavesrv")
+    p.add_argument(
+        "--home",
+        help="Use an instance home dir",
+    )
+    p.add_argument("--config", help="Explicit config.yml path")
+    p.add_argument("--tenants", help="Explicit tenants.yml path")
+    p.add_argument("--data-dir", dest="data_dir", help="Explicit data directory")
+    args = p.parse_args(argv)
+    default_home = os.path.expanduser(DEFAULT_HOME)
+    default_config = os.path.join(default_home, "config.yml")
+    has_explicit_instance = any((
+        args.home,
+        args.config,
+        args.tenants,
+        args.data_dir,
+        os.environ.get("PATCHVEC_CONFIG"),
+        os.environ.get("PATCHVEC_AUTH__TENANTS_FILE"),
+    ))
+
+    apply_runtime_env(
+        home=args.home,
+        config=args.config,
+        tenants=args.tenants,
+        data_dir=args.data_dir,
+    )
+    global _app
+    _app = None
+    cfg = reload_cfg()
     log = get_logger()
+    if not has_explicit_instance and not os.path.isfile(default_config):
+        log.warning(
+            "Running from defaults/env only. Run `pavecli init` to create "
+            "%s and %s",
+            default_config,
+            os.path.join(default_home, "tenants.yml"),
+        )
     # Policy:
     # - fail fast without auth in prod;
     # - auth=none only in dev with loopback;

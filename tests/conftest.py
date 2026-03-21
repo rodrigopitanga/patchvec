@@ -1,6 +1,8 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import os
+
 import pytest
 
 from utils import SpyStore, FakeEmbedder
@@ -18,6 +20,9 @@ _FAST_MODEL = "sentence-transformers/paraphrase-MiniLM-L3-v2"
 
 @pytest.fixture(autouse=True)
 def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
+    for k in tuple(os.environ):
+        if k.startswith("PATCHVEC_"):
+            monkeypatch.delenv(k, raising=False)
     for k in ("PATCHVEC_VECTOR_STORE__TYPE", "PATCHVEC_AUTH__MODE"):
         monkeypatch.delenv(k, raising=False)
     reload_cfg()

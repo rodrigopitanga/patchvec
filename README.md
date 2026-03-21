@@ -86,12 +86,14 @@ source .venv-pv/bin/activate
 python -m pip install --upgrade pip
 pip install "patchvec[cpu]"
 
+# create the default instance under ~/patchvec
+pavecli init
+
 # sample demo corpus
 curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/demo/20k_leagues.txt
 
-# env-only server config
-export PATCHVEC_AUTH__MODE=static
-export PATCHVEC_AUTH__GLOBAL_KEY=super-sekret
+# set an admin key for the generated config
+export PATCHVEC_GLOBAL_KEY=super-sekret
 
 # option A: run the service (stays up until you stop it)
 pavesrv
@@ -117,7 +119,9 @@ By default, a non-dev runtime reads `~/patchvec/config.yml` if present, keeps
 tenant sidecar loading disabled unless `auth.tenants_file` is configured, and
 stores data in `~/patchvec/data`. You can override any of that with the
 `PATCHVEC_*` environment scheme or by pointing `PATCHVEC_CONFIG` at an explicit
-config file.
+config file. For alternate instances, use `pavecli init /path/to/instance` and
+then point commands at that root with `pavesrv --home=/path/to/instance` or
+`pavecli <command> ... --home /path/to/instance`.
 
 ### 🌐 REST API and Web UI usage
 
@@ -129,17 +133,17 @@ reuse the bearer token exported earlier:
 
 ```bash
 # create collection
-curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
   -X POST http://localhost:8086/collections/demo/books
 
 # ingest document
-curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
   -X POST http://localhost:8086/collections/demo/books/documents \
   -F "file=@20k_leagues.txt" \
   -F 'metadata={"lang":"en"}'
 
 # run search
-curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
   "http://localhost:8086/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
@@ -200,12 +204,12 @@ pavecli ingest demo books 20k_leagues_v2.txt --docid=verne-20k
 Delete by ID then ingest (REST path example):
 
 ```bash
-curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
   -X DELETE http://localhost:8086/collections/demo/books/documents/verne-20k
 
 # make changes
 
-curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
   -X POST http://localhost:8086/collections/demo/books/documents \
   -F "file=@demo/20k_leagues.txt" \
   -F 'docid=verne-20k'

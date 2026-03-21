@@ -7,7 +7,7 @@ from pave.config import Config
 
 
 def _write(path: Path, text: str) -> None:
-    path.write_text(text.strip() + "\n", encoding="utf-8")
+    path.write_text(text, encoding="utf-8")
 
 
 def test_tenants_sidecar_is_opt_in(monkeypatch, tmp_path):
@@ -17,24 +17,20 @@ def test_tenants_sidecar_is_opt_in(monkeypatch, tmp_path):
     sidecar.parent.mkdir(parents=True)
     _write(
         sidecar,
-        """
-        auth:
-          api_keys:
-            acme: sidecar-key
-        tenants:
-          acme:
-            max_concurrent: 9
-        """,
+        "auth:\n"
+        "  api_keys:\n"
+        "    acme: sidecar-key\n"
+        "tenants:\n"
+        "  acme:\n"
+        "    max_concurrent: 9\n",
     )
     monkeypatch.setenv("HOME", str(home))
 
     config_path = tmp_path / "config.yml"
     _write(
         config_path,
-        """
-        auth:
-          mode: static
-        """,
+        "auth:\n"
+        "  mode: static\n",
     )
 
     cfg = Config(path=config_path)
@@ -50,12 +46,10 @@ def test_dev_mode_skips_default_user_config(monkeypatch, tmp_path):
     default_cfg.parent.mkdir(parents=True)
     _write(
         default_cfg,
-        """
-        auth:
-          mode: static
-        vector_store:
-          type: qdrant
-        """,
+        "auth:\n"
+        "  mode: static\n"
+        "vector_store:\n"
+        "  type: qdrant\n",
     )
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("PATCHVEC_CONFIG", raising=False)
@@ -71,12 +65,10 @@ def test_explicit_config_path_still_wins_in_dev(monkeypatch, tmp_path):
     config_path = tmp_path / "config.yml"
     _write(
         config_path,
-        """
-        auth:
-          mode: static
-        vector_store:
-          type: qdrant
-        """,
+        "auth:\n"
+        "  mode: static\n"
+        "vector_store:\n"
+        "  type: qdrant\n",
     )
     monkeypatch.setenv("PATCHVEC_DEV", "1")
     monkeypatch.setenv("PATCHVEC_CONFIG", str(config_path))
@@ -92,35 +84,29 @@ def test_env_tenants_file_selects_sidecar_over_config_value(monkeypatch, tmp_pat
     sidecar_b = tmp_path / "tenants-b.yml"
     _write(
         sidecar_a,
-        """
-        auth:
-          api_keys:
-            acme: config-sidecar-key
-        tenants:
-          acme:
-            max_concurrent: 1
-        """,
+        "auth:\n"
+        "  api_keys:\n"
+        "    acme: config-sidecar-key\n"
+        "tenants:\n"
+        "  acme:\n"
+        "    max_concurrent: 1\n",
     )
     _write(
         sidecar_b,
-        """
-        auth:
-          api_keys:
-            acme: env-sidecar-key
-        tenants:
-          acme:
-            max_concurrent: 7
-        """,
+        "auth:\n"
+        "  api_keys:\n"
+        "    acme: env-sidecar-key\n"
+        "tenants:\n"
+        "  acme:\n"
+        "    max_concurrent: 7\n",
     )
 
     config_path = tmp_path / "config.yml"
     _write(
         config_path,
-        f"""
-        auth:
-          mode: static
-          tenants_file: {sidecar_a}
-        """,
+        f"auth:\n"
+        f"  mode: static\n"
+        f"  tenants_file: {sidecar_a}\n",
     )
     monkeypatch.setenv("PATCHVEC_AUTH__TENANTS_FILE", str(sidecar_b))
 
@@ -134,29 +120,25 @@ def test_inline_tenant_values_override_sidecar(tmp_path):
     sidecar = tmp_path / "tenants.yml"
     _write(
         sidecar,
-        """
-        auth:
-          api_keys:
-            acme: sidecar-key
-        tenants:
-          acme:
-            max_concurrent: 1
-        """,
+        "auth:\n"
+        "  api_keys:\n"
+        "    acme: sidecar-key\n"
+        "tenants:\n"
+        "  acme:\n"
+        "    max_concurrent: 1\n",
     )
 
     config_path = tmp_path / "config.yml"
     _write(
         config_path,
-        f"""
-        auth:
-          mode: static
-          tenants_file: {sidecar}
-          api_keys:
-            acme: inline-key
-        tenants:
-          acme:
-            max_concurrent: 2
-        """,
+        f"auth:\n"
+        f"  mode: static\n"
+        f"  tenants_file: {sidecar}\n"
+        f"  api_keys:\n"
+        f"    acme: inline-key\n"
+        f"tenants:\n"
+        f"  acme:\n"
+        f"    max_concurrent: 2\n",
     )
 
     cfg = Config(path=config_path)
@@ -169,29 +151,25 @@ def test_env_tenant_values_override_inline_and_sidecar(monkeypatch, tmp_path):
     sidecar = tmp_path / "tenants.yml"
     _write(
         sidecar,
-        """
-        auth:
-          api_keys:
-            acme: sidecar-key
-        tenants:
-          acme:
-            max_concurrent: 1
-        """,
+        "auth:\n"
+        "  api_keys:\n"
+        "    acme: sidecar-key\n"
+        "tenants:\n"
+        "  acme:\n"
+        "    max_concurrent: 1\n",
     )
 
     config_path = tmp_path / "config.yml"
     _write(
         config_path,
-        f"""
-        auth:
-          mode: static
-          tenants_file: {sidecar}
-          api_keys:
-            acme: inline-key
-        tenants:
-          acme:
-            max_concurrent: 2
-        """,
+        f"auth:\n"
+        f"  mode: static\n"
+        f"  tenants_file: {sidecar}\n"
+        f"  api_keys:\n"
+        f"    acme: inline-key\n"
+        f"tenants:\n"
+        f"  acme:\n"
+        f"    max_concurrent: 2\n",
     )
     monkeypatch.setenv("PATCHVEC_AUTH__API_KEYS__acme", "env-key")
     monkeypatch.setenv("PATCHVEC_TENANTS__acme__MAX_CONCURRENT", "3")
@@ -206,29 +184,25 @@ def test_tenants_sidecar_only_overlays_tenant_keys(tmp_path):
     sidecar = tmp_path / "tenants.yml"
     _write(
         sidecar,
-        """
-        auth:
-          mode: none
-          api_keys:
-            acme: sidecar-key
-        search:
-          max_concurrent: 1
-        tenants:
-          acme:
-            max_concurrent: 4
-        """,
+        "auth:\n"
+        "  mode: none\n"
+        "  api_keys:\n"
+        "    acme: sidecar-key\n"
+        "search:\n"
+        "  max_concurrent: 1\n"
+        "tenants:\n"
+        "  acme:\n"
+        "    max_concurrent: 4\n",
     )
 
     config_path = tmp_path / "config.yml"
     _write(
         config_path,
-        f"""
-        auth:
-          mode: static
-          tenants_file: {sidecar}
-        search:
-          max_concurrent: 42
-        """,
+        f"auth:\n"
+        f"  mode: static\n"
+        f"  tenants_file: {sidecar}\n"
+        f"search:\n"
+        f"  max_concurrent: 42\n",
     )
 
     cfg = Config(path=config_path)

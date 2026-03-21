@@ -21,6 +21,13 @@ from pave.service import (
 )
 from pave.config import get_cfg, reload_cfg
 from pave import metrics
+from pave.runtime_paths import (
+    DEFAULT_HOME,
+    apply_runtime_env,
+    load_asset_text,
+    render_config_template,
+    resolve_runtime_paths,
+)
 
 store: BaseStore | None = None
 
@@ -39,6 +46,75 @@ def _dump(out, pretty: bool = True):
 
 def _read(path: str) -> bytes:
     return pathlib.Path(path).read_bytes()
+
+
+def _prepare_runtime(args) -> None:
+    global store
+    paths = apply_runtime_env(
+        home=args.home,
+        config=args.config,
+        tenants=args.tenants,
+        data_dir=args.data_dir,
+    )
+    if any((paths.config, paths.tenants, paths.data_dir)):
+        reload_cfg()
+        store = None
+
+
+def _write_text(path: pathlib.Path, text: str, *, force: bool) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not force:
+        return False
+    path.write_text(text, encoding="utf-8")
+    return True
+
+
+def cmd_init(args):
+    if args.root and args.home:
+        raise SystemExit("use either positional ROOT or --home, not both")
+    home = args.root or args.home
+    if not home and not any((args.config, args.tenants, args.data_dir)):
+        home = DEFAULT_HOME
+    paths = resolve_runtime_paths(
+        home=home,
+        config=args.config,
+        tenants=args.tenants,
+        data_dir=args.data_dir,
+    )
+    if not (paths.config and paths.tenants and paths.data_dir):
+        raise SystemExit("init requires a home root or explicit config/tenants/data-dir")
+
+    config_text = render_config_template(
+        data_dir=paths.data_dir,
+        tenants_file=paths.tenants,
+    )
+    tenants_text = load_asset_text("tenants.yml.example")
+
+    written: list[str] = []
+    skipped: list[str] = []
+    config_path = pathlib.Path(paths.config)
+    tenants_path = pathlib.Path(paths.tenants)
+    data_dir = pathlib.Path(paths.data_dir)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for label, path, text in (
+        ("config", config_path, config_text),
+        ("tenants", tenants_path, tenants_text),
+    ):
+        if _write_text(path, text, force=args.force):
+            written.append(label)
+        else:
+            skipped.append(label)
+
+    out = {
+        "ok": True,
+        "home": paths.home,
+        "config": str(config_path),
+        "tenants": str(tenants_path),
+        "data_dir": str(data_dir),
+        "written": written,
+        "skipped": skipped,
+    }
+    _dump(out, pretty=not args.compact)
 
 def cmd_create(args):
     out = svc_create_collection(_get_store(), args.tenant, args.collection)
@@ -152,14 +228,47 @@ def main_cli(argv=None):
         help="Emit compact JSON for scripting",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
-    #if p.config: reload_cfg(p.config)
+    runtime = argparse.ArgumentParser(add_help=False)
+    runtime.add_argument(
+        "--home",
+        help="Use an instance home dir",
+    )
+    runtime.add_argument("--config", help="Explicit config.yml path")
+    runtime.add_argument("--tenants", help="Explicit tenants.yml path")
+    runtime.add_argument("--data-dir", dest="data_dir", help="Explicit data directory")
 
-    p_create = sub.add_parser("create-collection")
+    p_init = sub.add_parser(
+        "init",
+        parents=[runtime],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  pavecli init                        "
+            "  # ~/patchvec (default)\n"
+            "  pavecli init ~/patchvec-staging      "
+            "  # separate instance\n"
+            "  pavecli init --config /etc/patchvec/"
+            "config.yml \\\n"
+            "    --tenants /var/patchvec/tenants.yml"
+            " \\\n"
+            "    --data-dir /var/patchvec/data       "
+            " # distro layout"
+        ),
+    )
+    p_init.add_argument("root", nargs="?", help="Instance home dir")
+    p_init.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite config and tenants files if they already exist",
+    )
+    p_init.set_defaults(func=cmd_init)
+
+    p_create = sub.add_parser("create-collection", parents=[runtime])
     p_create.add_argument("tenant")
     p_create.add_argument("collection")
     p_create.set_defaults(func=cmd_create)
 
-    p_ingest = sub.add_parser("ingest")
+    p_ingest = sub.add_parser("ingest", parents=[runtime])
     p_ingest.add_argument("tenant")
     p_ingest.add_argument("collection")
     p_ingest.add_argument("file")
@@ -180,7 +289,7 @@ def main_cli(argv=None):
 
     p_ingest.set_defaults(func=cmd_ingest)
 
-    p_search = sub.add_parser("search")
+    p_search = sub.add_parser("search", parents=[runtime])
     p_search.add_argument("tenant")
     p_search.add_argument("collection")
     p_search.add_argument("query")
@@ -188,42 +297,44 @@ def main_cli(argv=None):
     p_search.add_argument("--filters", help='JSON object, e.g. {"docid":"DOC-1"}')
     p_search.set_defaults(func=cmd_search)
 
-    p_delete = sub.add_parser("delete-collection")
+    p_delete = sub.add_parser("delete-collection", parents=[runtime])
     p_delete.add_argument("tenant")
     p_delete.add_argument("collection")
     p_delete.set_defaults(func=cmd_delete)
 
-    p_rename = sub.add_parser("rename-collection")
+    p_rename = sub.add_parser("rename-collection", parents=[runtime])
     p_rename.add_argument("tenant")
     p_rename.add_argument("old_name")
     p_rename.add_argument("new_name")
     p_rename.set_defaults(func=cmd_rename)
 
-    p_delete_doc = sub.add_parser("delete-document")
+    p_delete_doc = sub.add_parser("delete-document", parents=[runtime])
     p_delete_doc.add_argument("tenant")
     p_delete_doc.add_argument("collection")
     p_delete_doc.add_argument("docid")
     p_delete_doc.set_defaults(func=cmd_delete_document)
 
-    p_dump = sub.add_parser("dump-archive")
+    p_dump = sub.add_parser("dump-archive", parents=[runtime])
     p_dump.add_argument("--output", help="Destination ZIP file path")
     p_dump.set_defaults(func=cmd_dump_archive)
 
-    p_restore = sub.add_parser("restore-archive")
+    p_restore = sub.add_parser("restore-archive", parents=[runtime])
     p_restore.add_argument("file")
     p_restore.set_defaults(func=cmd_restore_archive)
 
-    p_reset_metrics = sub.add_parser("reset-metrics")
+    p_reset_metrics = sub.add_parser("reset-metrics", parents=[runtime])
     p_reset_metrics.set_defaults(func=cmd_reset_metrics)
 
-    p_list_tenants = sub.add_parser("list-tenants")
+    p_list_tenants = sub.add_parser("list-tenants", parents=[runtime])
     p_list_tenants.set_defaults(func=cmd_list_tenants)
 
-    p_list_collections = sub.add_parser("list-collections")
+    p_list_collections = sub.add_parser("list-collections", parents=[runtime])
     p_list_collections.add_argument("tenant")
     p_list_collections.set_defaults(func=cmd_list_collections)
 
     args = p.parse_args(argv)
+    if args.cmd != "init":
+        _prepare_runtime(args)
     try:
         return args.func(args)
     except ServiceError as exc:

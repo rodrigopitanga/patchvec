@@ -138,3 +138,37 @@ def test_cli_list_tenants(cli_env, tmp_path, capsys, monkeypatch):
     assert out["ok"] is True
     assert out["tenants"] == ["alpha", "beta"]
     assert out["count"] == 2
+
+
+def test_cli_list_tenants_accepts_home_flag(cli_env, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+    home = tmp_path / "instance"
+    (home / "data" / "t_beta").mkdir(parents=True, exist_ok=True)
+    (home / "data" / "t_alpha").mkdir(parents=True, exist_ok=True)
+
+    pvcli.main_cli(["list-tenants", "--home", str(home)])
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert out["tenants"] == ["alpha", "beta"]
+
+
+def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+
+    pvcli.main_cli(["init"])
+    out = json.loads(capsys.readouterr().out)
+    instance = home / "patchvec"
+    config_path = instance / "config.yml"
+    tenants_path = instance / "tenants.yml"
+
+    assert out["ok"] is True
+    assert Path(out["config"]) == config_path
+    assert Path(out["tenants"]) == tenants_path
+    assert Path(out["data_dir"]) == instance / "data"
+    assert config_path.is_file()
+    assert tenants_path.is_file()
+    assert "tenants_file:" in config_path.read_text(encoding="utf-8")
+    assert "data_dir:" in config_path.read_text(encoding="utf-8")

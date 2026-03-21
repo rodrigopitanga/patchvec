@@ -13,8 +13,8 @@ VENV_PY="$ROOT/.venv-pave/bin/python"
 : "${PATCHVEC_SERVER_PORT:=8086}"
 
 if [ -x "$VENV_PY" ]; then
-  exec "$VENV_PY" -m pave.main
+  exec "$VENV_PY" -m pave.main "$@"
 fi
 
 echo "WARN: .venv not found, using system python" >&2
-exec python3 -m pave.main
+exec python3 -m pave.main "$@"

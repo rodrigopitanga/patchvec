@@ -22,7 +22,11 @@ USE_CPU=1 make serve
 
 `make serve` in the source tree runs with `DEV=1`, so it uses defaults and explicit
 env overrides. If you need to exercise a file-based config from the checkout, pass it
-explicitly, for example `PATCHVEC_CONFIG=./config.yml make serve`.
+explicitly, for example `CONFIG=./config.yml make serve` or
+`./pavesrv.sh --config ./config.yml --tenants ./tenants.yml`.
+
+The packaged entrypoints now also accept explicit instance paths:
+`pavesrv --home ~/patchvec-staging` and `pavecli list-tenants --home ~/patchvec-staging`.
 
 Run the test suite before pushing (`USE_CPU=1` if you installed CPU wheels):
 
@@ -34,7 +38,7 @@ make test
 Need to inspect behaviour without reloads? Run
 `DEV=0 AUTH_MODE=static GLOBAL_KEY=<your-secret> make serve` for an almost
 production-like stack, or call the wrapper script directly:
-`PATCHVEC_AUTH__GLOBAL_KEY=<your-secret> ./pavesrv.sh`.
+`PATCHVEC_AUTH__GLOBAL_KEY=<your-secret> ./pavesrv.sh --config ./config.yml --tenants ./tenants.yml`.
 
 ## Workflow
 

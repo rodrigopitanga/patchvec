@@ -89,7 +89,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.6 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v0.7 |
 | P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v0.6 |
-| P1-34 | Server config bootstrap | 🧩 | Zero-friction pip deployment | v0.6 |
+| P1-34 | ~~Server config bootstrap~~ | 🧩 | ~~Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs~~ | v0.6 |
 | P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v0.6 |
 | P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v0.6 |
 | P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v0.6 |
@@ -309,8 +309,8 @@ latency on every search/ingest/delete.~~
 - Global `request_id` echo across endpoints and responses (P1-11).
 - Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`) (P1-23).
 - Dev vs prod config defaults (P1-25).
-- In server mode, write `config.yml` from defaults on first startup when no
-  config path is passed (P1-34).
+- ~~Explicit config bootstrap for pip installs (`pavecli init`, `--home`,
+  explicit runtime paths) (P1-34).~~
 - Add capability-based filter pushdown with parity checks against canonical
   post-filter semantics (P1-35).
 - Admin key auto-generate + persist (P1-27).
