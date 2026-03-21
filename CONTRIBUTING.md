@@ -16,13 +16,13 @@ cd patchvec
 # GPU deps by default; add USE_CPU=1 if you want CPU-only torch wheels
 make install-dev
 
-# copy local config overrides if you need to tweak behaviour
-cp config.yml.example config.yml
-cp tenants.yml.example tenants.yml
-
 # optional: run the service right away
 USE_CPU=1 make serve
 ```
+
+`make serve` in the source tree runs with `DEV=1`, so it uses defaults and explicit
+env overrides. If you need to exercise a file-based config from the checkout, pass it
+explicitly, for example `PATCHVEC_CONFIG=./config.yml make serve`.
 
 Run the test suite before pushing (`USE_CPU=1` if you installed CPU wheels):
 
@@ -31,9 +31,9 @@ Run the test suite before pushing (`USE_CPU=1` if you installed CPU wheels):
 make test
 ```
 
-Need to inspect behaviour without reloads? After tweaking `config.yml` / `tenants.yml`,
-run `AUTH_MODE=static PATCHVEC_AUTH__GLOBAL_KEY=<your-secret> DEV=0 make serve` for an
-almost production-like stack, or call the wrapper script directly:
+Need to inspect behaviour without reloads? Run
+`DEV=0 AUTH_MODE=static GLOBAL_KEY=<your-secret> make serve` for an almost
+production-like stack, or call the wrapper script directly:
 `PATCHVEC_AUTH__GLOBAL_KEY=<your-secret> ./pavesrv.sh`.
 
 ## Workflow

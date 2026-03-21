@@ -40,17 +40,28 @@ load_dotenv()
 
 _ENV_PREFIX = "PATCHVEC_"
 
-_DEFAULT_CONFIG_PATH = str(
-    Path(
-        os.environ.get(_ENV_PREFIX + "CONFIG", "~/patchvec/config.yml")
-    ).expanduser()
-)
+def _env_flag(name: str) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_config_path() -> str | None:
+    configured = os.environ.get(_ENV_PREFIX + "CONFIG")
+    if configured:
+        return str(Path(configured).expanduser())
+    # In dev mode, do not implicitly load the installed user config file.
+    if _env_flag(_ENV_PREFIX + "DEV"):
+        return None
+    return str(Path("~/patchvec/config.yml").expanduser())
 
 _DEFAULTS = {
     "data_dir": "~/patchvec/data",
     "common_enabled": False,
     "common_tenant": "global",
     "common_collection": "common",
+    # External tenant maps are opt-in; no tenants sidecar is loaded by default.
     "auth": {"mode": "none", "api_keys": {}, "tenants_file": None},
     "vector_store": {"type": "faiss"},
     "embedder": {"type": "sbert"},
@@ -119,12 +130,27 @@ def _env_to_dict(prefix: str = _ENV_PREFIX) -> dict[str, Any]:
         cur[path[-1]] = _coerce(v)
     return envmap
 
-def _load_yaml(path: str | Path) -> dict[str, Any]:
+def _load_yaml(path: str | Path | None) -> dict[str, Any]:
+    if not path:
+        return {}
     p = Path(path)
     if p.is_file():
         with p.open("r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     return {}
+
+def _tenant_overlay(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Keep only tenant-related keys from a tenants sidecar file."""
+    out: dict[str, Any] = {}
+    auth = cfg.get("auth")
+    if isinstance(auth, dict):
+        api_keys = auth.get("api_keys")
+        if isinstance(api_keys, dict):
+            out = _deep_merge(out, {"auth": {"api_keys": api_keys}})
+    tenants = cfg.get("tenants")
+    if isinstance(tenants, dict):
+        out = _deep_merge(out, {"tenants": tenants})
+    return out
 
 # --------------- singleton wrapper ----------------
 class Config:
@@ -138,21 +164,36 @@ class Config:
             path: str | Path | None = None):
         self._lock = threading.RLock()
         if data is None:
-            data = self._load_dict(path or _DEFAULT_CONFIG_PATH)
+            data = self._load_dict(path if path is not None else _default_config_path())
         self._cfg: dict[str, Any] = dict(data)
         self._data = self._cfg  # back-compat alias for old tests
 
     # --- main loader, now a static/class member ---
     @staticmethod
-    def _load_dict(path: str | Path) -> dict[str, Any]:
+    def _load_dict(path: str | Path | None) -> dict[str, Any]:
         file_cfg = _resolve_env_in_obj(_load_yaml(path))
-        tenants_file = file_cfg.get("auth", {}).get("tenants_file") \
-            if isinstance(file_cfg.get("auth"), dict) else None
-        if tenants_file:
-            tcfg = _resolve_env_in_obj(_load_yaml(tenants_file))
-            file_cfg = _deep_merge(file_cfg, tcfg)
         env_cfg = _env_to_dict()
-        merged = _deep_merge(_deep_merge(_DEFAULTS, file_cfg), env_cfg)
+        file_auth = file_cfg.get("auth", {})
+        if not isinstance(file_auth, dict):
+            file_auth = {}
+        env_auth = env_cfg.get("auth", {})
+        if not isinstance(env_auth, dict):
+            env_auth = {}
+        # `auth.tenants_file` itself follows the normal precedence rules:
+        # env > config.yml > defaults.
+        auth_cfg = _deep_merge(file_auth, env_auth)
+        tenants_file = auth_cfg.get("tenants_file")
+        sidecar_cfg: dict[str, Any] = {}
+        if tenants_file:
+            tenants_file = str(Path(tenants_file).expanduser())
+            sidecar_cfg = _tenant_overlay(
+                _resolve_env_in_obj(_load_yaml(tenants_file))
+            )
+        # Sidecar tenant data is loaded first as a base. Inline tenant config in
+        # config.yml then overrides it, and env vars override both.
+        merged = _deep_merge(_DEFAULTS, sidecar_cfg)
+        merged = _deep_merge(merged, file_cfg)
+        merged = _deep_merge(merged, env_cfg)
         for key in _PATH_KEYS:
             parts = key.split(".")
             cur: Any = merged

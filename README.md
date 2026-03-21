@@ -74,8 +74,8 @@ docker rm -f patchvec
 
 ### 🐍 PyPI workflow
 
-Install Patchvec from PyPI inside an isolated virtual environment and point it at a
-local configuration directory.
+Install Patchvec from PyPI inside an isolated virtual environment. You can run it
+purely from env vars, or later point it at an explicit config file.
 
 **Requires Python 3.10–3.14.**
 
@@ -89,8 +89,9 @@ pip install "patchvec[cpu]"
 # sample demo corpus
 curl -LO https://raw.githubusercontent.com/rodrigopitanga/patchvec/main/demo/20k_leagues.txt
 
-# in server mode you must set an admin key
-export PATCHVEC_GLOBAL_KEY=super-sekret
+# env-only server config
+export PATCHVEC_AUTH__MODE=static
+export PATCHVEC_AUTH__GLOBAL_KEY=super-sekret
 
 # option A: run the service (stays up until you stop it)
 pavesrv
@@ -112,6 +113,12 @@ pavecli search demo books "captain nemo" -k 3
 
 Deactivate the virtual environment with `deactivate` when finished.
 
+By default, a non-dev runtime reads `~/patchvec/config.yml` if present, keeps
+tenant sidecar loading disabled unless `auth.tenants_file` is configured, and
+stores data in `~/patchvec/data`. You can override any of that with the
+`PATCHVEC_*` environment scheme or by pointing `PATCHVEC_CONFIG` at an explicit
+config file.
+
 ### 🌐 REST API and Web UI usage
 
 When the server is running (either via Docker or `pavesrv`), the API listens on
@@ -122,17 +129,17 @@ reuse the bearer token exported earlier:
 
 ```bash
 # create collection
-curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
   -X POST http://localhost:8086/collections/demo/books
 
 # ingest document
-curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
   -X POST http://localhost:8086/collections/demo/books/documents \
   -F "file=@20k_leagues.txt" \
   -F 'metadata={"lang":"en"}'
 
 # run search
-curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
   "http://localhost:8086/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
@@ -167,9 +174,8 @@ The Swagger UI is available at `http://localhost:8086/`.
 
 Health and metrics endpoints are available at `/health` and `/metrics`.
 
-Configuration files copied in either workflow can be customised. Runtime options are
-also accepted via the `PATCHVEC_*` environment variable scheme (`PATCHVEC_SERVER__PORT`,
-`PATCHVEC_AUTH__MODE`, etc.), which precedes conf files.
+Runtime options are also accepted via the `PATCHVEC_*` environment variable scheme
+(`PATCHVEC_SERVER__PORT`, `PATCHVEC_AUTH__MODE`, etc.), which precedes config files.
 
 ### 🔁 Live data updates
 
@@ -194,12 +200,12 @@ pavecli ingest demo books 20k_leagues_v2.txt --docid=verne-20k
 Delete by ID then ingest (REST path example):
 
 ```bash
-curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
   -X DELETE http://localhost:8086/collections/demo/books/documents/verne-20k
 
 # make changes
 
-curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PATCHVEC_AUTH__GLOBAL_KEY" \
   -X POST http://localhost:8086/collections/demo/books/documents \
   -F "file=@demo/20k_leagues.txt" \
   -F 'docid=verne-20k'

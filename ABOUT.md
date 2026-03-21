@@ -47,8 +47,8 @@ export PATCHVEC_AUTH__GLOBAL_KEY="your-secret"
 ```
 
 ## Minimal config (optional)
-By default PatchVec runs with sensible local defaults. To customize, create
-`config.yml`:
+By default PatchVec runs with sensible local defaults. For a user install,
+customize `~/patchvec/config.yml`:
 ```yaml
 vector_store:
   type: faiss
@@ -60,8 +60,11 @@ auth:
 ```
 Then export:
 ```bash
-export PATCHVEC_CONFIG=./config.yml
 export PATCHVEC_GLOBAL_KEY="your-secret"
+```
+If you keep the file elsewhere, point the runtime at it explicitly:
+```bash
+export PATCHVEC_CONFIG=/path/to/config.yml
 ```
 
 ## CLI example

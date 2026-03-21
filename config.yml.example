@@ -2,7 +2,17 @@
 # Copy to config.yml and adjust.
 # Secrets (API keys) should live in a separate untracked file — see tenants.yml.example.
 #
-# Config file location (default: ~/patchvec/config.yml):
+# Default user-install paths:
+#   config:  ~/patchvec/config.yml
+#   tenants: ~/patchvec/tenants.yml
+#   data:    ~/patchvec/data
+#
+# Distro-like install example:
+#   config:  /etc/patchvec/config.yml
+#   tenants: /var/patchvec/tenants.yml
+#   data:    /var/patchvec/data
+#
+# Config file location override:
 #   PATCHVEC_CONFIG=/etc/patchvec/config.yml
 #
 # In Docker/systemd deployments always set PATCHVEC_CONFIG explicitly — the
@@ -17,6 +27,15 @@
 # All keys can also be overridden inline via environment variables:
 #   PATCHVEC_<KEY>=value          (top-level, e.g. PATCHVEC_DATA_DIR)
 #   PATCHVEC_<SECTION>__<KEY>=val (nested,    e.g. PATCHVEC_LOG__LEVEL=debug)
+#
+# `auth.tenants_file` is optional. If unset, its default is `None` and no
+# tenants sidecar file is loaded.
+# If set, PatchVec loads that sidecar first. Then inline tenant config is
+# applied with precedence:
+#   env vars > config.yml > tenants.yml > defaults
+# Example: define tenant "acme" entirely from env:
+#   PATCHVEC_AUTH__API_KEYS__acme=change-me
+#   PATCHVEC_TENANTS__acme__MAX_CONCURRENT=5
 
 # ---------------------------------------------------------------------------
 # Storage
@@ -24,8 +43,7 @@
 
 # Data directory — ~ is expanded at startup.
 # Default (library/dev): ~/patchvec/data
-# For Docker/systemd use an absolute path:
-#   mkdir -p /var/lib/patchvec/data && chown patchvec:patchvec /var/lib/patchvec/data
+# For distro-like installs use an absolute path, e.g. /var/patchvec/data.
 data_dir: ~/patchvec/data
 
 # ---------------------------------------------------------------------------
@@ -57,9 +75,11 @@ auth:
   # Always read from the environment; never hardcode in committed files.
   global_key: ${PATCHVEC_GLOBAL_KEY}
 
-  # External tenant→key mapping file (untracked, merged at startup).
-  # Keys in this file override any inline api_keys entries with the same name.
-  tenants_file: ./tenants.yml
+  # External tenant→key mapping file.
+  # Keep the same key paths there (`auth.api_keys`, `tenants.*`).
+  # User install default:  ~/patchvec/tenants.yml
+  # Distro-like install:   /var/patchvec/tenants.yml
+  # tenants_file: ~/patchvec/tenants.yml
 
   # Inline tenant→key mapping (fallback; keep empty in the repo).
   api_keys: {}
