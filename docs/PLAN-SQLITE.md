@@ -528,6 +528,11 @@ Powers P2-13 collection log export.
 **Per-collection backend + embedder config** — stores how each collection is
 wired (backend and embedder) for P1-32 and later backend swaps.
 
+This is collection-scoped logical wiring, not a requirement that each
+collection owns a dedicated physical database or vector service. The
+stored backend/embedder config may point either to dedicated local
+artifacts or to shared infrastructure with collection-specific keys.
+
 ```sql
 ALTER TABLE collections ADD COLUMN backend_type TEXT;
 ALTER TABLE collections ADD COLUMN backend_config_json TEXT;

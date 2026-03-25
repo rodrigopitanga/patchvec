@@ -235,6 +235,11 @@ Store orchestrator ──→  compose all layers, own concurrency
   instance is a 2.0+ concern.
 - **Per-collection embedder config** stored in `GlobalDB` (Phase 2
   SQLite, future step).
+- **Per-collection means logical isolation, not fixed physical
+  topology.** A collection is an independent lifecycle/config unit.
+  Its metadata/vector state may live in dedicated local files today
+  or in shared remote infrastructure later; that mapping is owned by
+  the backend constructor/config, not by the `Store` contract.
 - **`Store` orchestrator** composes all layers, owns concurrency
   (`collection_lock`), the search-then-hydrate pattern, and archive
   I/O.

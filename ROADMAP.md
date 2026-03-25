@@ -24,6 +24,8 @@ These are non-negotiable constraints that apply across all versions.
 - **Collection independence.** Collections are not owned by tenants. The tenant is a
   runtime namespace, not a structural owner. Collections must be fully portable: export
   from one instance/tenant, import into another without data loss or format surprise.
+  This is a logical portability/lifecycle guarantee, not a promise that each
+  collection maps to its own physical DB file, DB instance, or vector service.
 - **Transparency by default.** Developers must be able to see what was indexed, what
   chunks were produced, what metadata is stored. Opacity is a DX failure.
 - **Layered independence.** Auth, tenant profiles, collections, and server configuration
