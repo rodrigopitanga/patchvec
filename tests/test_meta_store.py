@@ -441,3 +441,38 @@ def test_filter_by_meta_ignores_non_pushdown_values(tmp_path):
 
     assert matched == set(candidates)
     db.close()
+
+
+def test_filter_by_meta_skips_mixed_or_key_with_postfilter_values(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"category": "ml"},
+            ),
+            (
+                "doc1::chunk_1",
+                "chunks/doc1__chunk_1.txt",
+                {"category": "nlp"},
+            ),
+            (
+                "doc1::chunk_2",
+                "chunks/doc1__chunk_2.txt",
+                {"category": "infra"},
+            ),
+        ],
+        doc_meta={"docid": "doc1"},
+    )
+
+    candidates = ["doc1::chunk_0", "doc1::chunk_1", "doc1::chunk_2"]
+    matched = db.filter_by_meta(
+        candidates,
+        {"category": ["ml", "*lp"]},
+    )
+
+    assert matched == set(candidates)
+    db.close()

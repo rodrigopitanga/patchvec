@@ -465,7 +465,10 @@ class CollectionDB:
 
         Handles exact-match and negation (!value) only.
         Values with *, >, <, >=, <= are skipped (left for
-        caller's canonical post-filter).
+        caller's canonical post-filter). If a single key mixes
+        pushdown-able and non-pushdown values, that key is skipped
+        entirely to preserve OR semantics before the canonical
+        post-filter runs.
         Returns subset of candidate_rids passing all
         pushdown-able conditions.
         """
@@ -482,19 +485,27 @@ class CollectionDB:
                 if not current:
                     break
 
-                current_batch = list(current)
-                key_matches: set[str] = set()
-                saw_pushdown = False
-
+                normalized_values: list[str] = []
+                mixed_semantics = False
                 for raw_value in values:
                     if not isinstance(raw_value, str):
                         continue
                     value = self._normalize_filter_value(raw_value)
-                    if "*" in value:
-                        continue
-                    if value.startswith(skip_prefixes):
-                        continue
+                    if "*" in value or value.startswith(skip_prefixes):
+                        mixed_semantics = True
+                        break
+                    normalized_values.append(value)
 
+                # OR within a key means any non-pushdown value can still admit
+                # additional matches, so narrowing by the pushdown subset would
+                # change canonical search semantics.
+                if mixed_semantics or not normalized_values:
+                    continue
+
+                current_batch = list(current)
+                key_matches: set[str] = set()
+
+                for value in normalized_values:
                     if value.startswith("!") and len(value) > 1:
                         neg_val = value[1:]
                         if key == "docid":
@@ -519,7 +530,6 @@ class CollectionDB:
                                 )
                             )
                         key_matches.update(current - matched)
-                        saw_pushdown = True
                         continue
 
                     if key == "docid":
@@ -544,10 +554,8 @@ class CollectionDB:
                             )
                         )
                     key_matches.update(matched)
-                    saw_pushdown = True
 
-                if saw_pushdown:
-                    current.intersection_update(key_matches)
+                current.intersection_update(key_matches)
 
         return current
 
