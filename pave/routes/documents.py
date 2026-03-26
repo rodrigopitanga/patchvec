@@ -127,6 +127,7 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                 code = exc.code
                 status_map = {
                     "invalid_csv_options": 400,
+                    "invalid_metadata_keys": 400,
                     "ingest_failed": 500,
                 }
                 return error(

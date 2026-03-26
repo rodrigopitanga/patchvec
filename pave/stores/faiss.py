@@ -16,7 +16,12 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 from threading import Lock
 from contextlib import contextmanager
 from pave.metadb import CollectionDB
-from pave.stores.base import BaseStore, Record, SearchResult
+from pave.stores.base import (
+    BaseStore,
+    MetadataValidationError,
+    Record,
+    SearchResult,
+)
 from pave.backends import FaissBackend, VectorBackend
 from pave.embedders import get_embedder
 from pave.config import CFG as c, get_logger
@@ -488,6 +493,8 @@ class FaissStore(BaseStore):
             raw_doc_meta.setdefault("docid", docid)
             try:
                 safe_doc_meta = self._sanit_meta_dict(raw_doc_meta)
+            except MetadataValidationError:
+                raise
             except Exception:
                 safe_doc_meta = {"docid": docid}
             rids_to_add: list[str] = []
@@ -525,6 +532,8 @@ class FaissStore(BaseStore):
 
                 try:
                     safe_meta = self._sanit_meta_dict(md)
+                except MetadataValidationError:
+                    raise
                 except Exception:
                     safe_meta = {}
 
@@ -645,25 +654,51 @@ class FaissStore(BaseStore):
         return None
 
     @staticmethod
-    def _sanit_meta_value(value: Any) -> Any:
+    def _sanit_meta_value(value: Any, *, path: str = "metadata") -> Any:
         if isinstance(value, dict):
-            return FaissStore._sanit_meta_dict(value)
+            return FaissStore._sanit_meta_dict(value, path=path)
         if isinstance(value, (list, tuple, set)):
-            return [FaissStore._sanit_meta_value(v) for v in value]
+            return [
+                FaissStore._sanit_meta_value(v, path=f"{path}[{i}]")
+                for i, v in enumerate(value)
+            ]
         if isinstance(value, (int, float, bool)) or value is None:
             return value
         return FaissStore._sanit_sql(value)
 
     @staticmethod
-    def _sanit_meta_dict(meta: dict[str, Any] | None) -> dict[str, Any]:
+    def _sanit_meta_dict(
+        meta: dict[str, Any] | None,
+        *,
+        path: str = "metadata",
+    ) -> dict[str, Any]:
         safe: dict[str, Any] = {}
         if not isinstance(meta, dict):
             return safe
+        seen: dict[str, str] = {}
         for raw_key, raw_value in meta.items():
+            raw_key_text = raw_key if isinstance(raw_key, str) else str(raw_key)
+            key_path = f"{path}.{raw_key_text}" if path else raw_key_text
             safe_key = FaissStore._sanit_field(raw_key)
-            if not safe_key or safe_key == "text":
-                continue
-            safe[safe_key] = FaissStore._sanit_meta_value(raw_value)
+            if not safe_key:
+                raise MetadataValidationError(
+                    f"metadata key '{key_path}' sanitizes to empty string"
+                )
+            if safe_key == "text":
+                raise MetadataValidationError(
+                    f"metadata key '{key_path}' sanitizes to reserved key 'text'"
+                )
+            prev_key_path = seen.get(safe_key)
+            if prev_key_path is not None:
+                raise MetadataValidationError(
+                    f"metadata keys '{prev_key_path}' and '{key_path}' "
+                    f"both sanitize to '{safe_key}'"
+                )
+            seen[safe_key] = key_path
+            safe[safe_key] = FaissStore._sanit_meta_value(
+                raw_value,
+                path=key_path,
+            )
         return safe
 
     @staticmethod

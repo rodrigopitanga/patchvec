@@ -11,6 +11,10 @@ from typing import Any
 Record = tuple[str, str, dict[str, Any]]  # (rid, text, meta)
 
 
+class MetadataValidationError(ValueError):
+    """Raised when metadata keys become invalid after sanitization."""
+
+
 @dataclass(frozen=True)
 class SearchResult:
     """Store-layer search result."""

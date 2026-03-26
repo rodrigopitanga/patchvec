@@ -78,3 +78,78 @@ def test_csv_refuse_names_without_header(store):
             csv_options={"has_header": "no", "meta_cols": "b", "include_cols": ""}
         )
     assert excinfo.value.code == "invalid_csv_options"
+
+
+def test_ingest_rejects_colliding_sanitized_doc_metadata_keys(store):
+    with pytest.raises(ServiceError) as excinfo:
+        svc_ingest(
+            store,
+            "t4",
+            "c4",
+            "f4.txt",
+            _csv_bytes("hello world"),
+            "D4",
+            {"doc id": "shadow-docid"},
+        )
+    assert excinfo.value.code == "invalid_metadata_keys"
+    assert "sanitize to 'docid'" in excinfo.value.message
+
+
+def test_csv_ingest_rejects_colliding_sanitized_chunk_metadata_keys(store):
+    csv = "a!,a?\nleft,right\n"
+    with pytest.raises(ServiceError) as excinfo:
+        svc_ingest(
+            store,
+            "t5",
+            "c5",
+            "f5.csv",
+            _csv_bytes(csv),
+            "D5",
+            None,
+            csv_options={
+                "has_header": "yes",
+                "meta_cols": "a!,a?",
+                "include_cols": "",
+            },
+        )
+    assert excinfo.value.code == "invalid_metadata_keys"
+    assert "sanitize to 'a'" in excinfo.value.message
+
+
+def test_ingest_rejects_metadata_key_sanitized_to_reserved_text(store):
+    with pytest.raises(ServiceError) as excinfo:
+        svc_ingest(
+            store,
+            "t6",
+            "c6",
+            "f6.txt",
+            _csv_bytes("hello world"),
+            "D6",
+            {"te xt": "shadow-text"},
+        )
+    assert excinfo.value.code == "invalid_metadata_keys"
+    assert "reserved key 'text'" in excinfo.value.message
+
+
+def test_ingest_sanitizes_sqlish_doc_metadata_value_and_exact_filter_matches(store):
+    raw_value = "x'; DROP TABLE chunk_meta; --"
+    out = svc_ingest(
+        store,
+        "t7",
+        "c7",
+        "f7.txt",
+        _csv_bytes("hello world"),
+        "D7",
+        {"so urce": raw_value},
+    )
+    assert out["ok"] is True
+
+    hits = store.search(
+        "t7",
+        "c7",
+        "hello",
+        k=5,
+        filters={"so urce": raw_value},
+    )
+    assert len(hits) == 1
+    assert hits[0].meta["source"] == FaissStore._sanit_sql(raw_value)

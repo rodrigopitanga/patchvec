@@ -23,7 +23,7 @@ from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
 from pave.preprocess import preprocess
-from pave.stores.base import BaseStore, SearchResult
+from pave.stores.base import BaseStore, MetadataValidationError, SearchResult
 
 log = get_logger()
 
@@ -247,6 +247,8 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             }
         except ServiceError:
             raise
+        except MetadataValidationError as exc:
+            raise ServiceError("invalid_metadata_keys", str(exc)) from exc
         except ValueError as exc:
             raise ServiceError("invalid_csv_options", str(exc)) from exc
         except Exception as e:

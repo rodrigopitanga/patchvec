@@ -18,3 +18,17 @@ def test_api_invalid_csv_options_returns_code(client):
     data = r.json()
     assert data["ok"] is False
     assert data["code"] == "invalid_csv_options"
+
+
+def test_api_invalid_metadata_keys_returns_code(client):
+    client.post("/collections/acme/metabad")
+    files = {"file": ("bad.txt", b"hello world\n", "text/plain")}
+    r = client.post(
+        "/collections/acme/metabad/documents",
+        files=files,
+        data={"metadata": '{"doc id":"shadow-docid"}'},
+    )
+    assert r.status_code == 400
+    data = r.json()
+    assert data["ok"] is False
+    assert data["code"] == "invalid_metadata_keys"
