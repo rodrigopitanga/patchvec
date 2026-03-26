@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from pave.filters import sanit_sql
 from pave.stores.faiss import FaissStore
 
 
@@ -106,7 +107,7 @@ def test_sqlish_doc_metadata_exact_filter_matches_with_and_without_pushdown(
     assert pushed == canonical
     assert {rid for rid, _score, _meta in pushed} == {"doc1::r1", "doc1::r2"}
     assert all(
-        meta["source"] == FaissStore._sanit_sql(exact_value)
+        meta["source"] == sanit_sql(exact_value)
         for _rid, _score, meta in pushed
     )
 
@@ -130,7 +131,7 @@ def test_sqlish_chunk_metadata_exact_filter_matches_with_and_without_pushdown(
 
     assert pushed == canonical
     assert {rid for rid, _score, _meta in pushed} == {"doc1::r1"}
-    assert pushed[0][2]["name"] == FaissStore._sanit_sql(exact_value)
+    assert pushed[0][2]["name"] == sanit_sql(exact_value)
 
 
 def test_sqlish_chunk_metadata_wildcard_filter_matches_with_and_without_pushdown(
@@ -166,4 +167,4 @@ def test_sqlish_chunk_metadata_wildcard_filter_matches_with_and_without_pushdown
     assert seen["filters"] == {"tag": [f"*{wildcard_value}*"]}
     assert pushed == canonical
     assert {rid for rid, _score, _meta in pushed} == {"doc1::r1"}
-    assert pushed[0][2]["tag"] == FaissStore._sanit_sql(wildcard_value)
+    assert pushed[0][2]["tag"] == sanit_sql(wildcard_value)

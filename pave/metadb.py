@@ -19,18 +19,11 @@ from datetime import datetime, timezone as tz
 from pathlib import Path
 from typing import Any, Iterator
 
+from pave.filters import sanit_sql
+
 
 class LegacyMetadataError(RuntimeError):
     pass
-
-
-_FILTER_TRANS = str.maketrans({
-    ";": " ",
-    '"': " ",
-    "`": " ",
-    "\\": " ",
-    "\x00": "",
-})
 
 
 _MIGRATIONS: dict[int, list[str]] = {
@@ -448,14 +441,6 @@ class CollectionDB:
             matches.update(row[0] for row in cur.fetchall())
         return matches
 
-    @staticmethod
-    def _normalize_filter_value(value: str) -> str:
-        text = str(value).translate(_FILTER_TRANS)
-        for token in ("--", "/*", "*/"):
-            if token in text:
-                text = text.split(token, 1)[0]
-        return text.strip().replace("'", "''")
-
     def filter_by_meta(
         self,
         candidate_rids: list[str],
@@ -490,7 +475,7 @@ class CollectionDB:
                 for raw_value in values:
                     if not isinstance(raw_value, str):
                         continue
-                    value = self._normalize_filter_value(raw_value)
+                    value = sanit_sql(raw_value)
                     if "*" in value or value.startswith(skip_prefixes):
                         mixed_semantics = True
                         break

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import pytest
+from pave.filters import sanit_sql
 from pave.service import ingest_document as svc_ingest, ServiceError
 from pave.stores.faiss import FaissStore
 
@@ -152,4 +153,4 @@ def test_ingest_sanitizes_sqlish_doc_metadata_value_and_exact_filter_matches(sto
         filters={"so urce": raw_value},
     )
     assert len(hits) == 1
-    assert hits[0].meta["source"] == FaissStore._sanit_sql(raw_value)
+    assert hits[0].meta["source"] == sanit_sql(raw_value)

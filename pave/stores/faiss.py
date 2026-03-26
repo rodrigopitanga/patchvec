@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
-import os, json, operator, tempfile, sqlite3
+import os, json, sqlite3
 from datetime import datetime, date
 from collections.abc import Iterable
 from pathlib import Path
@@ -25,18 +25,17 @@ from pave.stores.base import (
 from pave.backends import FaissBackend, VectorBackend
 from pave.embedders import get_embedder
 from pave.config import CFG as c, get_logger
+from pave.filters import (
+    lookup_meta,
+    matches_filters,
+    sanit_field,
+    sanit_meta_dict,
+)
 
 log = get_logger()
 
 _LOCKS: dict[str, Lock] = {}
 _LOCKS_GUARD = Lock()  # Protects _LOCKS dictionary creation
-_SQL_TRANS = str.maketrans({
-    ";": " ",
-    '"': " ",
-    "`": " ",
-    "\\": " ",
-    "\x00": "",
-})
 
 def get_lock(key: str) -> Lock:
     """Get or create a lock for a given key, thread-safe."""
@@ -56,9 +55,6 @@ def collection_lock(tenant: str, collection: str):
         lock.release()
 
 class FaissStore(BaseStore):
-    # Maximum depth for recursive collection traversal in filter matching
-    _FILTER_MATCH_MAX_DEPTH = 10
-
     def __init__(self):
         self._emb: dict[tuple[str, str], VectorBackend] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
@@ -69,32 +65,6 @@ class FaissStore(BaseStore):
 
     def _db_path(self, tenant: str, collection: str) -> Path:
         return Path(self._base_path(tenant, collection)) / "meta.db"
-
-    def _load_json(self, path: str):
-        if os.path.isfile(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f) or {}
-            except Exception:
-                return {}
-        return {}
-
-    def _save_json(self, path: str, data):
-        d = os.path.dirname(path)
-        os.makedirs(d, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
 
     def load_or_init(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
@@ -431,26 +401,6 @@ class FaissStore(BaseStore):
             urid.replace("/", "_").replace("\\", "_").replace(":", "_") + ".txt"
         )
 
-    def _load_meta(
-        self, tenant: str, collection: str
-    ) -> dict[str, dict[str, Any]]:
-        """Backward-compat helper: load all merged metadata from CollectionDB.
-
-        Returns a dict keyed by rid. Retained so existing tests that
-        access this method continue to work after JSON files were replaced
-        by SQLite.
-        """
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        if col_db is None:
-            return {}
-        conn = col_db._conn
-        if conn is None:
-            return {}
-        cur = conn.execute("SELECT rid FROM chunks")
-        rids = [rid for rid, in cur.fetchall()]
-        return col_db.get_meta_batch(rids)
-
     def _save_chunk_text(self, tenant: str, collection: str,
                          urid: str, t: str) -> None:
         p = os.path.join(self._chunks_dir(tenant, collection),
@@ -492,7 +442,7 @@ class FaissStore(BaseStore):
             raw_doc_meta = dict(doc_meta or {})
             raw_doc_meta.setdefault("docid", docid)
             try:
-                safe_doc_meta = self._sanit_meta_dict(raw_doc_meta)
+                safe_doc_meta = sanit_meta_dict(raw_doc_meta)
             except MetadataValidationError:
                 raise
             except Exception:
@@ -531,7 +481,7 @@ class FaissStore(BaseStore):
                             md = {}
 
                 try:
-                    safe_meta = self._sanit_meta_dict(md)
+                    safe_meta = sanit_meta_dict(md)
                 except MetadataValidationError:
                     raise
                 except Exception:
@@ -572,158 +522,6 @@ class FaissStore(BaseStore):
             )
             return len(rids_to_add)
 
-    @staticmethod
-    def _matches_filters(m: dict[str, Any],
-                         filters: dict[str, Any] | None) -> bool:
-        """
-        Evaluates whether metadata `m` satisfies all filter conditions.
-        Supports:
-          - wildcards (*xyz / xyz*)
-          - numeric comparisons (>, <, >=, <=, !=)
-          - datetime comparisons (ISO 8601)
-        Multiple values in the same key act as OR; multiple keys act as AND.
-        """
-        if not filters:
-            return True
-
-        def match(have: Any, cond: Any, depth: int = 0) -> bool:
-            # Prevent infinite recursion with deeply nested collections
-            if depth >= FaissStore._FILTER_MATCH_MAX_DEPTH:
-                log.warning(
-                    f"Filter match depth limit "
-                    f"({FaissStore._FILTER_MATCH_MAX_DEPTH}) "
-                    f"exceeded for value: {type(have)}"
-                )
-                return False
-
-            if have is None:
-                return False
-            if isinstance(have, (list, tuple, set)):
-                return any(match(item, cond, depth + 1) for item in have)
-            if isinstance(cond, str):
-                s = FaissStore._sanit_sql(cond)
-            else:
-                s = str(cond)
-            hv = str(have)
-            # Numeric/date ops
-            _OPS = {">=": operator.ge, "<=": operator.le,
-                    "!=": operator.ne,
-                    ">": operator.gt, "<": operator.lt}
-            for op_str, op_fn in _OPS.items():
-                if s.startswith(op_str):
-                    val = s[len(op_str):].strip()
-                    try:
-                        hvn, vvn = float(have), float(val)
-                        return op_fn(hvn, vvn)
-                    except Exception:
-                        try:
-                            hd = datetime.fromisoformat(str(have))
-                            vd = datetime.fromisoformat(val)
-                            return op_fn(hd, vd)
-                        except Exception:
-                            return False
-            # Wildcards
-            if s == "*":
-                return True
-            if s.startswith("*") and s.endswith("*") and s[1:-1] in hv:
-                return True
-            if s.startswith("*") and hv.endswith(s[1:]):
-                return True
-            if s.endswith("*") and hv.startswith(s[:-1]):
-                return True
-            if s.startswith("!") and len(s) > 1:
-                return hv != s[1:]
-            return hv == s
-
-        for k, vals in filters.items():
-            if not any(
-                match(FaissStore._lookup_meta(m, k), v) for v in vals
-            ):
-                return False
-        return True
-
-    @staticmethod
-    def _lookup_meta(meta: dict[str, Any] | None, key: str) -> Any:
-        if not meta:
-            return None
-        if key in meta:
-            return meta.get(key)
-        for raw_key, value in meta.items():
-            if FaissStore._sanit_field(raw_key) == key:
-                return value
-        return None
-
-    @staticmethod
-    def _sanit_meta_value(value: Any, *, path: str = "metadata") -> Any:
-        if isinstance(value, dict):
-            return FaissStore._sanit_meta_dict(value, path=path)
-        if isinstance(value, (list, tuple, set)):
-            return [
-                FaissStore._sanit_meta_value(v, path=f"{path}[{i}]")
-                for i, v in enumerate(value)
-            ]
-        if isinstance(value, (int, float, bool)) or value is None:
-            return value
-        return FaissStore._sanit_sql(value)
-
-    @staticmethod
-    def _sanit_meta_dict(
-        meta: dict[str, Any] | None,
-        *,
-        path: str = "metadata",
-    ) -> dict[str, Any]:
-        safe: dict[str, Any] = {}
-        if not isinstance(meta, dict):
-            return safe
-        seen: dict[str, str] = {}
-        for raw_key, raw_value in meta.items():
-            raw_key_text = raw_key if isinstance(raw_key, str) else str(raw_key)
-            key_path = f"{path}.{raw_key_text}" if path else raw_key_text
-            safe_key = FaissStore._sanit_field(raw_key)
-            if not safe_key:
-                raise MetadataValidationError(
-                    f"metadata key '{key_path}' sanitizes to empty string"
-                )
-            if safe_key == "text":
-                raise MetadataValidationError(
-                    f"metadata key '{key_path}' sanitizes to reserved key 'text'"
-                )
-            prev_key_path = seen.get(safe_key)
-            if prev_key_path is not None:
-                raise MetadataValidationError(
-                    f"metadata keys '{prev_key_path}' and '{key_path}' "
-                    f"both sanitize to '{safe_key}'"
-                )
-            seen[safe_key] = key_path
-            safe[safe_key] = FaissStore._sanit_meta_value(
-                raw_value,
-                path=key_path,
-            )
-        return safe
-
-    @staticmethod
-    def _sanit_sql(value: Any, *, max_len: int | None = None) -> str:
-        if value is None:
-            return ""
-        text = str(value).translate(_SQL_TRANS)
-        for token in ("--", "/*", "*/"):
-            if token in text:
-                text = text.split(token, 1)[0]
-        text = text.strip()
-        if max_len is not None and max_len > 0 and len(text) > max_len:
-            text = text[:max_len]
-        return text.replace("'", "''")
-
-    @staticmethod
-    def _sanit_field(name: Any) -> str:
-        if not isinstance(name, str):
-            name = str(name)
-        safe = []
-        for ch in name:
-            if ch.isalnum() or ch in {"_", "-"}:
-                safe.append(ch)
-        return "".join(safe)
-
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> list[SearchResult]:
         """
@@ -739,7 +537,7 @@ class FaissStore(BaseStore):
         fetch_k = max(50, kk * 5)
         normed_filters: dict[str, list[Any]] = {}
         for key, vals in (filters or {}).items():
-            safe_key = self._sanit_field(key)
+            safe_key = sanit_field(key)
             if not safe_key:
                 continue
             if isinstance(vals, list):
@@ -774,7 +572,7 @@ class FaissStore(BaseStore):
             if not rid:
                 continue
             rid_meta = meta_batch.get(rid, {})
-            if self._matches_filters(rid_meta, normed_filters):
+            if matches_filters(rid_meta, normed_filters):
                 kept.append((rid, score))
                 if len(kept) >= kk:
                     break
@@ -814,7 +612,7 @@ class FaissStore(BaseStore):
         if filters:
             filter_parts = []
             for key, vals in filters.items():
-                meta_val = self._lookup_meta(meta, key)
+                meta_val = lookup_meta(meta, key)
                 if meta_val is not None:
                     # Show the actual value that matched
                     filter_parts.append(f"{key}={meta_val}")
