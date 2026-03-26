@@ -13,9 +13,10 @@ from fastapi.responses import JSONResponse
 
 from pave.config import get_cfg, get_logger, reload_cfg
 from pave.auth import enforce_policy, resolve_bind
+from pave.embedders import get_embedder
 from pave.metrics import set_data_dir as metrics_set_data_dir, \
     flush as metrics_flush
-from pave.stores.factory import get_store
+from pave.stores.local import LocalStore
 from pave.service import ServiceError
 from pave.schemas import ErrorResponse
 from pave.routes import (
@@ -71,7 +72,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         # Eagerly load the sentence-transformer model so the first
         # request doesn't pay the cold-start penalty.
         try:
-            app.state.store.load_or_init("_system", "health")
+            app.state.store.create_collection("_system", "health")
             log.info("Embedding model warm-up complete")
         except Exception as e:
             log.warning(f"Embedding model warm-up failed: {e}")
@@ -87,7 +88,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         description=cfg.get("instance.desc","Vector Search Microservice"),
         lifespan=lifespan,
     )
-    app.state.store = get_store(cfg)
+    app.state.store = LocalStore(
+        data_dir=str(cfg.get("data_dir")),
+        embedder=get_embedder(),
+    )
     app.state.cfg = cfg
     app.state.version = VERSION
     app.state.hw_info = _hw_info()

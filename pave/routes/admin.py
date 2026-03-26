@@ -40,17 +40,9 @@ def build_admin_router(cfg, error, resp) -> APIRouter:
         if not ctx.is_admin:
             return error(403, "admin_required", "admin access required")
 
-        data_dir = cfg.get("data_dir")
-        if not data_dir:
-            return error(
-                500,
-                "data_dir_not_configured",
-                "data directory is not configured",
-            )
-
         try:
             archive_path, tmp_dir = await run_in_threadpool(
-                svc_dump_archive, store, data_dir
+                svc_dump_archive, store
             )
         except FileNotFoundError:
             return error(404, "data_dir_not_found", "data directory not found")
@@ -89,18 +81,10 @@ def build_admin_router(cfg, error, resp) -> APIRouter:
         if not ctx.is_admin:
             return error(403, "admin_required", "admin access required")
 
-        data_dir = cfg.get("data_dir")
-        if not data_dir:
-            return error(
-                500,
-                "data_dir_not_configured",
-                "data directory is not configured",
-            )
-
         content = await file.read()
         try:
             out = await run_in_threadpool(
-                svc_restore_archive, store, data_dir, content
+                svc_restore_archive, store, content
             )
             return out
         except ValueError as exc:
@@ -135,14 +119,7 @@ def build_admin_router(cfg, error, resp) -> APIRouter:
         inc("requests_total")
         if not ctx.is_admin:
             return error(403, "admin_required", "admin access required")
-        data_dir = cfg.get("data_dir")
-        if not data_dir:
-            return error(
-                500,
-                "data_dir_not_configured",
-                "data directory is not configured",
-            )
-        result = svc_list_tenants(store, data_dir)
+        result = svc_list_tenants(store)
         if not result.get("ok"):
             return error(
                 500,

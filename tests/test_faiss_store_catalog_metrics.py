@@ -3,12 +3,13 @@
 
 from pathlib import Path
 
-from pave.stores.faiss import FaissStore
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 
 def test_catalog_metrics_counts_docs_and_chunks(cfg, tmp_path):
     cfg.set("data_dir", str(tmp_path))
-    store = FaissStore()
+    store = LocalStore(str(tmp_path), FakeEmbedder())
     store.index_records(
         "acme",
         "c1",
@@ -32,7 +33,7 @@ def test_catalog_metrics_counts_docs_and_chunks(cfg, tmp_path):
     data_dir = Path(cfg.get("data_dir"))
     (data_dir / "t_empty").mkdir(parents=True, exist_ok=True)
 
-    snap = store.catalog_metrics(str(data_dir))
+    snap = store.catalog_metrics()
     assert snap["tenant_count"] == 2
     assert snap["collection_count"] == 2
     assert snap["doc_count"] == 3

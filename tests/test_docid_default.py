@@ -3,27 +3,12 @@
 
 import pytest
 from pave.service import ingest_document as svc_ingest, _default_docid
-from pave.stores.faiss import FaissStore
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 @pytest.fixture
-def store(monkeypatch, tmp_path):
-    # temp data dir + fake embeddings
-    from pave import config as cfg_mod
-    class DummyCFG:
-        data_dir = str(tmp_path / "data")
-
-        def get(self, key, default=None):
-            if key.endswith("embed_model"):
-                return (
-                    "sentence-transformers/paraphrase-multilingual-"
-                    "MiniLM-L12-v2"
-                )
-            if key.endswith("vector_backend"):
-                return "faiss"
-            return default
-
-    monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
-    return FaissStore()
+def store(tmp_path):
+    return LocalStore(str(tmp_path / "data"), FakeEmbedder())
 
 
 def _b(s: str) -> bytes:

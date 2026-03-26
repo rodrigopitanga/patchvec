@@ -1,11 +1,19 @@
-# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
-import os, json, sqlite3
-from datetime import datetime, date
-from collections.abc import Iterable
+import errno
+import json
+import os
+import shutil
+import sqlite3
+import tempfile
+import zipfile
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from datetime import datetime, date, timezone as tz
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 # Python 3.12 deprecated the default sqlite3 datetime adapters.
@@ -13,8 +21,9 @@ from typing import Any
 sqlite3.register_adapter(date, date.isoformat)
 sqlite3.register_adapter(datetime, datetime.isoformat)
 
-from threading import Lock
-from contextlib import contextmanager
+from pave.backends import FaissBackend, VectorBackend
+from pave.embedders import Embedder
+from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
 from pave.metadb import CollectionDB
 from pave.stores.base import (
     BaseStore,
@@ -22,51 +31,42 @@ from pave.stores.base import (
     Record,
     SearchResult,
 )
-from pave.backends import FaissBackend, VectorBackend
-from pave.embedders import get_embedder
-from pave.config import CFG as c, get_logger
-from pave.filters import (
-    lookup_meta,
-    matches_filters,
-    sanit_field,
-    sanit_meta_dict,
-)
+from pave.config import get_logger
 
 log = get_logger()
 
-_LOCKS: dict[str, Lock] = {}
-_LOCKS_GUARD = Lock()  # Protects _LOCKS dictionary creation
-
-def get_lock(key: str) -> Lock:
-    """Get or create a lock for a given key, thread-safe."""
-    if key not in _LOCKS:
-        with _LOCKS_GUARD:
-            if key not in _LOCKS:  # double-check after acquiring guard
-                _LOCKS[key] = Lock()
-    return _LOCKS[key]
-
-@contextmanager
-def collection_lock(tenant: str, collection: str):
-    lock = get_lock(f"t_{tenant}:c_{collection}")
-    lock.acquire()
-    try:
-        yield
-    finally:
-        lock.release()
-
-class FaissStore(BaseStore):
-    def __init__(self):
+class LocalStore(BaseStore):
+    def __init__(self, data_dir: str, embedder: Embedder) -> None:
+        self._data_dir = data_dir
+        self._embedder = embedder
         self._emb: dict[tuple[str, str], VectorBackend] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
-        self._embedder = get_embedder()
+        self._locks: dict[str, Lock] = {}
+        self._locks_guard = Lock()
+
+    def _get_lock(self, key: str) -> Lock:
+        if key not in self._locks:
+            with self._locks_guard:
+                if key not in self._locks:
+                    self._locks[key] = Lock()
+        return self._locks[key]
+
+    @contextmanager
+    def _collection_lock(self, tenant: str, collection: str) -> Iterator[None]:
+        lock = self._get_lock(f"t_{tenant}:c_{collection}")
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
 
     def _base_path(self, tenant: str, collection: str) -> str:
-        return os.path.join(c.get("data_dir"), f"t_{tenant}", f"c_{collection}")
+        return os.path.join(self._data_dir, f"t_{tenant}", f"c_{collection}")
 
     def _db_path(self, tenant: str, collection: str) -> Path:
         return Path(self._base_path(tenant, collection)) / "meta.db"
 
-    def load_or_init(self, tenant: str, collection: str) -> None:
+    def _load_or_init(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
         if key in self._emb:
             return
@@ -102,16 +102,20 @@ class FaissStore(BaseStore):
             col_db.open(self._db_path(tenant, collection))
             self._dbs[key] = col_db
 
-    def save(self, tenant: str, collection: str) -> None:
+    def _save(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
         em = self._emb.get(key)
         if not em:
             return
         em.flush()
 
+    def create_collection(self, tenant: str, name: str) -> None:
+        with self._collection_lock(tenant, name):
+            self._load_or_init(tenant, name)
+            self._save(tenant, name)
+
     def delete_collection(self, tenant: str, collection: str) -> None:
-        import shutil
-        with collection_lock(tenant, collection):
+        with self._collection_lock(tenant, collection):
             key = (tenant, collection)
             backend = self._emb.pop(key, None)
             if backend is not None:
@@ -138,8 +142,8 @@ class FaissStore(BaseStore):
         new_path = self._base_path(tenant, new_name)
 
         # Acquire locks in sorted order to prevent deadlock
-        lock_old = get_lock(f"t_{tenant}:c_{old_name}")
-        lock_new = get_lock(f"t_{tenant}:c_{new_name}")
+        lock_old = self._get_lock(f"t_{tenant}:c_{old_name}")
+        lock_new = self._get_lock(f"t_{tenant}:c_{new_name}")
         locks = sorted([lock_old, lock_new], key=id)
         locks[0].acquire()
         locks[1].acquire()
@@ -230,7 +234,7 @@ class FaissStore(BaseStore):
                 pass
 
     def list_collections(self, tenant: str) -> list[str]:
-        tenant_path = os.path.join(c.get("data_dir"), f"t_{tenant}")
+        tenant_path = os.path.join(self._data_dir, f"t_{tenant}")
         if not os.path.isdir(tenant_path):
             return []
         collections: list[str] = []
@@ -245,9 +249,8 @@ class FaissStore(BaseStore):
                 collections.append(collection)
         return collections
 
-    def list_tenants(self, data_dir: str) -> list[str]:
-        from pathlib import Path
-        data_dir_path = Path(data_dir).resolve()
+    def list_tenants(self) -> list[str]:
+        data_dir_path = Path(self._data_dir).resolve()
         if not data_dir_path.is_dir():
             return []
         tenants: list[str] = []
@@ -262,11 +265,9 @@ class FaissStore(BaseStore):
                 tenants.append(tenant)
         return tenants
 
-    def catalog_metrics(self, data_dir: str) -> dict[str, int]:
+    def catalog_metrics(self) -> dict[str, int]:
         """Return tenant/collection/doc/chunk counters from store metadata."""
-        from pathlib import Path
-
-        data_dir_path = Path(data_dir).resolve()
+        data_dir_path = Path(self._data_dir).resolve()
         if not data_dir_path.is_dir():
             return {
                 "tenant_count": 0,
@@ -357,8 +358,8 @@ class FaissStore(BaseStore):
                 pass
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
-        with collection_lock(tenant, collection):
-            self.load_or_init(tenant, collection)
+        with self._collection_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
             key = (tenant, collection)
             col_db = self._dbs[key]
             ids = col_db.get_rids_for_doc(docid)
@@ -390,7 +391,7 @@ class FaissStore(BaseStore):
                     # and searches hydrate text from sidecars.
                     pass
 
-            self.save(tenant, collection)
+            self._save(tenant, collection)
             return len(ids)
 
     def _chunks_dir(self, tenant: str, collection: str) -> str:
@@ -434,8 +435,8 @@ class FaissStore(BaseStore):
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
         dict-records, updates SQLite metadata, saves index. Thread critical.
         """
-        with collection_lock(tenant, collection):
-            self.load_or_init(tenant, collection)
+        with self._collection_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
             key = (tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]
@@ -514,7 +515,7 @@ class FaissStore(BaseStore):
             col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
             vectors = self._embedder.encode(texts_to_encode)
             backend.add(rids_to_add, vectors)
-            self.save(tenant, collection)
+            self._save(tenant, collection)
             _rids = rids_to_add[:3]
             _sfx = " ..." if len(rids_to_add) > 3 else ""
             log.debug(
@@ -545,8 +546,8 @@ class FaissStore(BaseStore):
             else:
                 normed_filters[safe_key] = [vals]
 
-        with collection_lock(tenant, collection):
-            self.load_or_init(tenant, collection)
+        with self._collection_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
             key = (tenant, collection)
             backend = self._emb[key]
             col_db = self._dbs.get(key)
@@ -620,3 +621,187 @@ class FaissStore(BaseStore):
                 parts.append("filters: " + ", ".join(filter_parts))
 
         return "; ".join(parts) if parts else "matched"
+
+    def _flush_caches(self, *, async_close: bool = True) -> None:
+        old_dbs = list(self._dbs.values())
+        old_backends = list(self._emb.values())
+        self._dbs.clear()
+        self._emb.clear()
+
+        if not old_dbs and not old_backends:
+            return
+
+        def _close_all() -> None:
+            for db in old_dbs:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+            for backend in old_backends:
+                try:
+                    backend.close()
+                except Exception:
+                    pass
+
+        if async_close:
+            import threading
+
+            threading.Thread(target=_close_all, daemon=True).start()
+        else:
+            _close_all()
+
+    def _iter_lock_keys(self) -> Iterator[str]:
+        data_dir_path = Path(self._data_dir).resolve()
+        if not data_dir_path.is_dir():
+            return
+        for tenant_dir in data_dir_path.iterdir():
+            if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
+                continue
+            tenant = tenant_dir.name[2:]
+            if not tenant:
+                continue
+            for coll_dir in tenant_dir.iterdir():
+                if not coll_dir.is_dir() or not coll_dir.name.startswith("c_"):
+                    continue
+                collection = coll_dir.name[2:]
+                if collection:
+                    yield f"t_{tenant}:c_{collection}"
+
+    @contextmanager
+    def _lock_all(self) -> Iterator[None]:
+        locks: list[Lock] = []
+        self._locks_guard.acquire()
+        try:
+            keys = set(self._iter_lock_keys())
+            keys.update(self._locks.keys())
+            for key in sorted(keys):
+                if key not in self._locks:
+                    self._locks[key] = Lock()
+                lock = self._locks[key]
+                lock.acquire()
+                locks.append(lock)
+            yield
+        finally:
+            for lock in reversed(locks):
+                lock.release()
+            self._locks_guard.release()
+
+    def _write_zip(self, source_dir: Path, target_path: Path) -> None:
+        source_dir = source_dir.resolve()
+        target_path = target_path.resolve()
+        if not source_dir.is_dir():
+            raise FileNotFoundError(f"data directory not found: {source_dir}")
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(
+            target_path,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as zf:
+            for root, dirs, files in os.walk(source_dir):
+                root_path = Path(root)
+                rel_root = root_path.relative_to(source_dir)
+                if not files and not dirs:
+                    arcname = (
+                        str(rel_root) + "/"
+                        if rel_root != Path(".")
+                        else ""
+                    )
+                    if arcname:
+                        zf.writestr(arcname, "")
+                    continue
+
+                for filename in files:
+                    file_path = root_path / filename
+                    rel_name = file_path.relative_to(source_dir)
+                    try:
+                        zf.write(file_path, rel_name.as_posix())
+                    except FileNotFoundError:
+                        continue
+                    except OSError as exc:
+                        if exc.errno == errno.ENOENT:
+                            continue
+                        raise
+
+    def _validate_zip_members(self, zf: zipfile.ZipFile) -> None:
+        for member in zf.infolist():
+            name = member.filename
+            if not name:
+                continue
+            rel_path = Path(name)
+            if rel_path.is_absolute() or ".." in rel_path.parts:
+                raise ValueError(f"invalid archive member: {name}")
+            if name.startswith(("/", "\\")):
+                raise ValueError(f"invalid archive member: {name}")
+
+    @staticmethod
+    def _remove_path(path: Path, *, retries: int = 4) -> None:
+        for attempt in range(retries):
+            try:
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                return
+            except FileNotFoundError:
+                return
+            except OSError as exc:
+                transient = {
+                    errno.ENOENT,
+                    errno.ENOTEMPTY,
+                    errno.EBUSY,
+                }
+                if exc.errno in transient and attempt < (retries - 1):
+                    import time
+
+                    time.sleep(0.02 * (attempt + 1))
+                    continue
+                raise
+
+    def dump_archive(
+        self,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        data_dir_path = Path(self._data_dir).resolve()
+        if not data_dir_path.is_dir():
+            raise FileNotFoundError(f"data directory not found: {data_dir_path}")
+
+        if output_path is not None:
+            archive_path = Path(output_path).resolve()
+            with self._lock_all():
+                self._write_zip(data_dir_path, archive_path)
+            return str(archive_path), None
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="patchvec_export_"))
+        timestamp = datetime.now(tz.utc).strftime("%Y%m%dT%H%M%SZ")
+        archive_path = tmp_dir / f"patchvec-data-{timestamp}.zip"
+        with self._lock_all():
+            self._write_zip(data_dir_path, archive_path)
+        return str(archive_path), str(tmp_dir)
+
+    def restore_archive(self, archive_bytes: bytes) -> None:
+        data_dir_path = Path(self._data_dir).resolve()
+        data_dir_path.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(prefix="patchvec_import_") as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            archive_path = tmp_path / "patchvec-data.zip"
+            extract_dir = tmp_path / "extracted"
+            archive_path.write_bytes(archive_bytes)
+            extract_dir.mkdir()
+
+            with zipfile.ZipFile(archive_path, "r") as zf:
+                self._validate_zip_members(zf)
+                zf.extractall(extract_dir)
+
+            with self._lock_all():
+                self._flush_caches(async_close=False)
+                for entry in data_dir_path.iterdir():
+                    self._remove_path(entry)
+
+                for entry in extract_dir.iterdir():
+                    target = data_dir_path / entry.name
+                    if target.exists() or target.is_symlink():
+                        self._remove_path(target)
+                    shutil.move(str(entry), str(target))

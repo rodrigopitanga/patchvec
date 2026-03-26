@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass, asdict
+import os
 from typing import Any
 
 
@@ -29,12 +30,10 @@ class SearchResult:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+
 class BaseStore(ABC):
     @abstractmethod
-    def load_or_init(self, tenant: str, collection: str) -> None: ...
-
-    @abstractmethod
-    def save(self, tenant: str, collection: str) -> None: ...
+    def create_collection(self, tenant: str, name: str) -> None: ...
 
     @abstractmethod
     def delete_collection(self, tenant: str, collection: str) -> None: ...
@@ -50,7 +49,7 @@ class BaseStore(ABC):
         ...
 
     @abstractmethod
-    def list_tenants(self, data_dir: str) -> list[str]:
+    def list_tenants(self) -> list[str]:
         """List all tenants."""
         ...
 
@@ -72,14 +71,14 @@ class BaseStore(ABC):
         """Search for similar documents. Returns a list of SearchResult entries."""
         ...
 
-    def catalog_metrics(self, data_dir: str) -> dict[str, int]:
+    def catalog_metrics(self) -> dict[str, int]:
         """Return store-level catalog counters for admin/metrics endpoints.
 
         Default implementation provides tenant/collection counts only via the
         existing listing APIs. Backends with richer metadata stores should
         override this to include document/chunk counts.
         """
-        tenants = self.list_tenants(data_dir)
+        tenants = self.list_tenants()
         collection_count = 0
         for tenant in tenants:
             collection_count += len(self.list_collections(tenant))
@@ -89,3 +88,14 @@ class BaseStore(ABC):
             "doc_count": 0,
             "chunk_count": 0,
         }
+
+    @abstractmethod
+    def dump_archive(
+        self,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def restore_archive(self, archive_bytes: bytes) -> None:
+        raise NotImplementedError

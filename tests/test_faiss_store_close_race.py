@@ -4,11 +4,13 @@
 from unittest.mock import patch
 
 from pave.metadb import CollectionDB
-from pave.stores.faiss import FaissStore
+from pave.config import get_cfg
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 
 def test_has_doc_recovers_from_closed_cached_db():
-    store = FaissStore()
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
     tenant, collection, docid = "acme", "race_has_doc", "DOC-1"
     store.index_records(
         tenant,
@@ -25,7 +27,7 @@ def test_has_doc_recovers_from_closed_cached_db():
 
 
 def test_search_recovers_from_closed_cached_db():
-    store = FaissStore()
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
     tenant, collection, docid = "acme", "race_search", "DOC-2"
     store.index_records(
         tenant,
@@ -43,9 +45,9 @@ def test_search_recovers_from_closed_cached_db():
 
 
 def test_delete_collection_evicts_cache_before_close():
-    store = FaissStore()
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
     tenant, collection = "acme", "delete_order"
-    store.load_or_init(tenant, collection)
+    store._load_or_init(tenant, collection)
     key = (tenant, collection)
     col_db = store._dbs[key]
     seen: dict[str, bool] = {}
@@ -63,9 +65,9 @@ def test_delete_collection_evicts_cache_before_close():
 
 
 def test_rename_collection_evicts_old_cache_before_close():
-    store = FaissStore()
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
     tenant, old_name, new_name = "acme", "old_order", "new_order"
-    store.load_or_init(tenant, old_name)
+    store._load_or_init(tenant, old_name)
     old_key = (tenant, old_name)
     col_db = store._dbs[old_key]
     seen: dict[str, bool] = {}
@@ -84,7 +86,7 @@ def test_rename_collection_evicts_old_cache_before_close():
 
 def test_has_doc_fallback_opens_read_only():
     """Fallback CollectionDB opens read-only (no _wconn)."""
-    store = FaissStore()
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
     tenant, collection = "acme", "ro_fallback"
     docid = "DOC-RO"
     store.index_records(

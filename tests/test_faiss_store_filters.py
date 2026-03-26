@@ -8,15 +8,16 @@ import pytest
 
 pytestmark = pytest.mark.slow
 
-from pave.stores.faiss import FaissStore
+from pave.embedders import get_embedder
 from pave.config import get_cfg
+from pave.stores.local import LocalStore
 
 @pytest.fixture()
 def store(request):
-    s = FaissStore()
+    s = LocalStore(str(get_cfg().get("data_dir")), get_embedder())
     # Use unique collection per test to avoid conflicts
     tenant, coll = "t1", f"c_{request.node.name}"
-    s.load_or_init(tenant, coll)
+    s.create_collection(tenant, coll)
 
     # insert minimal dataset
     records = [
@@ -26,7 +27,6 @@ def store(request):
         ("r4", "delta", {"name": "zulu", "size": 5, "created": "2023-12-31"}),
     ]
     s.index_records(tenant, coll, "filterdoc", records)
-    s.load_or_init(tenant, coll)
     yield s, tenant, coll
 
 def _ids(results):
@@ -128,9 +128,9 @@ def test_negation_combined_with_exact(store):
 @pytest.fixture()
 def multilingual_store(request):
     """Store with multilingual content for testing non-English retrieval."""
-    s = FaissStore()
+    s = LocalStore(str(get_cfg().get("data_dir")), get_embedder())
     tenant, coll = "t1", f"ml_{request.node.name}"
-    s.load_or_init(tenant, coll)
+    s.create_collection(tenant, coll)
 
     records = [
         ("pt1", "O gato preto dormiu no sofá", {"lang": "pt"}),
@@ -140,7 +140,6 @@ def multilingual_store(request):
         ("en1", "The black cat sleeps on the sofa", {"lang": "en"}),
     ]
     s.index_records(tenant, coll, "multilang", records)
-    s.load_or_init(tenant, coll)
     yield s, tenant, coll
 
 

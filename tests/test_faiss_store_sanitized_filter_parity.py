@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 
 from pave.filters import sanit_sql
-from pave.stores.faiss import FaissStore
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 
 def _snapshot(results: list[Any]) -> list[tuple[str, float, dict[str, Any]]]:
@@ -19,7 +20,7 @@ def _snapshot(results: list[Any]) -> list[tuple[str, float, dict[str, Any]]]:
 
 
 def _search_without_pushdown(
-    store: FaissStore,
+    store: LocalStore,
     tenant: str,
     collection: str,
     query: str,
@@ -45,8 +46,8 @@ def _search_without_pushdown(
 
 
 @pytest.fixture()
-def sanitized_store() -> tuple[FaissStore, str, str, str, str]:
-    store = FaissStore()
+def sanitized_store(tmp_path) -> tuple[LocalStore, str, str, str, str]:
+    store = LocalStore(str(tmp_path), FakeEmbedder())
     tenant = "tenant"
     collection = "sanitized_filters"
     exact_value = "x'; DROP TABLE chunk_meta; --"
@@ -88,7 +89,7 @@ def sanitized_store() -> tuple[FaissStore, str, str, str, str]:
 
 
 def test_sqlish_doc_metadata_exact_filter_matches_with_and_without_pushdown(
-    sanitized_store: tuple[FaissStore, str, str, str, str],
+    sanitized_store: tuple[LocalStore, str, str, str, str],
 ) -> None:
     store, tenant, collection, exact_value, _wildcard_value = sanitized_store
     filters = {"so urce": exact_value}
@@ -113,7 +114,7 @@ def test_sqlish_doc_metadata_exact_filter_matches_with_and_without_pushdown(
 
 
 def test_sqlish_chunk_metadata_exact_filter_matches_with_and_without_pushdown(
-    sanitized_store: tuple[FaissStore, str, str, str, str],
+    sanitized_store: tuple[LocalStore, str, str, str, str],
 ) -> None:
     store, tenant, collection, exact_value, _wildcard_value = sanitized_store
     filters = {"na me": exact_value}
@@ -135,7 +136,7 @@ def test_sqlish_chunk_metadata_exact_filter_matches_with_and_without_pushdown(
 
 
 def test_sqlish_chunk_metadata_wildcard_filter_matches_with_and_without_pushdown(
-    sanitized_store: tuple[FaissStore, str, str, str, str],
+    sanitized_store: tuple[LocalStore, str, str, str, str],
 ) -> None:
     store, tenant, collection, _exact_value, wildcard_value = sanitized_store
     filters = {"ta g": f"*{wildcard_value}*"}

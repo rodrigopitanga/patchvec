@@ -152,14 +152,18 @@ class DummyStore(BaseStore):
     def _dir(self, tenant: str, collection: str) -> str:
         return os.path.join(get_cfg().get("data_dir"), tenant, collection)
 
-    def load_or_init(self, tenant: str, collection: str) -> None:
+    def _load_or_init(self, tenant: str, collection: str) -> None:
         os.makedirs(os.path.join(self._dir(tenant, collection), "index"), exist_ok=True)
 
-    def save(self, tenant: str, collection: str) -> None:
+    def _save(self, tenant: str, collection: str) -> None:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         if not os.path.isfile(cat):
             with open(cat, "w", encoding="utf-8") as f:
                 json.dump({}, f)
+
+    def create_collection(self, tenant: str, name: str) -> None:
+        self._load_or_init(tenant, name)
+        self._save(tenant, name)
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         shutil.rmtree(self._dir(tenant, collection), ignore_errors=True)
@@ -189,9 +193,9 @@ class DummyStore(BaseStore):
                     collections.append(entry)
         return collections
 
-    def list_tenants(self, data_dir: str) -> list[str]:
+    def list_tenants(self) -> list[str]:
         from pathlib import Path
-        data_dir_path = Path(data_dir).resolve()
+        data_dir_path = Path(get_cfg().get("data_dir")).resolve()
         if not data_dir_path.is_dir():
             return []
         tenants: list[str] = []
@@ -258,19 +262,52 @@ class DummyStore(BaseStore):
                     match_reason="matched"))
         return hits
 
+    def dump_archive(
+        self,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        import tempfile
+        import zipfile
+        from pathlib import Path
+
+        data_dir = Path(get_cfg().get("data_dir")).resolve()
+        if output_path is None:
+            tmp_dir = Path(tempfile.mkdtemp(prefix="dummy-export_"))
+            archive_path = tmp_dir / "patchvec-data.zip"
+            tmp_dir_str = str(tmp_dir)
+        else:
+            archive_path = Path(output_path).resolve()
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_dir_str = None
+        with zipfile.ZipFile(archive_path, "w") as zf:
+            for root, _dirs, files in os.walk(data_dir):
+                root_path = Path(root)
+                for filename in files:
+                    file_path = root_path / filename
+                    zf.write(file_path, file_path.relative_to(data_dir).as_posix())
+        return str(archive_path), tmp_dir_str
+
+    def restore_archive(self, archive_bytes: bytes) -> None:
+        import io
+        import zipfile
+        from pathlib import Path
+
+        data_dir = Path(get_cfg().get("data_dir")).resolve()
+        if data_dir.exists():
+            shutil.rmtree(data_dir)
+        data_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as zf:
+            zf.extractall(data_dir)
+
 
 class SpyStore(BaseStore):
     def __init__(self, impl: BaseStore):
         self.impl = impl
         self.calls: list[tuple] = []
 
-    def load_or_init(self, tenant: str, collection: str) -> None:
-        self.calls.append(("load_or_init", tenant, collection))
-        return self.impl.load_or_init(tenant, collection)
-
-    def save(self, tenant: str, collection: str) -> None:
-        self.calls.append(("save", tenant, collection))
-        return self.impl.save(tenant, collection)
+    def create_collection(self, tenant: str, name: str) -> None:
+        self.calls.append(("create_collection", tenant, name))
+        return self.impl.create_collection(tenant, name)
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         self.calls.append(("delete_collection", tenant, collection))
@@ -308,10 +345,21 @@ class SpyStore(BaseStore):
         self.calls.append(("search", tenant, collection, text, k, filters))
         return self.impl.search(tenant, collection, text, k, filters)
 
-    def list_tenants(self, data_dir: str) -> list[str]:
-        self.calls.append(("list_tenants", data_dir))
-        return self.impl.list_tenants(data_dir)
+    def list_tenants(self) -> list[str]:
+        self.calls.append(("list_tenants",))
+        return self.impl.list_tenants()
 
-    def catalog_metrics(self, data_dir: str) -> dict[str, int]:
-        self.calls.append(("catalog_metrics", data_dir))
-        return self.impl.catalog_metrics(data_dir)
+    def catalog_metrics(self) -> dict[str, int]:
+        self.calls.append(("catalog_metrics",))
+        return self.impl.catalog_metrics()
+
+    def dump_archive(
+        self,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        self.calls.append(("dump_archive", output_path))
+        return self.impl.dump_archive(output_path)
+
+    def restore_archive(self, archive_bytes: bytes) -> None:
+        self.calls.append(("restore_archive", len(archive_bytes)))
+        return self.impl.restore_archive(archive_bytes)

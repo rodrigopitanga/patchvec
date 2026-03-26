@@ -82,8 +82,9 @@ def test_delete_document_metrics(client):
 def test_delete_document_cli(tmp_path, monkeypatch):
     """CLI delete-document command should work."""
     from pave.cli import main_cli
-    from pave.stores.factory import get_store
     from pave.config import get_cfg
+    from pave.stores.local import LocalStore
+    from utils import FakeEmbedder
 
     cfg = get_cfg()
     monkeypatch.setattr(cfg, "_cfg", {
@@ -92,7 +93,7 @@ def test_delete_document_cli(tmp_path, monkeypatch):
         "auth": {"mode": "none"},
     })
 
-    store = get_store(cfg)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
     import pave.cli
     monkeypatch.setattr(pave.cli, "store", store)
 

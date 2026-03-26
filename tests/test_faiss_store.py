@@ -186,7 +186,7 @@ def test_load_or_init_handles_empty_index_dir(store, tmp_path):
     assert n == 1
 
     # force a save; backend writes persisted FAISS artifacts
-    store.save(tenant, coll)
+    store.impl._save(tenant, coll)
 
     # resolve base via the store (avoid tmp_path vs CFG.data_dir drift)
     # ok to use a protected helper in tests - remember we're using SpyStore

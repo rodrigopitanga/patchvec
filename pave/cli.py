@@ -4,8 +4,9 @@
 from __future__ import annotations
 import argparse, json, uuid, pathlib
 from datetime import datetime, timezone
-from pave.stores.factory import get_store
+from pave.embedders import get_embedder
 from pave.stores.base import BaseStore
+from pave.stores.local import LocalStore
 from pave.service import (
     create_collection as svc_create_collection,
     dump_archive as svc_dump_archive,
@@ -35,7 +36,11 @@ store: BaseStore | None = None
 def _get_store() -> BaseStore:
     global store
     if store is None:
-        store = get_store(get_cfg())
+        cfg = get_cfg()
+        store = LocalStore(
+            data_dir=str(cfg.get("data_dir")),
+            embedder=get_embedder(),
+        )
     return store
 
 def _dump(out, pretty: bool = True):
@@ -175,29 +180,19 @@ def cmd_delete_document(args):
     _dump(out, pretty=not args.compact)
 
 def cmd_dump_archive(args):
-    cfg = get_cfg()
-    data_dir = cfg.get("data_dir")
-    if not data_dir:
-        raise SystemExit("data directory is not configured")
-
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = args.output or f"patchvec-data-{stamp}.zip"
-    archive_path, _ = svc_dump_archive(_get_store(), data_dir, output)
+    archive_path, _ = svc_dump_archive(_get_store(), output)
     out = {
         "ok": True,
         "archive": archive_path,
-        "source": str(data_dir),
+        "source": str(get_cfg().get("data_dir")),
     }
     _dump(out, pretty=not args.compact)
 
 def cmd_restore_archive(args):
-    cfg = get_cfg()
-    data_dir = cfg.get("data_dir")
-    if not data_dir:
-        raise SystemExit("data directory is not configured")
-
     content = _read(args.file)
-    out = svc_restore_archive(_get_store(), data_dir, content)
+    out = svc_restore_archive(_get_store(), content)
     _dump(out, pretty=not args.compact)
 
 def cmd_reset_metrics(args):
@@ -209,11 +204,7 @@ def cmd_reset_metrics(args):
     _dump(out, pretty=not args.compact)
 
 def cmd_list_tenants(args):
-    cfg = get_cfg()
-    data_dir = cfg.get("data_dir")
-    if not data_dir:
-        raise SystemExit("data directory is not configured")
-    out = svc_list_tenants(_get_store(), data_dir)
+    out = svc_list_tenants(_get_store())
     _dump(out, pretty=not args.compact)
 
 def cmd_list_collections(args):

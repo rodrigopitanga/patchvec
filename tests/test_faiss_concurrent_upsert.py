@@ -4,20 +4,23 @@
 import time
 import json
 from concurrent.futures import ThreadPoolExecutor
-from pave.stores.faiss import FaissStore, collection_lock
+
+from pave.config import get_cfg
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 REC0 = ("doc::0", "texto A", "{}")
 REC1 = ("doc::1", "texto B", "{}")
 
 def test_concurrent_upsert_with_manual_lock(cfg):
-    store = FaissStore()
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
     tenant, coll = "tenantY", "collSafe"
-    store.load_or_init(tenant, coll)
+    store._load_or_init(tenant, coll)
     backend = store._emb[(tenant, coll)]
     col_db = store._dbs[(tenant, coll)]
 
     def safe_upsert(data):
-        with collection_lock(tenant, coll):
+        with store._collection_lock(tenant, coll):
             rid, text, meta = data
             chunk_path = f"chunks/{store._urid_to_fname(rid)}"
             parsed_meta = json.loads(meta) if isinstance(meta, str) else meta
@@ -29,7 +32,7 @@ def test_concurrent_upsert_with_manual_lock(cfg):
             vectors = store._embedder.encode([text])
             backend.add([rid], vectors)
             time.sleep(0.05)
-            store.save(tenant, coll)
+            store._save(tenant, coll)
 
     for _ in range(100):
         with ThreadPoolExecutor(max_workers=2) as ex:
@@ -41,9 +44,9 @@ def test_concurrent_upsert_with_manual_lock(cfg):
             "Inconsistent state detected despite locking (manual test)"
 
 def test_concurrent_upsert_with_lock_always_consistent(cfg):
-    store = FaissStore()
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
     tenant, coll = "tenantZ", "collSafe"
-    store.load_or_init(tenant, coll)
+    store._load_or_init(tenant, coll)
     emb = store._emb[(tenant, coll)]
 
     def safe_upsert(data):

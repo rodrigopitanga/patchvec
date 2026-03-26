@@ -9,7 +9,7 @@ from utils import SpyStore, FakeEmbedder
 
 from fastapi.testclient import TestClient
 from pave.config import get_cfg, reload_cfg
-from pave.main import build_app, VERSION
+import pave.main as main_mod
 from pave.ui import attach_ui
 
 @pytest.fixture(scope="session")
@@ -29,7 +29,6 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
     cfg = get_cfg()
     cfg.set("data_dir", str(temp_data_dir))
     cfg.set("auth.mode", "none")
-    cfg.set("vector_store.type", "faiss")
     cfg.set("embedder.type", "sbert")
     cfg.set("common_enabled", False)
     is_slow = request.node.get_closest_marker("slow") is not None
@@ -39,12 +38,34 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
     else:
         # Fast path: deterministic fake embedder, no model load.
         cfg.set("embedder.sbert.model", "fake")
-        import pave.stores.faiss as store_mod
+        import pave.cli as cli_mod
+        import pave.embedders as emb_mod
+        import pave.embedders.factory as emb_factory_mod
+
+        fake_get_embedder = lambda: FakeEmbedder()
 
         monkeypatch.setattr(
-            store_mod,
+            main_mod,
             "get_embedder",
-            lambda: FakeEmbedder(),
+            fake_get_embedder,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            cli_mod,
+            "get_embedder",
+            fake_get_embedder,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            emb_mod,
+            "get_embedder",
+            fake_get_embedder,
+            raising=True,
+        )
+        monkeypatch.setattr(
+            emb_factory_mod,
+            "get_embedder",
+            fake_get_embedder,
             raising=True,
         )
     yield
@@ -52,7 +73,7 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
 @pytest.fixture()
 def app(temp_data_dir):
     cfg = get_cfg()
-    app = build_app(cfg)
+    app = main_mod.build_app(cfg)
     try:
         attach_ui(app)
     except Exception:

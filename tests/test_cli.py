@@ -8,21 +8,20 @@ from pathlib import Path
 
 import pytest
 from pave.config import get_cfg
-from pave.stores import factory as store_factory
-from utils import DummyStore, SpyStore
+from utils import DummyStore, FakeEmbedder, SpyStore
 
 @pytest.fixture
 def cli_env(temp_data_dir, tmp_path, monkeypatch):
     store = SpyStore(DummyStore())
-    monkeypatch.setattr(
-        store_factory,
-        "get_store",
-        lambda *_args, **_kwargs: store,
-        raising=True,
-    )
     from pave import cli as pvcli_mod
 
     pvcli = importlib.reload(pvcli_mod)
+    monkeypatch.setattr(
+        pvcli,
+        "get_embedder",
+        lambda: FakeEmbedder(),
+        raising=True,
+    )
     pvcli.store = store
     return pvcli, store, tmp_path
 
@@ -35,12 +34,11 @@ def test_cli_ingest_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
     pvcli.main_cli(["create-collection", tenant, coll])
     pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1", "--metadata", '{"lang":"pt"}'])
 
-    assert ("load_or_init", tenant, coll) in store.calls
+    assert ("create_collection", tenant, coll) in store.calls
     assert ("has_doc", tenant, coll, "DOC1") in store.calls
     assert ("purge_doc", tenant, coll, "DOC1") not in store.calls
     assert any(c[0] == "index_records" and c[1] == tenant and c[2] == coll \
                and c[3] == "DOC1" for c in store.calls)
-    assert ("save", tenant, coll) in store.calls
 
 
 def test_cli_ingest_passes_doc_meta_through_wrapper(cli_env, tmp_path):

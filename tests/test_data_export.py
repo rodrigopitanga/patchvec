@@ -12,14 +12,12 @@ import zipfile
 from pathlib import Path
 
 from pave.service import (
-    _flush_store_caches,
-    _lock_indexes,
-    _remove_path,
     create_collection,
     dump_archive,
     restore_archive,
 )
-from pave.stores import faiss as faiss_store
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 
 def test_dump_archive_returns_zip(temp_data_dir):
@@ -27,8 +25,8 @@ def test_dump_archive_returns_zip(temp_data_dir):
     sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_text("hello endpoint", encoding="utf-8")
 
-    store = faiss_store.FaissStore()
-    archive_path, tmp_dir = dump_archive(store, temp_data_dir)
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    archive_path, tmp_dir = dump_archive(store)
     try:
         response_bytes = Path(archive_path).read_bytes()
     finally:
@@ -48,18 +46,18 @@ def test_lock_indexes_blocks_new_collection_lock(temp_data_dir):
     collection_dir = tenant_dir / "c_invoices"
     collection_dir.mkdir(parents=True, exist_ok=True)
 
-    store = faiss_store.FaissStore()
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     start = threading.Event()
     release = threading.Event()
     acquired = threading.Event()
 
     def hold_all_locks() -> None:
-        with _lock_indexes(store, Path(temp_data_dir)):
+        with store._lock_all():
             start.set()
             release.wait(timeout=2.0)
 
     def try_new_lock() -> None:
-        with faiss_store.collection_lock("acme", "new_collection"):
+        with store._collection_lock("acme", "new_collection"):
             acquired.set()
 
     holder = threading.Thread(target=hold_all_locks, daemon=True)
@@ -78,7 +76,7 @@ def test_lock_indexes_blocks_new_collection_lock(temp_data_dir):
 
 
 def test_create_collection_uses_collection_lock(monkeypatch):
-    store = faiss_store.FaissStore()
+    store = LocalStore("data", FakeEmbedder())
     events: list[tuple[str, str, str]] = []
 
     class _SpyLock:
@@ -98,8 +96,8 @@ def test_create_collection_uses_collection_lock(monkeypatch):
         return _SpyLock(tenant, collection)
 
     monkeypatch.setattr(
-        faiss_store,
-        "collection_lock",
+        store,
+        "_collection_lock",
         fake_collection_lock,
     )
 
@@ -110,7 +108,7 @@ def test_create_collection_uses_collection_lock(monkeypatch):
 
 
 def test_flush_store_caches_closes_old_dbs_sync():
-    store = faiss_store.FaissStore()
+    store = LocalStore("data", FakeEmbedder())
     store.index_records(
         "acme",
         "flush_test",
@@ -121,7 +119,7 @@ def test_flush_store_caches_closes_old_dbs_sync():
     col_db = store._dbs[key]
     assert col_db._rconn is not None
 
-    _flush_store_caches(store, async_close=False)
+    store._flush_caches(async_close=False)
 
     assert key not in store._dbs
     assert key not in store._emb
@@ -145,7 +143,7 @@ def test_remove_path_retries_transient_errors(monkeypatch, tmp_path):
 
     monkeypatch.setattr(shutil, "rmtree", flaky_rmtree)
 
-    _remove_path(target)
+    LocalStore._remove_path(target)
     assert calls["n"] == 2
     assert not target.exists()
 
@@ -155,8 +153,8 @@ def test_restore_archive_replaces_data_dir(temp_data_dir):
     sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_text("restore me", encoding="utf-8")
 
-    store = faiss_store.FaissStore()
-    archive_path, tmp_dir = dump_archive(store, temp_data_dir)
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    archive_path, tmp_dir = dump_archive(store)
     try:
         archive_bytes = Path(archive_path).read_bytes()
     finally:
@@ -168,7 +166,7 @@ def test_restore_archive_replaces_data_dir(temp_data_dir):
     other = Path(temp_data_dir) / "other.txt"
     other.write_text("doomed", encoding="utf-8")
 
-    out = restore_archive(store, temp_data_dir, archive_bytes)
+    out = restore_archive(store, archive_bytes)
     assert out["ok"] is True
     assert sample.exists()
     assert sample.read_text(encoding="utf-8") == "restore me"
