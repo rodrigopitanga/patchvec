@@ -181,7 +181,8 @@ asking for permission to ask.
 
 ## Architecture
 
-- Stores live under `pave/stores/*` (`FaissStore` today, Qdrant stub ready).
+- Stores live under `pave/stores/*` (`LocalStore` today).
+- Future vector backend adapters live under `pave/backends/*`.
 - Embedding adapters reside in `pave/embedders/*`
   (`SbertEmbedder`, `OpenAIEmbedder`).
 - `pave/service.py` wires the FastAPI application and injects the store into

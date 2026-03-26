@@ -48,8 +48,8 @@ def test_dev_mode_skips_default_user_config(monkeypatch, tmp_path):
         default_cfg,
         "auth:\n"
         "  mode: static\n"
-        "vector_store:\n"
-        "  type: qdrant\n",
+        "instance:\n"
+        "  name: User config\n",
     )
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("PATCHVEC_CONFIG", raising=False)
@@ -59,6 +59,7 @@ def test_dev_mode_skips_default_user_config(monkeypatch, tmp_path):
 
     assert cfg.get("auth.mode") == "none"
     assert cfg.get("vector_store.type") == "faiss"
+    assert cfg.get("instance.name") != "User config"
 
 
 def test_explicit_config_path_still_wins_in_dev(monkeypatch, tmp_path):
@@ -67,8 +68,8 @@ def test_explicit_config_path_still_wins_in_dev(monkeypatch, tmp_path):
         config_path,
         "auth:\n"
         "  mode: static\n"
-        "vector_store:\n"
-        "  type: qdrant\n",
+        "instance:\n"
+        "  name: Explicit config\n",
     )
     monkeypatch.setenv("PATCHVEC_DEV", "1")
     monkeypatch.setenv("PATCHVEC_CONFIG", str(config_path))
@@ -76,7 +77,7 @@ def test_explicit_config_path_still_wins_in_dev(monkeypatch, tmp_path):
     cfg = Config()
 
     assert cfg.get("auth.mode") == "static"
-    assert cfg.get("vector_store.type") == "qdrant"
+    assert cfg.get("instance.name") == "Explicit config"
 
 
 def test_env_tenants_file_selects_sidecar_over_config_value(monkeypatch, tmp_path):

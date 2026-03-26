@@ -22,14 +22,7 @@
 # PATCHVEC_AUTH__API_KEYS__acme=acme-secret
 # PATCHVEC_AUTH__API_KEYS__umbrella=umbrella-secret
 
-# === Profile C: Qdrant vector store (Cloud/self-host) ====
-# REQUIRED when using Qdrant (set vector_store.type=qdrant in config):
-# PATCHVEC_VECTOR_STORE__TYPE=qdrant
-# PATCHVEC_QDRANT__URL=https://your-qdrant-endpoint
-# If your endpoint requires auth:
-# PATCHVEC_QDRANT__API_KEY=your-qdrant-api-key
-
-# === Profile D: OpenAI embedder ==========================
+# === Profile C: OpenAI embedder ==========================
 # REQUIRED when using OpenAI embedder:
 # PATCHVEC_EMBEDDER__TYPE=openai
 # OPENAI_API_KEY=sk-your-openai-key

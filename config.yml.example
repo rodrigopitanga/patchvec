@@ -90,22 +90,12 @@ auth:
 
 vector_store:
   # faiss   — local FAISS index (built-in, no extra services required).
-  # qdrant  — Qdrant server (requires a running Qdrant instance).
   type: faiss
 
   # Options for type=faiss.
   faiss:
     embed_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
     max_query_chars: 4000
-
-  # Options for type=qdrant.
-  # NOTE: QdrantStore is currently a stub — all methods raise NotImplementedError.
-  # Contributions welcome! See pave/stores/qdrant_store.py.
-  qdrant:
-    url: http://localhost:6333
-    api_key: ${PATCHVEC_QDRANT_API_KEY}
-    prefer_payload_filters: true
-    collection_prefix: patchvec_
 
 # ---------------------------------------------------------------------------
 # Embedder

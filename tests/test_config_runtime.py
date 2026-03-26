@@ -8,13 +8,13 @@ def test_overlay_get_set_snapshot(cfg):
 
     # runtime overlay supersedes codebase and data
     cfg.set("auth.mode", "static")
-    cfg.set("vector_store.type", "qdrant")
+    cfg.set("vector_store.type", "custom")
     assert cfg.get("auth.mode") == "static"
-    assert cfg.get("vector_store.type") == "qdrant"
+    assert cfg.get("vector_store.type") == "custom"
 
     snap = cfg.snapshot()
     assert snap["auth"]["mode"] == "static"
-    assert snap["vector_store"]["type"] == "qdrant"
+    assert snap["vector_store"]["type"] == "custom"
     cfg.set("auth.mode", "none")
     cfg.set("vector_store.type", "faiss")
 
@@ -22,13 +22,13 @@ def test_overlay_get_set_snapshot(cfg):
 def test_runtime_overlay_reflected_in_app(app, client):
     # muda runtime no cfg do app e checa que /health reflete esses valores
     app.state.cfg.set("auth.mode", "static")
-    app.state.cfg.set("vector_store.type", "qdrant")
+    app.state.cfg.set("vector_store.type", "custom")
 
     r = client.get("/health/metrics")
     assert r.status_code == 200
     j = r.json()
     assert j["auth"] == "static"
-    assert j["vector_store"] == "qdrant"
+    assert j["vector_store"] == "custom"
 
 
 def test_effective_defaults_when_missing(cfg, app, client):
