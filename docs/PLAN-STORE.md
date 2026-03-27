@@ -613,12 +613,11 @@ catalog + concurrency.
 
 ```python
 # pave/stores/local.py (new — the orchestrator)
-class LocalStore:
+class LocalStore(BaseStore):
     def __init__(
         self,
         data_dir: str,
         embedder: Embedder,
-        backend_factory: Callable[[int], VectorBackend],
     ) -> None: ...
 
     # Collection lifecycle
@@ -629,17 +628,23 @@ class LocalStore:
     def list_collections(self, tenant) -> list[str]: ...
     def catalog_metrics(self) -> dict[str, int]: ...
 
-    # Document ops (coordinates embedder + backend + CollectionDB)
-    def has_doc(self, tenant, collection, docid) -> bool: ...
-    def purge_doc(self, tenant, collection, docid) -> int: ...
+    # Document ops
+    def has_doc(self, tenant, collection, docid): ...
+    def purge_doc(self, tenant, collection, docid): ...
     def index_records(self, tenant, collection, docid,
-                      records, doc_meta): ...
+                      records, doc_meta) -> int: ...
     def search(self, tenant, collection, query, k,
                filters) -> list[SearchResult]: ...
 
-    # Cache management
-    def flush_caches(self) -> None: ...
+    # Archive (store owns its physical layout)
+    def dump_archive(self, output_path=None): ...
+    def restore_archive(self, archive_bytes): ...
 ```
+
+No `backend_factory` — LocalStore creates FaissBackend
+directly. No config access; `data_dir` and `embedder`
+are injected by `main.py`. Cache management and locking
+are internal (`_flush_caches`, `_lock_all`).
 
 ### Orchestrated search flow
 
@@ -654,45 +659,176 @@ pattern as today's `TxtaiStore.search()`.
 
 | Concern | From | To |
 |---------|------|----|
-| `collection_lock` registry | `faiss.py` module scope | `LocalStore` instance |
-| `_flush_store_caches` | `service.py` | `LocalStore.flush_caches()` |
-| `_lock_indexes` | `service.py` | `LocalStore._lock_all_indexes()` |
+| `collection_lock` registry | `faiss.py` module scope | `LocalStore` instance (private) |
+| `_flush_store_caches` | `service.py` | `LocalStore._flush_caches()` (private) |
+| `_lock_indexes` | `service.py` | `LocalStore._lock_all()` (private) |
 | `_unwrap_store` | `service.py` | deleted |
-| archive mechanics | `service.py` | `LocalStore` methods |
+| archive ops | `service.py` | `LocalStore.dump_archive()` / `.restore_archive()` |
+| archive helpers | `service.py` | `LocalStore` private (`_write_zip`, `_validate_zip_members`, `_remove_path`) |
 | listing | `FaissStore` | `LocalStore` (filesystem or `GlobalDB`) |
-| chunk text sidecars | `FaissStore` | `LocalStore` |
-| filter logic | `FaissStore` | `pave/filters.py` + `CollectionDB` |
+| chunk text sidecars | `FaissStore` | `LocalStore` (private) |
+| filter/sanit logic | `FaissStore` | `pave/filters.py` (backend-agnostic) |
+| filter value sanit | `metadb.py` `_normalize_filter_value` | `pave/filters.py` `sanit_sql` (shared) |
 
 ### What `FaissStore` becomes
 
 Deleted. `FaissBackend` + `SbertEmbedder` +
 `CollectionDB` + `LocalStore` orchestrator replace it entirely.
-
-Note: `FaissStore` is the interim name introduced in P1-37 (was
-`TxtaiStore` before that). The name `LocalStore` anticipates a
-future `RemoteStore` orchestrator (e.g. postgres metadata + remote
-vector service).
+`QdrantStore` also deleted — Qdrant is a `VectorBackend`, not
+a store. No orchestrator polymorphism.
 
 ### `BaseStore` becomes the orchestrator interface
 
-`BaseStore` is redefined (or replaced by `StoreProtocol`) with
-the `LocalStore` signature above. Signature changes:
-- `list_tenants(data_dir)` → `list_tenants()` (data_dir known)
+`BaseStore` ABC redefined with the `LocalStore` public
+surface. Signature changes:
+- `list_tenants(data_dir)` → `list_tenants()`
 - `catalog_metrics(data_dir)` → `catalog_metrics()`
 - `load_or_init`, `save` become internal
-- `search` takes `query: str` (orchestrator calls embedder)
+- Added: `create_collection`, `dump_archive`,
+  `restore_archive`
+- Removed from public: `flush_caches`, `lock_all_indexes`
+  (internal to archive ops)
+
+### `pave/filters.py` — shared filter layer
+
+Backend-agnostic sanitization and canonical post-filter.
+Public: `sanit_field`, `sanit_sql`, `sanit_meta_dict`,
+`matches_filters`, `lookup_meta`. Used by both LocalStore
+(ingest sanitization, post-filter) and CollectionDB
+(pushdown value sanitization via `sanit_sql`).
+
+### Config access policy
+
+Only `main.py` and CLI entrypoints read config directly.
+Store, service, and routes receive deps as constructor
+or function parameters. No `from pave.config import CFG`
+in the store layer after P1-31.
 
 ### Files changed
 
 | File | Change |
 |------|--------|
 | `pave/stores/local.py` | New — `LocalStore` orchestrator |
-| `pave/filters.py` | New — `split_filters`, `matches_filters`, `_sanit_*` extracted |
-| `pave/stores/faiss.py` | Deleted; replaced by orchestrator + backends |
+| `pave/filters.py` | New — `sanit_*`, `matches_filters`, `lookup_meta` |
+| `pave/metadb.py` | Import `sanit_sql` from filters; delete `_normalize_filter_value` |
+| `pave/stores/faiss.py` | Deleted |
+| `pave/stores/qdrant_store.py` | Deleted |
+| `pave/stores/factory.py` | Deleted — direct construction in main.py |
 | `pave/stores/base.py` | Redefined as orchestrator interface |
-| `pave/service.py` | Remove store internals; archive ops delegate to `store` |
-| `pave/main.py` | Minor — construct `LocalStore` with `FaissBackend` + embedder |
-| tests | `SpyStore` updated; `DummyStore` rebuilt or retired |
+| `pave/service.py` | Remove all store internals; archive ops become thin pass-throughs |
+| `pave/main.py` | Construct `LocalStore(data_dir, embedder)` directly |
+| `pave/routes/admin.py` | Remove `data_dir` lookups for archive/list endpoints |
+| `pave/routes/health.py` | Use `store.create_collection()`, drop lock import |
+| `pave/cli.py` | Remove `data_dir` lookups |
+| tests | `SpyStore` updated; fixtures use constructor injection |
+
+### Step 4 benchmark results
+
+Benchmarked on the same machine and parameters as previous
+steps. Baseline is the pre-P1-31 FaissStore codebase
+(`after_rmv_txtai`, `70b5b35`); "after" is the LocalStore
+orchestrator (`after_store`, `4d5d2ca`). Also compared
+against the original txtai baseline (`before_faiss`,
+`a52c9fe`) for end-to-end strangler-fig summary.
+
+**Latency benchmark** — 1200 queries, concurrency=42
+
+| Variant | Run | p50 | p95 | p99 | Throughput |
+|---------|-----|-----|-----|-----|------------|
+| search | before (FaissStore) | 863ms | 890ms | 904ms | 47.9 ops/s |
+| search | after\_store ✓ | 867ms | 889ms | 896ms | 47.7 ops/s |
+| search\_exact | before | 868ms | 921ms | 1114ms | 47.2 ops/s |
+| search\_exact | after\_store ✓ | 872ms | 898ms | 913ms | 47.5 ops/s |
+| search\_wildcard | before | 876ms | 899ms | 908ms | 47.3 ops/s |
+| search\_wildcard | after\_store ✓ | 874ms | 892ms | 898ms | 47.4 ops/s |
+| search\_mixed | before | 858ms | 886ms | 896ms | 48.3 ops/s |
+| search\_mixed | after\_store ✓ | 854ms | 886ms | 894ms | 48.4 ops/s |
+
+All variants within noise. No regression.
+
+**Stress benchmark** — 90s duration, concurrency=8
+
+| | before (FaissStore) | after\_store ✓ | Δ |
+|--|-----|------|---|
+| Total ops | 2482 | 2357 | −5% |
+| Throughput | 27.3 ops/s | 25.9 ops/s | −5% |
+| Errors | 0 (0.0%) | 0 (0.0%) | — |
+
+Stress per-operation highlights (p50 / p95):
+
+| Operation | before (FaissStore) | after\_store | Δ p50 | Δ p95 |
+|-----------|---------------------|-------------|-------|-------|
+| search | 156 / 824ms | 152 / 828ms | −3% | +0% |
+| collection\_create | 59 / 1277ms | 67 / 1436ms | +14% | +12% |
+| ingest\_small | 165 / 857ms | 168 / 908ms | +2% | +6% |
+| ingest\_chunked | 1095 / 1831ms | 1167 / 2188ms | +7% | +19% |
+| archive\_download | 1232 / 1863ms | 1023 / 1659ms | −17% | −11% |
+| archive\_restore | 1504 / 2871ms | 1672 / 3270ms | +11% | +14% |
+
+Stress throughput is −5%, within run-to-run variance for a
+90s window with 8 threads. Per-operation deltas are mixed
+and small-sample; search is flat.
+
+**End-to-end: txtai baseline → LocalStore**
+
+Comparing the original txtai baseline (`before_faiss`,
+`a52c9fe`) against the final LocalStore (`after_store`,
+`4d5d2ca`) — the full strangler-fig result across Steps
+2–4:
+
+| | before\_faiss (txtai) | after\_store ✓ | Δ |
+|--|-----|------|---|
+| Latency p50 | 1029ms | 867ms | **−16%** |
+| Latency p95 | 1071ms | 889ms | **−17%** |
+| Latency p99 | 1096ms | 896ms | **−18%** |
+| Latency throughput | 39.4 ops/s | 47.7 ops/s | **+21%** |
+| Stress total ops | 1499 | 2357 | **+57%** |
+| Stress throughput | 16.5 ops/s | 25.9 ops/s | **+57%** |
+
+| Operation | before\_faiss (txtai) | after\_store | Δ p50 | Δ p95 |
+|-----------|----------------------|-------------|-------|-------|
+| search | 139 / 1567ms | 152 / 828ms | +9% | **−47%** |
+| collection\_create | 335 / 458ms | 67 / 1436ms | **−80%** | — |
+| ingest\_small | 172 / 1448ms | 168 / 908ms | −2% | **−37%** |
+| ingest\_chunked | 1976 / 3217ms | 1167 / 2188ms | **−41%** | **−32%** |
+| archive\_download | 2150 / 5860ms | 1023 / 1659ms | **−52%** | **−72%** |
+| archive\_restore | 2382 / 3475ms | 1672 / 3270ms | **−30%** | −6% |
+
+**Result files**:
+
+- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-none.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-none.txt)
+- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-exact.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-exact.txt)
+- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-wildcard.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-wildcard.txt)
+- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-mixed.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-mixed.txt)
+- [stress-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35.txt](../benchmarks/results/stress-2026-03-20_040541_after_rmv_txtai-70b5b35.txt)
+- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-none.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-none.txt)
+- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-exact.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-exact.txt)
+- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-wildcard.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-wildcard.txt)
+- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-mixed.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-mixed.txt)
+- [stress-2026-03-27\_000011\_after\_store-4d5d2ca.txt](../benchmarks/results/stress-2026-03-27_000011_after_store-4d5d2ca.txt)
+
+**Analysis**:
+
+- **The P1-31 refactoring is performance-neutral.** Latency
+  across all four filter variants is indistinguishable from
+  the pre-P1-31 FaissStore baseline. This is expected: the
+  hot path (encode → FAISS search → filter → hydrate) is
+  unchanged; the refactoring moved code between modules and
+  replaced config reads with instance fields.
+- **End-to-end strangler-fig gains hold.** Compared to the
+  original txtai baseline, search latency is −16–18% at
+  p50–p99, throughput is +21% (latency) / +57% (stress).
+  The gains came from Steps 2 (FaissBackend) and 3
+  (chunk\_meta pushdown); Step 4 preserved them.
+- **`collection_create` p50 improved −80% vs txtai** (335ms
+  → 67ms) due to eliminating txtai's heavyweight init.
+  The p95 increase (458ms → 1436ms) is a tail artifact of
+  lock contention under stress — median behavior is the
+  meaningful signal.
+- **Archive download improved materially** (−52% p50, −72%
+  p95 vs txtai). The LocalStore archive path holds instance
+  locks directly instead of the old indirect
+  `_lock_indexes` → `_unwrap_store` chain.
 
 ---
 

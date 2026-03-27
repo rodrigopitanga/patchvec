@@ -89,13 +89,11 @@ class BaseStore(ABC):
             "chunk_count": 0,
         }
 
-    @abstractmethod
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
     ) -> tuple[str, str | None]:
         raise NotImplementedError
 
-    @abstractmethod
     def restore_archive(self, archive_bytes: bytes) -> None:
         raise NotImplementedError
