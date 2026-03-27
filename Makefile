@@ -106,6 +106,7 @@ help:
 	echo "  $${B}test$${R}            Run pytest (full suite)"; \
 	echo "  test-fast        Run pytest (skip slow/real-embedding tests)"; \
 	echo "  check            Run end-to-end API check (reuse :8086, else ephemeral; flags: CHECK_FORCE_EPHEMERAL=1, CHECK_SERVER_URL=URL)"; \
+	echo "  build-check      Install local wheel in temp venv, init instance, boot installed server, alive test"; \
 	echo ""; \
 	echo "Benchmarks:"; \
 	echo "  $${B}benchmark$${R}       Run latency + stress (reuse :8086, else fresh ephemeral per bench; flags: BENCH_FORCE_EPHEMERAL=1, BENCH_SERVER_URL=URL)"; \
@@ -520,6 +521,91 @@ CHECK_K           ?= 7
 
 # Test document (host path)
 CHECK_TXT_FILE    ?= ./demo/20k_leagues.txt
+
+# -------- wheel install smoke test --------
+BUILD_CHECK_HOST ?= 127.0.0.1
+BUILD_CHECK_PORT ?= 18088
+BUILD_CHECK_URL  ?= http://$(BUILD_CHECK_HOST):$(BUILD_CHECK_PORT)
+BUILD_CHECK_TIMEOUT_S ?= 45
+BUILD_CHECK_SERVER_LOG_LEVEL ?= warning
+BUILD_CHECK_OPENAI_KEY ?= build-check-dummy-key
+BUILD_CHECK_OPENAI_DIM ?= 1536
+
+.PHONY: build-check
+build-check: venv
+	@set -euo pipefail; \
+	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
+	if ! $(PYTHON_BIN) -c 'import build, twine' >/dev/null 2>&1; then \
+	  echo "Missing build/twine in $(VENV). Run: make install-dev"; \
+	  exit 1; \
+	fi; \
+	echo "==> Building local artifacts without isolation"; \
+	rm -rf dist build; \
+	$(PYTHON_BIN) -m build --no-isolation; \
+	$(PYTHON_BIN) -m twine check dist/*; \
+	wheel="$$(ls -1t dist/*.whl 2>/dev/null | head -1)"; \
+	[ -n "$$wheel" ] || { echo "No wheel found under dist/"; exit 1; }; \
+	tmp_root="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-build-check.XXXXXX")"; \
+	venv_dir="$$tmp_root/venv"; \
+	instance_dir="$$tmp_root/instance"; \
+	log_file="$$tmp_root/server.log"; \
+	dep_site="$$( $(PYTHON_BIN) -c 'import site; print(site.getsitepackages()[0])' )"; \
+	srv_pid=""; \
+	cleanup() { \
+	  if [ -n "$$srv_pid" ]; then \
+	    kill "$$srv_pid" >/dev/null 2>&1 || true; \
+	    wait "$$srv_pid" >/dev/null 2>&1 || true; \
+	  fi; \
+	  rm -rf "$$tmp_root"; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	echo "==> Creating temp venv at $$venv_dir"; \
+	$(PYTHON_BIN) -m venv "$$venv_dir"; \
+	"$$venv_dir/bin/python" -m pip install -q --upgrade pip; \
+	echo "==> Installing local wheel $$wheel (no deps)"; \
+	"$$venv_dir/bin/pip" install -q --no-deps "$$wheel"; \
+	echo "==> Initializing instance via installed pavecli"; \
+	PYTHONPATH="$$dep_site" \
+	"$$venv_dir/bin/pavecli" --compact init "$$instance_dir" >/dev/null; \
+	test -f "$$instance_dir/config.yml"; \
+	test -f "$$instance_dir/tenants.yml"; \
+	test -d "$$instance_dir/data"; \
+	echo "==> Checking installed CLI bootstrap"; \
+	PYTHONPATH="$$dep_site" \
+	PATCHVEC_DEV=1 \
+	PATCHVEC_EMBEDDER__TYPE=openai \
+	PATCHVEC_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
+	PATCHVEC_EMBEDDER__OPENAI__DIM=$(BUILD_CHECK_OPENAI_DIM) \
+	PATCHVEC_AUTH__MODE=none \
+	"$$venv_dir/bin/pavecli" --compact list-tenants --home "$$instance_dir" >/dev/null; \
+	echo "==> Starting installed pavesrv on $(BUILD_CHECK_URL)"; \
+	PYTHONPATH="$$dep_site" \
+	PATCHVEC_DEV=1 \
+	PATCHVEC_EMBEDDER__TYPE=openai \
+	PATCHVEC_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
+	PATCHVEC_EMBEDDER__OPENAI__DIM=$(BUILD_CHECK_OPENAI_DIM) \
+	PATCHVEC_AUTH__MODE=none \
+	PATCHVEC_LOG__LEVEL=$(BUILD_CHECK_SERVER_LOG_LEVEL) \
+	PATCHVEC_SERVER__HOST=$(BUILD_CHECK_HOST) \
+	PATCHVEC_SERVER__PORT=$(BUILD_CHECK_PORT) \
+	"$$venv_dir/bin/pavesrv" --home "$$instance_dir" >"$$log_file" 2>&1 & \
+	srv_pid=$$!; \
+	echo "==> Waiting for live $(BUILD_CHECK_URL)/health/live (timeout $(BUILD_CHECK_TIMEOUT_S)s)"; \
+	for i in $$(seq 1 $(BUILD_CHECK_TIMEOUT_S)); do \
+	  if curl -fsS "$(BUILD_CHECK_URL)/health/live" >/dev/null 2>&1; then \
+	    echo "✅ make build-check passed."; \
+	    exit 0; \
+	  fi; \
+	  if ! kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	    echo "Installed server exited early. Log follows:"; \
+	    cat "$$log_file"; \
+	    exit 1; \
+	  fi; \
+	  sleep 1; \
+	done; \
+	echo "Installed server did not become live in $(BUILD_CHECK_TIMEOUT_S)s. Log follows:"; \
+	cat "$$log_file"; \
+	exit 1
 
 .PHONY: check-run
 check-run: install
