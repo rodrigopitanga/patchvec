@@ -3,6 +3,7 @@
 
 stages:
   - test
+  - benchmark
   - security
   - release
 
@@ -33,6 +34,34 @@ pytest:
       - junit.xml
       - .pytest_cache
     expire_in: 1 week
+
+bench:
+  stage: benchmark
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq curl git make
+  script:
+    - >-
+      LAT_SLO_P99_MS=${LAT_SLO_P99_MS:-2000}
+      STR_MAX_ERROR_PCT=${STR_MAX_ERROR_PCT:-1}
+      BENCH_FORCE_EPHEMERAL=1
+      BENCH_SAVE=1
+      LAT_LENGTH=${LAT_LENGTH:-200}
+      LAT_CONCUR=${LAT_CONCUR:-8}
+      STR_LENGTH=${STR_LENGTH:-30}
+      STR_CONCUR=${STR_CONCUR:-4}
+      USE_CPU=1
+      make benchmark
+  artifacts:
+    when: always
+    paths:
+      - benchmarks/results/
+    expire_in: 4 weeks
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+  allow_failure: false
 
 # PyPI publish for final releases only (vX.Y.Z)
 publish-pypi:

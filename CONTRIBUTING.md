@@ -93,6 +93,7 @@ breakdown:
 | `[conf]` | Configuration | Configuration management |
 | `[fix]` | Bug Fixes | Bug fixes |
 | `[perf]` | Performance | Optimizations, benchmarks |
+| `[bench]` | Benchmarks | Benchmark scripts, results |
 | `[build]` | Build | Build system, dependencies (make, pip) |
 | `[pkg]` | Packaging | PyPI/Docker packaging |
 | `[doc]` | Documentation | README, docstrings, guides |
