@@ -115,6 +115,8 @@ help:
 	echo "  bench-stress     Stress test (STR_LENGTH=seconds, STR_CONCUR)"; \
 	echo "    BENCH_SAVE=1 to save outputs in benchmarks/results/"; \
 	echo "    BENCH_TAG=<tag> adds suffix to saved filenames"; \
+	echo "  LAT_SLO_P99_MS    Fail bench-latency if p99 > N ms (0=off)"; \
+	echo "  STR_MAX_ERROR_PCT Fail bench-stress if error% > N (0=off)"; \
 	echo ""; \
 	echo "Release:"; \
 	echo "  $${B}release$${R}         Bump/tag/build; flags: SKIP_PYPI_BUILD, SKIP_PYPI_PUSH, SKIP_DOCKER_BUILD, SKIP_DOCKER_PUSH (or RELEASE_PUBLISH=1)"; \
@@ -840,6 +842,8 @@ BENCH_TAG         ?=
 _ts          ?= $(shell date -u +%Y-%m-%d_%H%M%S)
 _results_dir ?= benchmarks/results
 BENCH_SAVE        ?= 0
+LAT_SLO_P99_MS    ?= 0
+STR_MAX_ERROR_PCT ?= 0
 _startup_timeout_s ?= 30
 _server_log_level ?= warning
 
@@ -953,9 +957,13 @@ bench-latency-run:
 	tag="$(BENCH_TAG)"; \
 	api_arg=""; \
 	summary_arg=""; \
+	slo_arg=""; \
 	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
 	if [ -n "$(_summary_file)" ]; then \
 	  summary_arg="--summary-line $(_summary_file)"; \
+	fi; \
+	if [ "$(LAT_SLO_P99_MS)" != "0" ]; then \
+	  slo_arg="--slo-p99-ms $(LAT_SLO_P99_MS)"; \
 	fi; \
 	if [ -z "$$tag" ]; then \
 	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
@@ -970,7 +978,7 @@ bench-latency-run:
 	    --url $(_url) --queries $(LAT_LENGTH) \
 	    --concurrency $(LAT_CONCUR) \
 	    --filtering $(_filt) \
-	    $$api_arg $$summary_arg \
+	    $$api_arg $$summary_arg $$slo_arg \
 	    | tee $(_results_dir)/latency-$(_ts)_$$tag-$(_filt).txt; \
 	else \
 	  echo "==> Saving: no (ts=$(_ts), tag=$$tag)"; \
@@ -978,7 +986,7 @@ bench-latency-run:
 	    --url $(_url) --queries $(LAT_LENGTH) \
 	    --concurrency $(LAT_CONCUR) \
 	    --filtering $(_filt) \
-	    $$api_arg $$summary_arg; \
+	    $$api_arg $$summary_arg $$slo_arg; \
 	fi
 
 .PHONY: bench-stress bench-stress-run
@@ -989,7 +997,11 @@ bench-stress-run:
 	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
 	tag="$(BENCH_TAG)"; \
 	api_arg=""; \
+	err_arg=""; \
 	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
+	if [ "$(STR_MAX_ERROR_PCT)" != "0" ]; then \
+	  err_arg="--max-error-pct $(STR_MAX_ERROR_PCT)"; \
+	fi; \
 	if [ -z "$$tag" ]; then \
 	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
 	  tag="$$branch-$$sha"; \
@@ -1002,14 +1014,14 @@ bench-stress-run:
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
 	    --url $(_url) --duration $(STR_LENGTH) \
 	    --concurrency $(STR_CONCUR) \
-	    $$api_arg \
+	    $$api_arg $$err_arg \
 	    | tee $(_results_dir)/stress-$(_ts)_$$tag.txt; \
 	else \
 	  echo "==> Saving: no (ts=$(_ts), tag=$$tag)"; \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
 	    --url $(_url) --duration $(STR_LENGTH) \
 	    --concurrency $(STR_CONCUR) \
-	    $$api_arg; \
+	    $$api_arg $$err_arg; \
 	fi
 
 .PHONY: benchmark
