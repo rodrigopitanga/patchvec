@@ -544,7 +544,8 @@ async def run_stress(
     concurrency: int,
     api_key: str | None = None,
     debug: bool = False,
-):
+    max_error_pct: float = 0,
+) -> Stats | None:
     stats = Stats()
     world = World()
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -671,7 +672,32 @@ async def run_stress(
             print(f"  ... and {len(errors) - 10} more")
         print()
 
+    violation = _error_rate_violation(
+        total_ops,
+        err_rate,
+        max_error_pct,
+    )
+    if violation is not None:
+        print(f"\n{violation}")
+        return None
+
     return stats
+
+
+def _error_rate_violation(
+    total_ops: int,
+    err_rate: float,
+    max_error_pct: float,
+) -> str | None:
+    if max_error_pct <= 0 or total_ops <= 0:
+        return None
+    if err_rate <= max_error_pct:
+        return None
+    return (
+        "ERROR RATE VIOLATION:"
+        f" {err_rate:.1f}%"
+        f" > {max_error_pct:.1f}%"
+    )
 
 
 def main():
@@ -706,20 +732,32 @@ def main():
         action="store_true",
         help="Print stack traces for setup failures",
     )
+    parser.add_argument(
+        "--max-error-pct",
+        type=float,
+        default=0,
+        help=(
+            "Fail (exit 1) if error % exceeds this."
+            " 0 = disabled."
+        ),
+    )
     args = parser.parse_args()
 
     try:
-        asyncio.run(run_stress(
+        result = asyncio.run(run_stress(
             args.url,
             args.duration,
             args.concurrency,
             api_key=args.api_key,
             debug=args.debug,
+            max_error_pct=args.max_error_pct,
         ))
     except Exception:
         if args.debug:
             print(traceback.format_exc())
         raise
+    if result is None:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
