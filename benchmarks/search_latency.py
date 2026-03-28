@@ -262,7 +262,8 @@ async def run_benchmark(
     *,
     filtering: str = "mixed",
     summary_line: str | None = None,
-) -> list[float]:
+    slo_p99_ms: float = 0,
+) -> list[float] | None:
     bench_start = time.perf_counter()
     tenant = "bench"
     collection = f"lat_{int(time.time())}"
@@ -465,7 +466,30 @@ async def run_benchmark(
                         f"|0|0|0|0|0|0\n"
                     )
 
+        violation = _latency_slo_violation(
+            latencies,
+            slo_p99_ms,
+        )
+        if violation is not None:
+            print(f"\n{violation}")
+            return None
+
         return latencies
+
+
+def _latency_slo_violation(
+    latencies: list[float],
+    slo_p99_ms: float,
+) -> str | None:
+    if slo_p99_ms <= 0 or not latencies:
+        return None
+    p99 = percentile(latencies, 99)
+    if p99 <= slo_p99_ms:
+        return None
+    return (
+        f"SLO VIOLATION: p99={p99:.1f}ms"
+        f" > {slo_p99_ms:.1f}ms"
+    )
 
 
 def main():
@@ -513,9 +537,18 @@ def main():
         action="store_true",
         help="Print stack traces for setup failures",
     )
+    parser.add_argument(
+        "--slo-p99-ms",
+        type=float,
+        default=0,
+        help=(
+            "Fail (exit 1) if p99 exceeds this (ms)."
+            " 0 = disabled."
+        ),
+    )
     args = parser.parse_args()
 
-    asyncio.run(run_benchmark(
+    result = asyncio.run(run_benchmark(
         args.url,
         args.queries,
         args.concurrency,
@@ -523,7 +556,10 @@ def main():
         debug=args.debug,
         filtering=args.filtering,
         summary_line=args.summary_line,
+        slo_p99_ms=args.slo_p99_ms,
     ))
+    if result is None:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
