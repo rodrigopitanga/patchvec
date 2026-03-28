@@ -358,6 +358,8 @@ release:
 	if [ "$(SKIP_PYPI_BUILD)" != "1" ]; then \
 	  echo "Building dists..."; \
 	  $(MAKE) build || { echo "Build failed."; revert_changes; exit 1; }; \
+	  echo "Running build-check runner..."; \
+	  $(MAKE) _build-check-run || { echo "build-check failed."; revert_changes; exit 1; }; \
 	else \
 	  echo "Skipping dists build (SKIP_PYPI_BUILD=1)."; \
 	fi; \
@@ -365,6 +367,37 @@ release:
 	  echo "Nothing to commit — release commit already exists, skipping."; \
 	else \
 	  git commit -m "chore(release): v$(VERSION)"; \
+	fi; \
+	$(MAKE) -o build package; \
+	if [ -n "$(REGISTRY)" ]; then IMAGE_BASE="$(REGISTRY)/$(IMAGE_NAME)"; else IMAGE_BASE="$(IMAGE_NAME)"; fi; \
+	if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-gpu $(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu"; \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-gpu $(REGISTRY)/$(IMAGE_NAME):latest-cpu"; fi; \
+	else \
+	  if [ "$(USE_CPU)" = "1" ]; then IMG_SUFFIX="cpu"; else IMG_SUFFIX="gpu"; fi; \
+	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-$$IMG_SUFFIX"; \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-$$IMG_SUFFIX"; fi; \
+	fi; \
+	if [ "$(SKIP_DOCKER_BUILD)" = "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
+	  echo "Invalid flags: SKIP_DOCKER_BUILD=1 requires SKIP_DOCKER_PUSH=1."; \
+	  exit 1; \
+	elif [ "$(SKIP_DOCKER_BUILD)" = "1" ]; then \
+	  echo "Skipping Docker build/push (SKIP_DOCKER_BUILD=1)."; \
+	else \
+	  if [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
+	    echo "Building and validating Docker image(s)..."; \
+	  else \
+	    echo "Building and validating Docker image(s) (no push)..."; \
+	  fi; \
+	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-gpu"; \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-cpu"; \
+	  else \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
+	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-$$IMG_SUFFIX"; \
+	  fi; \
 	fi; \
 	if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
 	  printf "Tag v$(VERSION) already exists. Re-tag? [y/N] "; \
@@ -382,7 +415,6 @@ release:
 	  TAG_TOUCHED=1; \
 	fi; \
 	POST_TAG=1; \
-	$(MAKE) -o build package; \
 	if [ "$(SKIP_PYPI_PUSH)" != "1" ]; then \
 	  if printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+$$'; then \
 	    echo "Publishing package(s) to TestPyPI..."; \
@@ -396,40 +428,16 @@ release:
 	    PKG_WHERE="PyPI (https://pypi.org/project/$(PKG_NAME)/)"; \
 	  fi; \
 	fi; \
-	if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-gpu $(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu"; \
-	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-gpu $(REGISTRY)/$(IMAGE_NAME):latest-cpu"; fi; \
-	else \
-	  if [ "$(USE_CPU)" = "1" ]; then IMG_SUFFIX="cpu"; else IMG_SUFFIX="gpu"; fi; \
-	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-$$IMG_SUFFIX"; \
-	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-$$IMG_SUFFIX"; fi; \
-	fi; \
-	if [ "$(SKIP_DOCKER_BUILD)" = "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
-	  echo "Invalid flags: SKIP_DOCKER_BUILD=1 requires SKIP_DOCKER_PUSH=1."; \
-	  exit 1; \
-	elif [ "$(SKIP_DOCKER_BUILD)" = "1" ]; then \
-	  echo "Skipping Docker build/push (SKIP_DOCKER_BUILD=1)."; \
-	elif [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
+	if [ "$(SKIP_DOCKER_BUILD)" != "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
 	  echo "Publishing Docker image(s)..."; \
 	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	    $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
-	    $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	    $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	    $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
 	  else \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
-	    $(MAKE) docker-push  VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
+	    $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
 	  fi; \
 	  DOCKER_PUBLISHED="yes"; \
 	  DOCKER_WHERE="$(REGISTRY)/$(IMAGE_NAME)"; \
-	else \
-	  echo "Building Docker image(s) (no push; SKIP_DOCKER_PUSH=1)..."; \
-	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
-	  else \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
-	  fi; \
 	fi; \
 	echo ""; \
 	if printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$$'; then \
@@ -532,10 +540,9 @@ BUILD_CHECK_SERVER_LOG_LEVEL ?= warning
 BUILD_CHECK_OPENAI_KEY ?= build-check-dummy-key
 BUILD_CHECK_OPENAI_DIM ?= 1536
 
-.PHONY: build-check
-build-check: venv
+.PHONY: _build-check-artifacts
+_build-check-artifacts: venv
 	@set -euo pipefail; \
-	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
 	if ! $(PYTHON_BIN) -c 'import build, twine' >/dev/null 2>&1; then \
 	  echo "Missing build/twine in $(VENV). Run: make install-dev"; \
 	  exit 1; \
@@ -543,7 +550,12 @@ build-check: venv
 	echo "==> Building local artifacts without isolation"; \
 	rm -rf dist build; \
 	$(PYTHON_BIN) -m build --no-isolation; \
-	$(PYTHON_BIN) -m twine check dist/*; \
+	$(PYTHON_BIN) -m twine check dist/*
+
+.PHONY: _build-check-run
+_build-check-run: venv
+	@set -euo pipefail; \
+	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
 	wheel="$$(ls -1t dist/*.whl 2>/dev/null | head -1)"; \
 	[ -n "$$wheel" ] || { echo "No wheel found under dist/"; exit 1; }; \
 	tmp_root="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-build-check.XXXXXX")"; \
@@ -608,6 +620,11 @@ build-check: venv
 	cat "$$log_file"; \
 	exit 1
 
+.PHONY: build-check
+build-check: venv
+	@$(MAKE) -o venv _build-check-artifacts
+	@$(MAKE) -o venv _build-check-run
+
 # -------- docker image smoke test --------
 DOCKER_CHECK_HOST ?= 127.0.0.1
 DOCKER_CHECK_PORT ?= 18089
@@ -618,8 +635,8 @@ DOCKER_CHECK_OPENAI_DIM ?= 1536
 DOCKER_CHECK_CONTAINER_PREFIX ?= patchvec-docker-check
 DOCKER_CHECK_IMAGE ?= $(if $(REGISTRY),$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu,$(IMAGE_NAME):$(VERSION)-cpu)
 
-.PHONY: docker-check
-docker-check:
+.PHONY: _docker-check-run
+_docker-check-run:
 	@set -euo pipefail; \
 	if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 127; fi; \
 	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
@@ -663,6 +680,10 @@ docker-check:
 	echo "Container did not become live in $(DOCKER_CHECK_TIMEOUT_S)s. Log follows:"; \
 	docker logs "$$container_name" || true; \
 	exit 1
+
+.PHONY: docker-check
+docker-check:
+	@$(MAKE) _docker-check-run
 
 .PHONY: check-run
 check-run: install
