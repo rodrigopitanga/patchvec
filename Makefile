@@ -101,6 +101,7 @@ help:
 	echo "  build            Build sdist+wheel to ./dist"; \
 	echo "  package          Build release archives (.zip + .tar.gz) to ./artifacts"; \
 	echo "  docker-build     Build Docker image (VERSION=x.y.z)"; \
+	echo "  docker-check     Run alive check against a prebuilt local Docker image"; \
 	echo ""; \
 	echo "Verify:"; \
 	echo "  $${B}test$${R}            Run pytest (full suite)"; \
@@ -605,6 +606,62 @@ build-check: venv
 	done; \
 	echo "Installed server did not become live in $(BUILD_CHECK_TIMEOUT_S)s. Log follows:"; \
 	cat "$$log_file"; \
+	exit 1
+
+# -------- docker image smoke test --------
+DOCKER_CHECK_HOST ?= 127.0.0.1
+DOCKER_CHECK_PORT ?= 18089
+DOCKER_CHECK_URL  ?= http://$(DOCKER_CHECK_HOST):$(DOCKER_CHECK_PORT)
+DOCKER_CHECK_TIMEOUT_S ?= 45
+DOCKER_CHECK_OPENAI_KEY ?= docker-check-dummy-key
+DOCKER_CHECK_OPENAI_DIM ?= 1536
+DOCKER_CHECK_CONTAINER_PREFIX ?= patchvec-docker-check
+DOCKER_CHECK_IMAGE ?= $(if $(REGISTRY),$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu,$(IMAGE_NAME):$(VERSION)-cpu)
+
+.PHONY: docker-check
+docker-check:
+	@set -euo pipefail; \
+	if ! command -v docker >/dev/null 2>&1; then echo "docker not found"; exit 127; fi; \
+	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
+	image="$(DOCKER_CHECK_IMAGE)"; \
+	if ! docker image inspect "$$image" >/dev/null 2>&1; then \
+	  echo "Docker image $$image not found."; \
+	  echo "Build it first with: make docker-build VERSION=$(VERSION) USE_CPU=$(USE_CPU)"; \
+	  exit 1; \
+	fi; \
+	container_name="$(DOCKER_CHECK_CONTAINER_PREFIX)-$$(date +%s)-$$RANDOM"; \
+	cleanup() { \
+	  docker rm -f "$$container_name" >/dev/null 2>&1 || true; \
+	}; \
+	trap cleanup EXIT INT TERM; \
+	echo "==> Starting $$image as $$container_name on $(DOCKER_CHECK_URL)"; \
+	docker run -d --name "$$container_name" \
+	  -p $(DOCKER_CHECK_HOST):$(DOCKER_CHECK_PORT):8086 \
+	  -e PATCHVEC_CONFIG= \
+	  -e PATCHVEC_DEV=1 \
+	  -e PATCHVEC_AUTH__MODE=none \
+	  -e PATCHVEC_EMBEDDER__TYPE=openai \
+	  -e PATCHVEC_EMBEDDER__OPENAI__API_KEY=$(DOCKER_CHECK_OPENAI_KEY) \
+	  -e PATCHVEC_EMBEDDER__OPENAI__DIM=$(DOCKER_CHECK_OPENAI_DIM) \
+	  -e PATCHVEC_SERVER__HOST=0.0.0.0 \
+	  -e PATCHVEC_SERVER__PORT=8086 \
+	  "$$image" >/dev/null; \
+	echo "==> Waiting for live $(DOCKER_CHECK_URL)/health/live (timeout $(DOCKER_CHECK_TIMEOUT_S)s)"; \
+	for i in $$(seq 1 $(DOCKER_CHECK_TIMEOUT_S)); do \
+	  if curl -fsS "$(DOCKER_CHECK_URL)/health/live" >/dev/null 2>&1; then \
+	    echo "✅ make docker-check passed."; \
+	    exit 0; \
+	  fi; \
+	  status="$$(docker inspect -f '{{.State.Status}}' "$$container_name" 2>/dev/null || echo missing)"; \
+	  if [ "$$status" != "running" ]; then \
+	    echo "Container exited early (status=$$status). Log follows:"; \
+	    docker logs "$$container_name" || true; \
+	    exit 1; \
+	  fi; \
+	  sleep 1; \
+	done; \
+	echo "Container did not become live in $(DOCKER_CHECK_TIMEOUT_S)s. Log follows:"; \
+	docker logs "$$container_name" || true; \
 	exit 1
 
 .PHONY: check-run

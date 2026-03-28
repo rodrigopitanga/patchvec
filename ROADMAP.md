@@ -173,7 +173,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-48 | Additional media types: AV | 🧱 | v1.0 |
 | P3-49 | Additional media types: georeferenced | 🧱 | v1.0 |
 | P3-50 | ~~Split main.py routes into APIRouter modules (health, admin, collections, documents, search)~~ | 🧩 | v0.5.9 |
-| P3-51 | `make docker-check`: alive test against prebuilt Docker image | 🧩 | v0.5.9 |
+| P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
 
 ---
@@ -289,7 +289,7 @@ latency on every search/ingest/delete.~~
 - Build multilingual relevance fixtures (P2-29).
 - Add benchmark CI gate + p99 latency SLO (P2-30).
 - ~~`make build-check`: install from local wheel in temp venv, alive test (P3-52).~~
-- `make docker-check`: alive test against prebuilt Docker image (P3-51).
+- ~~`make docker-check`: alive test against prebuilt Docker image (P3-51).~~
 - Rebranding phase 1 (internal-only surface changes) (P3-35).
 - ~~Split `main.py` into APIRouter modules per domain (P3-50).~~
 - ~~Add service-layer error logging for `ok: false` sites (P2-40).~~
