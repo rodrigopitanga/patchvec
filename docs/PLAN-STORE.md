@@ -830,6 +830,40 @@ Comparing the original txtai baseline (`before_faiss`,
   locks directly instead of the old indirect
   `_lock_indexes` → `_unwrap_store` chain.
 
+### Post-P2-30 perf notes (2026-03-30)
+
+Recent `bench-stress` follow-up runs after the lifecycle
+race fixes are useful for perf interpretation too:
+
+- **High tails under overload are mostly queueing/lock-wait
+  latency.** In the mixed stress workload, create/delete,
+  ingest, search, and archive ops contend on
+  `collection_lock` and, for archive paths, `_lock_all()`.
+  p95/p99 in that scenario should be read primarily as
+  overload/serialization effects, not as the intrinsic cost
+  of the operation body itself.
+- **Stress is serving two jobs; treat them separately.**
+  Mixed stress is the right tool for correctness,
+  backpressure, and lifecycle-race detection. It is a poor
+  primary signal for search-latency optimization because
+  archive restore/download and collection churn poison the
+  tail.
+- **Controlled shedding is acceptable; corruption is not.**
+  Under heavier oversubscription, `ingest_overloaded`
+  responses reflect the configured ingest cap and are a much
+  healthier failure mode than storage corruption or schema
+  races.
+- **Perf follow-up should split the benchmark shapes.**
+  Keep one adversarial mixed workload for stability. Add or
+  emphasize separate search-heavy / ingest-heavy runs when
+  reasoning about p95/p99 performance changes.
+- **Likely optimization targets remain lock scope and
+  observability.** The next useful perf slice is reducing
+  time spent under `collection_lock`, treating archive ops
+  separately from normal latency SLOs, and, if needed,
+  recording lock-wait time separately from execution time so
+  p99 attribution is explicit.
+
 ---
 
 ## Step 5 — GlobalDB + catalog separation (owned by PLAN-SQLITE)

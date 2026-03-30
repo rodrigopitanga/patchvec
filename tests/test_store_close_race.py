@@ -1,6 +1,10 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import errno
+import shutil
+from pathlib import Path
+
 from unittest.mock import patch
 
 from pave.metadb import CollectionDB
@@ -111,3 +115,57 @@ def test_has_doc_fallback_opens_read_only():
     assert result is True
     assert len(opened) == 1
     assert opened[0]._wconn is None
+
+
+def test_has_doc_fallback_handles_db_removed_before_read_only_open():
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+    tenant, collection = "acme", "ro_disappears"
+    docid = "DOC-GONE"
+    store.index_records(
+        tenant, collection, docid,
+        [("0", "ro race probe", {"lang": "en"})],
+    )
+
+    store._dbs[(tenant, collection)].close()
+    del store._dbs[(tenant, collection)]
+    db_path = store._db_path(tenant, collection)
+    opened: list[CollectionDB] = []
+    _orig_open = CollectionDB.open
+
+    def _unlink_then_open(self, path, *, read_only=False):
+        if read_only and Path(path) == db_path and db_path.exists():
+            db_path.unlink()
+        opened.append(self)
+        return _orig_open(self, path, read_only=read_only)
+
+    with patch.object(CollectionDB, "open", _unlink_then_open):
+        result = store.has_doc(tenant, collection, docid)
+
+    assert result is False
+    assert len(opened) == 1
+    assert not db_path.exists()
+
+
+def test_delete_collection_retries_transient_dir_not_empty(monkeypatch):
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+    tenant, collection, docid = "acme", "retry_delete", "DOC-DEL"
+    store.index_records(
+        tenant, collection, docid,
+        [("0", "delete retry probe", {"lang": "en"})],
+    )
+    target = Path(store._base_path(tenant, collection))
+    calls = {"n": 0}
+    real_rmtree = shutil.rmtree
+
+    def flaky_rmtree(path, *args, **kwargs):
+        if Path(path) == target and calls["n"] < 2:
+            calls["n"] += 1
+            raise OSError(errno.ENOTEMPTY, "directory not empty")
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", flaky_rmtree)
+
+    store.delete_collection(tenant, collection)
+
+    assert calls["n"] == 2
+    assert not target.exists()

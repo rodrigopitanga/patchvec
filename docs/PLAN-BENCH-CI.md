@@ -77,6 +77,19 @@ ERROR RATE VIOLATION: 3.2% > 1.0%
 Printed after the normal results table. The full benchmark
 output is always produced regardless of pass/fail.
 
+## Failure Interpretation
+
+These gates are meant to surface real runtime faults, not
+just slow runners. Treat repeated stress failures such as:
+
+- `no such table: chunks`
+- `Directory not empty` during collection delete
+
+as store lifecycle bugs first. The benchmark mixes create,
+delete, ingest, search, and archive operations on purpose,
+so these signatures usually point to TOCTOU issues in the
+SQLite/file-store layer rather than mere CI noise.
+
 ## Not in Scope
 
 - Recall/relevance SLO (needs P2-29 fixtures first).

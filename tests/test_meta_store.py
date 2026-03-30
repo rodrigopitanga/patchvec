@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -115,6 +116,17 @@ def test_open_read_only_does_not_create_dirs(tmp_path):
     with pytest.raises(Exception):
         db.open(db_path, read_only=True)
     assert not db_path.parent.exists()
+
+
+def test_open_read_only_missing_file_does_not_create_db(tmp_path):
+    db_path = _meta_db(tmp_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    db = CollectionDB()
+    with pytest.raises(sqlite3.OperationalError):
+        db.open(db_path, read_only=True)
+
+    assert not db_path.exists()
 
 
 def test_get_doc_chunk_counts(tmp_path):

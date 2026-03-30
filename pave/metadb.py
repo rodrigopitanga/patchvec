@@ -111,11 +111,23 @@ class CollectionDB:
         self._active_readers = 0
         self._closing = False
 
-    def _open_conn(self, path: Path) -> sqlite3.Connection:
+    def _open_conn(
+        self,
+        path: Path,
+        *,
+        read_only: bool = False,
+    ) -> sqlite3.Connection:
         """Open a single sqlite3 connection with standard pragmas."""
-        conn = sqlite3.connect(str(path), check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        if read_only:
+            conn = sqlite3.connect(
+                f"file:{path.as_posix()}?mode=ro",
+                uri=True,
+                check_same_thread=False,
+            )
+        else:
+            conn = sqlite3.connect(str(path), check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -144,7 +156,10 @@ class CollectionDB:
             parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         with self._state_cv:
-            self._rconn = self._open_conn(path)
+            self._rconn = self._open_conn(
+                path,
+                read_only=read_only,
+            )
             if not read_only:
                 self._wconn = self._open_conn(path)
             self._active_readers = 0

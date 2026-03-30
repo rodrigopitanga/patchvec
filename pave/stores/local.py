@@ -126,9 +126,9 @@ class LocalStore(BaseStore):
             col_db = self._dbs.pop(key, None)
             if col_db is not None:
                 col_db.close()
-            p = self._base_path(tenant, collection)
-            if os.path.isdir(p):
-                shutil.rmtree(p)
+            path = Path(self._base_path(tenant, collection))
+            if path.exists() or path.is_symlink():
+                self._remove_path(path)
 
     def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
