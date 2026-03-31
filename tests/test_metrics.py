@@ -64,10 +64,10 @@ def test_metrics_prometheus_includes_store_catalog_counts(client):
     r = client.get("/metrics")
     assert r.status_code == 200
     txt = r.text
-    assert "patchvec_tenant_count" in txt
-    assert "patchvec_collection_count" in txt
-    assert "patchvec_doc_count" in txt
-    assert "patchvec_chunk_count" in txt
+    assert "pavedb_tenant_count" in txt
+    assert "pavedb_collection_count" in txt
+    assert "pavedb_doc_count" in txt
+    assert "pavedb_chunk_count" in txt
 
 def test_latency_percentiles_in_snapshot(client):
     """After search and ingest, latency percentiles should appear in metrics."""
@@ -103,12 +103,12 @@ def test_latency_prometheus_format(client):
 
     r = client.get("/metrics")
     txt = r.text
-    assert "patchvec_search_latency_p50_ms" in txt
-    assert "patchvec_search_latency_p95_ms" in txt
-    assert "patchvec_search_latency_p99_ms" in txt
-    assert "patchvec_ingest_latency_p50_ms" in txt
-    assert "patchvec_ingest_latency_p95_ms" in txt
-    assert "patchvec_ingest_latency_p99_ms" in txt
+    assert "pavedb_search_latency_p50_ms" in txt
+    assert "pavedb_search_latency_p95_ms" in txt
+    assert "pavedb_search_latency_p99_ms" in txt
+    assert "pavedb_ingest_latency_p50_ms" in txt
+    assert "pavedb_ingest_latency_p95_ms" in txt
+    assert "pavedb_ingest_latency_p99_ms" in txt
 
 def test_percentile_calculation():
     """Unit test for percentile calculation."""

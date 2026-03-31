@@ -773,9 +773,9 @@ class LocalStore(BaseStore):
                 self._write_zip(data_dir_path, archive_path)
             return str(archive_path), None
 
-        tmp_dir = Path(tempfile.mkdtemp(prefix="patchvec_export_"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="pavedb_export_"))
         timestamp = datetime.now(tz.utc).strftime("%Y%m%dT%H%M%SZ")
-        archive_path = tmp_dir / f"patchvec-data-{timestamp}.zip"
+        archive_path = tmp_dir / f"pavedb-data-{timestamp}.zip"
         with self._lock_all():
             self._write_zip(data_dir_path, archive_path)
         return str(archive_path), str(tmp_dir)
@@ -784,9 +784,9 @@ class LocalStore(BaseStore):
         data_dir_path = Path(self._data_dir).resolve()
         data_dir_path.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix="patchvec_import_") as tmp_dir:
+        with tempfile.TemporaryDirectory(prefix="pavedb_import_") as tmp_dir:
             tmp_path = Path(tmp_dir)
-            archive_path = tmp_path / "patchvec-data.zip"
+            archive_path = tmp_path / "pavedb-data.zip"
             extract_dir = tmp_path / "extracted"
             archive_path.write_bytes(archive_bytes)
             extract_dir.mkdir()

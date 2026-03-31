@@ -273,7 +273,7 @@ class DummyStore(BaseStore):
         data_dir = Path(get_cfg().get("data_dir")).resolve()
         if output_path is None:
             tmp_dir = Path(tempfile.mkdtemp(prefix="dummy-export_"))
-            archive_path = tmp_dir / "patchvec-data.zip"
+            archive_path = tmp_dir / "pavedb-data.zip"
             tmp_dir_str = str(tmp_dir)
         else:
             archive_path = Path(output_path).resolve()

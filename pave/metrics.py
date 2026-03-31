@@ -195,8 +195,8 @@ def to_prometheus(extra: dict[str, Any] | None = None, build: dict[str, str] | N
     snap = snapshot(extra)
     for k, v in snap.items():
         if isinstance(v, (int, float)):
-            s.append(f"patchvec_{k} {float(v)}")
+            s.append(f"pavedb_{k} {float(v)}")
     if build:
         labels = ",".join([f'{key}="{val}"' for key, val in build.items()])
-        s.append(f"patchvec_build_info{{{labels}}} 1")
+        s.append(f"pavedb_build_info{{{labels}}} 1")
     return "\n".join(s) + "\n"

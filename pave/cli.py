@@ -181,7 +181,7 @@ def cmd_delete_document(args):
 
 def cmd_dump_archive(args):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output = args.output or f"patchvec-data-{stamp}.zip"
+    output = args.output or f"pavedb-data-{stamp}.zip"
     archive_path, _ = svc_dump_archive(_get_store(), output)
     out = {
         "ok": True,
@@ -235,14 +235,14 @@ def main_cli(argv=None):
         epilog=(
             "examples:\n"
             "  pavecli init                        "
-            "  # ~/patchvec (default)\n"
-            "  pavecli init ~/patchvec-staging      "
+            "  # ~/pavedb (default)\n"
+            "  pavecli init ~/pavedb-staging        "
             "  # separate instance\n"
-            "  pavecli init --config /etc/patchvec/"
+            "  pavecli init --config /etc/pavedb/"
             "config.yml \\\n"
-            "    --tenants /var/patchvec/tenants.yml"
+            "    --tenants /var/pavedb/tenants.yml"
             " \\\n"
-            "    --data-dir /var/patchvec/data       "
+            "    --data-dir /var/pavedb/data         "
             " # distro layout"
         ),
     )

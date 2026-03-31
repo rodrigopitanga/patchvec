@@ -24,7 +24,7 @@ def _raise_401():
             "code": "auth_invalid",
             "error": "missing or invalid authorization header",
         },
-        headers={"WWW-Authenticate": 'Bearer realm="patchvec", error="invalid_token"'},
+        headers={"WWW-Authenticate": 'Bearer realm="pavedb", error="invalid_token"'},
     )
 
 def _raise_403():
@@ -33,7 +33,7 @@ def _raise_403():
         detail={"code": "auth_forbidden", "error": "forbidden"},
         headers={
             "WWW-Authenticate":
-                'Bearer realm="patchvec", error="insufficient_scope"'
+                'Bearer realm="pavedb", error="insufficient_scope"'
         },
     )
 
