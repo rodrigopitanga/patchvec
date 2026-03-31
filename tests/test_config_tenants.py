@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from pave.config import Config
+from pave.config import Config, reload_cfg
 
 
 def _write(path: Path, text: str) -> None:
@@ -11,9 +11,9 @@ def _write(path: Path, text: str) -> None:
 
 
 def test_tenants_sidecar_is_opt_in(monkeypatch, tmp_path):
-    monkeypatch.delenv("PATCHVEC_AUTH__TENANTS_FILE", raising=False)
+    monkeypatch.delenv("PAVEDB_AUTH__TENANTS_FILE", raising=False)
     home = tmp_path / "home"
-    sidecar = home / "patchvec" / "tenants.yml"
+    sidecar = home / "pavedb" / "tenants.yml"
     sidecar.parent.mkdir(parents=True)
     _write(
         sidecar,
@@ -42,7 +42,7 @@ def test_tenants_sidecar_is_opt_in(monkeypatch, tmp_path):
 
 def test_dev_mode_skips_default_user_config(monkeypatch, tmp_path):
     home = tmp_path / "home"
-    default_cfg = home / "patchvec" / "config.yml"
+    default_cfg = home / "pavedb" / "config.yml"
     default_cfg.parent.mkdir(parents=True)
     _write(
         default_cfg,
@@ -52,8 +52,8 @@ def test_dev_mode_skips_default_user_config(monkeypatch, tmp_path):
         "  name: User config\n",
     )
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.delenv("PATCHVEC_CONFIG", raising=False)
-    monkeypatch.setenv("PATCHVEC_DEV", "1")
+    monkeypatch.delenv("PAVEDB_CONFIG", raising=False)
+    monkeypatch.setenv("PAVEDB_DEV", "1")
 
     cfg = Config()
 
@@ -71,8 +71,8 @@ def test_explicit_config_path_still_wins_in_dev(monkeypatch, tmp_path):
         "instance:\n"
         "  name: Explicit config\n",
     )
-    monkeypatch.setenv("PATCHVEC_DEV", "1")
-    monkeypatch.setenv("PATCHVEC_CONFIG", str(config_path))
+    monkeypatch.setenv("PAVEDB_DEV", "1")
+    monkeypatch.setenv("PAVEDB_CONFIG", str(config_path))
 
     cfg = Config()
 
@@ -109,7 +109,7 @@ def test_env_tenants_file_selects_sidecar_over_config_value(monkeypatch, tmp_pat
         f"  mode: static\n"
         f"  tenants_file: {sidecar_a}\n",
     )
-    monkeypatch.setenv("PATCHVEC_AUTH__TENANTS_FILE", str(sidecar_b))
+    monkeypatch.setenv("PAVEDB_AUTH__TENANTS_FILE", str(sidecar_b))
 
     cfg = Config(path=config_path)
 
@@ -172,13 +172,51 @@ def test_env_tenant_values_override_inline_and_sidecar(monkeypatch, tmp_path):
         f"  acme:\n"
         f"    max_concurrent: 2\n",
     )
-    monkeypatch.setenv("PATCHVEC_AUTH__API_KEYS__acme", "env-key")
-    monkeypatch.setenv("PATCHVEC_TENANTS__acme__MAX_CONCURRENT", "3")
+    monkeypatch.setenv("PAVEDB_AUTH__API_KEYS__acme", "env-key")
+    monkeypatch.setenv("PAVEDB_TENANTS__acme__MAX_CONCURRENT", "3")
 
     cfg = Config(path=config_path)
 
     assert cfg.get("auth.api_keys.acme") == "env-key"
     assert cfg.get("tenants.acme.max_concurrent") == 3
+
+
+def test_legacy_patchvec_env_still_works_and_logs_warning(
+    monkeypatch, tmp_path, caplog
+):
+    legacy_data_dir = tmp_path / "legacy-data"
+    monkeypatch.setenv("PATCHVEC_DATA_DIR", str(legacy_data_dir))
+    caplog.set_level("WARNING", logger="pave")
+
+    cfg = reload_cfg()
+
+    assert cfg.get("data_dir") == str(legacy_data_dir)
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if "PATCHVEC_" in record.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert "PATCHVEC_DATA_DIR" in warnings[0]
+
+
+def test_pavedb_env_takes_precedence_over_patchvec_and_still_warns(
+    monkeypatch, tmp_path, caplog
+):
+    monkeypatch.setenv("PATCHVEC_DATA_DIR", str(tmp_path / "legacy-data"))
+    monkeypatch.setenv("PAVEDB_DATA_DIR", str(tmp_path / "new-data"))
+    caplog.set_level("WARNING", logger="pave")
+
+    cfg = reload_cfg()
+
+    assert cfg.get("data_dir") == str(tmp_path / "new-data")
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if "PATCHVEC_" in record.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert "PATCHVEC_DATA_DIR" in warnings[0]
 
 
 def test_tenants_sidecar_only_overlays_tenant_keys(tmp_path):

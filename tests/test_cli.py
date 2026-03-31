@@ -158,7 +158,7 @@ def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, 
 
     pvcli.main_cli(["init"])
     out = json.loads(capsys.readouterr().out)
-    instance = home / "patchvec"
+    instance = home / "pavedb"
     config_path = instance / "config.yml"
     tenants_path = instance / "tenants.yml"
 

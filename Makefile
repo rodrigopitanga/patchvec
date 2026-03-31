@@ -94,7 +94,7 @@ help:
 	echo "  venv             Create local virtualenv (.venv)"; \
 	echo ""; \
 	echo "Run:"; \
-	echo "  $${B}serve$${R}           Run API server (DEV: PATCHVEC_DEV=1, auth=none, loopback)"; \
+	echo "  $${B}serve$${R}           Run API server (DEV: PAVEDB_DEV=1, auth=none, loopback)"; \
 	echo "  cli              Run CLI (pass ARGS='...')"; \
 	echo ""; \
 	echo "Build:"; \
@@ -190,28 +190,28 @@ serve: install
 	@echo "Starting 🍰 server on $(HOST):$(PORT) [auth.mode=$(AUTH_MODE)]"
 	cfg_env=(); \
 	if [ -n "$(CONFIG)" ]; then \
-	  cfg_env+=(PATCHVEC_CONFIG="$(CONFIG)"); \
+	  cfg_env+=(PAVEDB_CONFIG="$(CONFIG)"); \
 	fi; \
 	env "$${cfg_env[@]}" \
 	  PYTHONPATH=. \
-	  PATCHVEC_DEV=$(DEV) \
-	  PATCHVEC_DATA_DIR=$(DATA_DIR) \
-	  PATCHVEC_AUTH__MODE=$(AUTH_MODE) \
-	  PATCHVEC_AUTH__GLOBAL_KEY=$(GLOBAL_KEY) \
-	  PATCHVEC_LOG__LEVEL=$(LOG_LEVEL) \
-	  PATCHVEC_SERVER__HOST=$(HOST) \
-	  PATCHVEC_SERVER__PORT=$(PORT) \
+	  PAVEDB_DEV=$(DEV) \
+	  PAVEDB_DATA_DIR=$(DATA_DIR) \
+	  PAVEDB_AUTH__MODE=$(AUTH_MODE) \
+	  PAVEDB_AUTH__GLOBAL_KEY=$(GLOBAL_KEY) \
+	  PAVEDB_LOG__LEVEL=$(LOG_LEVEL) \
+	  PAVEDB_SERVER__HOST=$(HOST) \
+	  PAVEDB_SERVER__PORT=$(PORT) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main
 
 .PHONY: cli
 cli: install
 	cfg_env=(); \
 	if [ -n "$(CONFIG)" ]; then \
-	  cfg_env+=(PATCHVEC_CONFIG="$(CONFIG)"); \
+	  cfg_env+=(PAVEDB_CONFIG="$(CONFIG)"); \
 	fi; \
 	env "$${cfg_env[@]}" \
 	  PYTHONPATH=. \
-	  PATCHVEC_DATA_DIR=$(DATA_DIR) \
+	  PAVEDB_DATA_DIR=$(DATA_DIR) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).cli $(ARGS)
 
 # -------- bump --------
@@ -597,22 +597,22 @@ _build-check-run: venv
 	test -d "$$instance_dir/data"; \
 	echo "==> Checking installed CLI bootstrap"; \
 	PYTHONPATH="$$dep_site" \
-	PATCHVEC_DEV=1 \
-	PATCHVEC_EMBEDDER__TYPE=openai \
-	PATCHVEC_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
-	PATCHVEC_EMBEDDER__OPENAI__DIM=$(BUILD_CHECK_OPENAI_DIM) \
-	PATCHVEC_AUTH__MODE=none \
+	PAVEDB_DEV=1 \
+	PAVEDB_EMBEDDER__TYPE=openai \
+	PAVEDB_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
+	PAVEDB_EMBEDDER__OPENAI__DIM=$(BUILD_CHECK_OPENAI_DIM) \
+	PAVEDB_AUTH__MODE=none \
 	"$$venv_dir/bin/pavecli" --compact list-tenants --home "$$instance_dir" >/dev/null; \
 	echo "==> Starting installed pavesrv on $(BUILD_CHECK_URL)"; \
 	PYTHONPATH="$$dep_site" \
-	PATCHVEC_DEV=1 \
-	PATCHVEC_EMBEDDER__TYPE=openai \
-	PATCHVEC_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
-	PATCHVEC_EMBEDDER__OPENAI__DIM=$(BUILD_CHECK_OPENAI_DIM) \
-	PATCHVEC_AUTH__MODE=none \
-	PATCHVEC_LOG__LEVEL=$(BUILD_CHECK_SERVER_LOG_LEVEL) \
-	PATCHVEC_SERVER__HOST=$(BUILD_CHECK_HOST) \
-	PATCHVEC_SERVER__PORT=$(BUILD_CHECK_PORT) \
+	PAVEDB_DEV=1 \
+	PAVEDB_EMBEDDER__TYPE=openai \
+	PAVEDB_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
+	PAVEDB_EMBEDDER__OPENAI__DIM=$(BUILD_CHECK_OPENAI_DIM) \
+	PAVEDB_AUTH__MODE=none \
+	PAVEDB_LOG__LEVEL=$(BUILD_CHECK_SERVER_LOG_LEVEL) \
+	PAVEDB_SERVER__HOST=$(BUILD_CHECK_HOST) \
+	PAVEDB_SERVER__PORT=$(BUILD_CHECK_PORT) \
 	"$$venv_dir/bin/pavesrv" --home "$$instance_dir" >"$$log_file" 2>&1 & \
 	srv_pid=$$!; \
 	echo "==> Waiting for live $(BUILD_CHECK_URL)/health/live (timeout $(BUILD_CHECK_TIMEOUT_S)s)"; \
@@ -666,14 +666,14 @@ _docker-check-run:
 	echo "==> Starting $$image as $$container_name on $(DOCKER_CHECK_URL)"; \
 	docker run -d --name "$$container_name" \
 	  -p $(DOCKER_CHECK_HOST):$(DOCKER_CHECK_PORT):8086 \
-	  -e PATCHVEC_CONFIG= \
-	  -e PATCHVEC_DEV=1 \
-	  -e PATCHVEC_AUTH__MODE=none \
-	  -e PATCHVEC_EMBEDDER__TYPE=openai \
-	  -e PATCHVEC_EMBEDDER__OPENAI__API_KEY=$(DOCKER_CHECK_OPENAI_KEY) \
-	  -e PATCHVEC_EMBEDDER__OPENAI__DIM=$(DOCKER_CHECK_OPENAI_DIM) \
-	  -e PATCHVEC_SERVER__HOST=0.0.0.0 \
-	  -e PATCHVEC_SERVER__PORT=8086 \
+	  -e PAVEDB_CONFIG= \
+	  -e PAVEDB_DEV=1 \
+	  -e PAVEDB_AUTH__MODE=none \
+	  -e PAVEDB_EMBEDDER__TYPE=openai \
+	  -e PAVEDB_EMBEDDER__OPENAI__API_KEY=$(DOCKER_CHECK_OPENAI_KEY) \
+	  -e PAVEDB_EMBEDDER__OPENAI__DIM=$(DOCKER_CHECK_OPENAI_DIM) \
+	  -e PAVEDB_SERVER__HOST=0.0.0.0 \
+	  -e PAVEDB_SERVER__PORT=8086 \
 	  "$$image" >/dev/null; \
 	echo "==> Waiting for live $(DOCKER_CHECK_URL)/health/live (timeout $(DOCKER_CHECK_TIMEOUT_S)s)"; \
 	for i in $$(seq 1 $(DOCKER_CHECK_TIMEOUT_S)); do \
@@ -774,14 +774,14 @@ _check-with-server: install
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> CHECK_FORCE_EPHEMERAL=1; starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
-	  PATCHVEC_DEV=1 \
-	  PATCHVEC_DATA_DIR="$$data_dir" \
-	  PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
-	  PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
-	  PATCHVEC_LOG__LEVEL=$(CHECK_SERVER_LOG_LEVEL) \
-	  PATCHVEC_VECTOR_STORE__TYPE=faiss \
-	  PATCHVEC_SERVER__HOST=$(CHECK_EPHEMERAL_HOST) \
-	  PATCHVEC_SERVER__PORT=$(CHECK_EPHEMERAL_PORT) \
+	  PAVEDB_DEV=1 \
+	  PAVEDB_DATA_DIR="$$data_dir" \
+	  PAVEDB_AUTH__MODE=$(CHECK_AUTH_MODE) \
+	  PAVEDB_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
+	  PAVEDB_LOG__LEVEL=$(CHECK_SERVER_LOG_LEVEL) \
+	  PAVEDB_VECTOR_STORE__TYPE=faiss \
+	  PAVEDB_SERVER__HOST=$(CHECK_EPHEMERAL_HOST) \
+	  PAVEDB_SERVER__PORT=$(CHECK_EPHEMERAL_PORT) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
 	  srv_pid=$$!; \
 	elif curl -fsS "$$check_url/health/live" >/dev/null 2>&1; then \
@@ -793,14 +793,14 @@ _check-with-server: install
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> No active server on $(CHECK_DEFAULT_URL); starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
-	  PATCHVEC_DEV=1 \
-	  PATCHVEC_DATA_DIR="$$data_dir" \
-	  PATCHVEC_AUTH__MODE=$(CHECK_AUTH_MODE) \
-	  PATCHVEC_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
-	  PATCHVEC_LOG__LEVEL=$(CHECK_SERVER_LOG_LEVEL) \
-	  PATCHVEC_VECTOR_STORE__TYPE=faiss \
-	  PATCHVEC_SERVER__HOST=$(CHECK_EPHEMERAL_HOST) \
-	  PATCHVEC_SERVER__PORT=$(CHECK_EPHEMERAL_PORT) \
+	  PAVEDB_DEV=1 \
+	  PAVEDB_DATA_DIR="$$data_dir" \
+	  PAVEDB_AUTH__MODE=$(CHECK_AUTH_MODE) \
+	  PAVEDB_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
+	  PAVEDB_LOG__LEVEL=$(CHECK_SERVER_LOG_LEVEL) \
+	  PAVEDB_VECTOR_STORE__TYPE=faiss \
+	  PAVEDB_SERVER__HOST=$(CHECK_EPHEMERAL_HOST) \
+	  PAVEDB_SERVER__PORT=$(CHECK_EPHEMERAL_PORT) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
 	  srv_pid=$$!; \
 	fi; \
@@ -886,12 +886,12 @@ _bench-with-server:
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> BENCH_FORCE_EPHEMERAL=1; starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
-	  PATCHVEC_DEV=1 \
-	  PATCHVEC_DATA_DIR="$$data_dir" \
-	  PATCHVEC_AUTH__MODE=none \
-	  PATCHVEC_LOG__LEVEL=$(_server_log_level) \
-	  PATCHVEC_SERVER__HOST=$(_ephemeral_host) \
-	  PATCHVEC_SERVER__PORT=$(_ephemeral_port) \
+	  PAVEDB_DEV=1 \
+	  PAVEDB_DATA_DIR="$$data_dir" \
+	  PAVEDB_AUTH__MODE=none \
+	  PAVEDB_LOG__LEVEL=$(_server_log_level) \
+	  PAVEDB_SERVER__HOST=$(_ephemeral_host) \
+	  PAVEDB_SERVER__PORT=$(_ephemeral_port) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
 	  srv_pid=$$!; \
 	elif curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
@@ -903,12 +903,12 @@ _bench-with-server:
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> No active server on $(_default_url); starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
-	  PATCHVEC_DEV=1 \
-	  PATCHVEC_DATA_DIR="$$data_dir" \
-	  PATCHVEC_AUTH__MODE=none \
-	  PATCHVEC_LOG__LEVEL=$(_server_log_level) \
-	  PATCHVEC_SERVER__HOST=$(_ephemeral_host) \
-	  PATCHVEC_SERVER__PORT=$(_ephemeral_port) \
+	  PAVEDB_DEV=1 \
+	  PAVEDB_DATA_DIR="$$data_dir" \
+	  PAVEDB_AUTH__MODE=none \
+	  PAVEDB_LOG__LEVEL=$(_server_log_level) \
+	  PAVEDB_SERVER__HOST=$(_ephemeral_host) \
+	  PAVEDB_SERVER__PORT=$(_ephemeral_port) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
 	  srv_pid=$$!; \
 	fi; \

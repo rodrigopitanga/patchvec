@@ -12,7 +12,7 @@ services:
       - ./data:/data
       - ./config.yml:/app/config.yml:ro
     environment:
-      - PATCHVEC_CONFIG=/app/config.yml
+      - PAVEDB_CONFIG=/app/config.yml
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8086/health/ready"]
       interval: 30s

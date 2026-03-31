@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
-DEFAULT_HOME = "~/patchvec"
+DEFAULT_HOME = "~/pavedb"
 
 
 @dataclass(frozen=True)
@@ -56,11 +56,11 @@ def apply_runtime_env(
         data_dir=data_dir,
     )
     if paths.config:
-        os.environ["PATCHVEC_CONFIG"] = paths.config
+        os.environ["PAVEDB_CONFIG"] = paths.config
     if paths.tenants:
-        os.environ["PATCHVEC_AUTH__TENANTS_FILE"] = paths.tenants
+        os.environ["PAVEDB_AUTH__TENANTS_FILE"] = paths.tenants
     if paths.data_dir:
-        os.environ["PATCHVEC_DATA_DIR"] = paths.data_dir
+        os.environ["PAVEDB_DATA_DIR"] = paths.data_dir
     return paths
 
 

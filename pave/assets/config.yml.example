@@ -3,48 +3,49 @@
 # Secrets (API keys) should live in a separate untracked file — see tenants.yml.example.
 #
 # Default user-install paths:
-#   config:  ~/patchvec/config.yml
-#   tenants: ~/patchvec/tenants.yml
-#   data:    ~/patchvec/data
+#   config:  ~/pavedb/config.yml
+#   tenants: ~/pavedb/tenants.yml
+#   data:    ~/pavedb/data
 #
 # Distro-like install example:
-#   config:  /etc/patchvec/config.yml
-#   tenants: /var/patchvec/tenants.yml
-#   data:    /var/patchvec/data
+#   config:  /etc/pavedb/config.yml
+#   tenants: /var/pavedb/tenants.yml
+#   data:    /var/pavedb/data
 #
 # Config file location override:
-#   PATCHVEC_CONFIG=/etc/patchvec/config.yml
+#   PAVEDB_CONFIG=/etc/pavedb/config.yml
 #
-# In Docker/systemd deployments always set PATCHVEC_CONFIG explicitly — the
+# In Docker/systemd deployments always set PAVEDB_CONFIG explicitly — the
 # default path expands ~ relative to the process user, which may not be what
 # you expect inside a container. Example compose snippet:
 #
 #   environment:
-#     PATCHVEC_CONFIG: /etc/patchvec/config.yml
+#     PAVEDB_CONFIG: /etc/pavedb/config.yml
 #   volumes:
-#     - ./config.yml:/etc/patchvec/config.yml:ro
+#     - ./config.yml:/etc/pavedb/config.yml:ro
 #
 # All keys can also be overridden inline via environment variables:
-#   PATCHVEC_<KEY>=value          (top-level, e.g. PATCHVEC_DATA_DIR)
-#   PATCHVEC_<SECTION>__<KEY>=val (nested,    e.g. PATCHVEC_LOG__LEVEL=debug)
+#   PAVEDB_<KEY>=value          (top-level, e.g. PAVEDB_DATA_DIR)
+#   PAVEDB_<SECTION>__<KEY>=val (nested,    e.g. PAVEDB_LOG__LEVEL=debug)
+# Legacy PATCHVEC_* vars still work in v0.5.9 but will be removed in v0.6.
 #
 # `auth.tenants_file` is optional. If unset, its default is `None` and no
 # tenants sidecar file is loaded.
-# If set, PatchVec loads that sidecar first. Then inline tenant config is
+# If set, PaveDB loads that sidecar first. Then inline tenant config is
 # applied with precedence:
 #   env vars > config.yml > tenants.yml > defaults
 # Example: define tenant "acme" entirely from env:
-#   PATCHVEC_AUTH__API_KEYS__acme=change-me
-#   PATCHVEC_TENANTS__acme__MAX_CONCURRENT=5
+#   PAVEDB_AUTH__API_KEYS__acme=change-me
+#   PAVEDB_TENANTS__acme__MAX_CONCURRENT=5
 
 # ---------------------------------------------------------------------------
 # Storage
 # ---------------------------------------------------------------------------
 
 # Data directory — ~ is expanded at startup.
-# Default (library/dev): ~/patchvec/data
-# For distro-like installs use an absolute path, e.g. /var/patchvec/data.
-data_dir: ~/patchvec/data
+# Default (library/dev): ~/pavedb/data
+# For distro-like installs use an absolute path, e.g. /var/pavedb/data.
+data_dir: ~/pavedb/data
 
 # ---------------------------------------------------------------------------
 # Common collection
@@ -73,13 +74,13 @@ auth:
 
   # Global admin key — grants access to all tenants and admin routes.
   # Always read from the environment; never hardcode in committed files.
-  global_key: ${PATCHVEC_GLOBAL_KEY}
+  global_key: ${PAVEDB_GLOBAL_KEY}
 
   # External tenant→key mapping file.
   # Keep the same key paths there (`auth.api_keys`, `tenants.*`).
-  # User install default:  ~/patchvec/tenants.yml
-  # Distro-like install:   /var/patchvec/tenants.yml
-  # tenants_file: ~/patchvec/tenants.yml
+  # User install default:  ~/pavedb/tenants.yml
+  # Distro-like install:   /var/pavedb/tenants.yml
+  # tenants_file: ~/pavedb/tenants.yml
 
   # Inline tenant→key mapping (fallback; keep empty in the repo).
   api_keys: {}
@@ -118,7 +119,7 @@ embedder:
   openai:
     model: text-embedding-3-small
     batch_size: 256
-    api_key: ${PATCHVEC_OPENAI_API_KEY}
+    api_key: ${PAVEDB_OPENAI_API_KEY}
     dim: 1536
 
 # ---------------------------------------------------------------------------
@@ -199,7 +200,7 @@ server:
 
 log:
   # Dev log level (stderr). DEBUG | INFO | WARNING | ERROR — default INFO.
-  # Overridden by PATCHVEC_LOG__LEVEL env var (e.g. in Makefile: debug).
+  # Overridden by PAVEDB_LOG__LEVEL env var (e.g. in Makefile: debug).
   # Per-namespace overrides: log.debug / log.watch / log.quiet (list of loggers).
   level: INFO
 

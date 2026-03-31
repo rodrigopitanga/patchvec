@@ -228,8 +228,12 @@ def main_srv(argv=None):
         args.config,
         args.tenants,
         args.data_dir,
+        os.environ.get("PAVEDB_CONFIG"),
+        os.environ.get("PAVEDB_AUTH__TENANTS_FILE"),
+        os.environ.get("PAVEDB_DATA_DIR"),
         os.environ.get("PATCHVEC_CONFIG"),
         os.environ.get("PATCHVEC_AUTH__TENANTS_FILE"),
+        os.environ.get("PATCHVEC_DATA_DIR"),
     ))
 
     apply_runtime_env(

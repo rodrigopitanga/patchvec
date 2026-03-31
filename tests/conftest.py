@@ -21,9 +21,14 @@ _FAST_MODEL = "sentence-transformers/paraphrase-MiniLM-L3-v2"
 @pytest.fixture(autouse=True)
 def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
     for k in tuple(os.environ):
-        if k.startswith("PATCHVEC_"):
+        if k.startswith(("PAVEDB_", "PATCHVEC_")):
             monkeypatch.delenv(k, raising=False)
-    for k in ("PATCHVEC_VECTOR_STORE__TYPE", "PATCHVEC_AUTH__MODE"):
+    for k in (
+        "PAVEDB_VECTOR_STORE__TYPE",
+        "PAVEDB_AUTH__MODE",
+        "PATCHVEC_VECTOR_STORE__TYPE",
+        "PATCHVEC_AUTH__MODE",
+    ):
         monkeypatch.delenv(k, raising=False)
     reload_cfg()
     cfg = get_cfg()

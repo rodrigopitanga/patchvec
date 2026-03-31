@@ -13,7 +13,7 @@ ENV BUILD_ID=${BUILD_ID} \
     PIP_DEFAULT_TIMEOUT=300 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATCHVEC_CONFIG=/app/config-base.yml
+    PAVEDB_CONFIG=/app/config-base.yml
 
 WORKDIR /app
 

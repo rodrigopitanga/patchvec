@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 import json
+import logging
 import os, re, threading
 from pathlib import Path
 from typing import Any
@@ -38,10 +39,47 @@ except ModuleNotFoundError:  # pragma: no cover
 
 load_dotenv()
 
-_ENV_PREFIX = "PATCHVEC_"
+_ENV_PREFIX = "PAVEDB_"
+_LEGACY_ENV_PREFIX = "PATCHVEC_"
+_LEGACY_EXACT = {
+    "CONFIG",
+    "DEV",
+    "DATA_DIR",
+    "AUTH__TENANTS_FILE",
+}
+_LEGACY_PREFIXES = (
+    "AUTH__",
+    "LOG__",
+    "SERVER__",
+    "EMBEDDER__",
+    "VECTOR_STORE__",
+    "TENANTS__",
+)
+
+
+def _is_supported_legacy_suffix(suffix: str) -> bool:
+    return suffix in _LEGACY_EXACT or any(
+        suffix.startswith(prefix) for prefix in _LEGACY_PREFIXES
+    )
+
+
+def _normalize_legacy_env() -> tuple[str, ...]:
+    seen: list[str] = []
+    for key, value in tuple(os.environ.items()):
+        if not key.startswith(_LEGACY_ENV_PREFIX):
+            continue
+        suffix = key[len(_LEGACY_ENV_PREFIX):]
+        if not _is_supported_legacy_suffix(suffix):
+            continue
+        seen.append(key)
+        new_key = _ENV_PREFIX + suffix
+        if new_key not in os.environ:
+            os.environ[new_key] = value
+    return tuple(sorted(set(seen)))
+
 
 def _env_flag(name: str) -> bool:
-    value = os.environ.get(name)
+    value = os.environ.get(_ENV_PREFIX + name)
     if value is None:
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
@@ -52,12 +90,12 @@ def _default_config_path() -> str | None:
     if configured:
         return str(Path(configured).expanduser())
     # In dev mode, do not implicitly load the installed user config file.
-    if _env_flag(_ENV_PREFIX + "DEV"):
+    if _env_flag("DEV"):
         return None
-    return str(Path("~/patchvec/config.yml").expanduser())
+    return str(Path("~/pavedb/config.yml").expanduser())
 
 _DEFAULTS = {
-    "data_dir": "~/patchvec/data",
+    "data_dir": "~/pavedb/data",
     "common_enabled": False,
     "common_tenant": "global",
     "common_collection": "common",
@@ -118,12 +156,12 @@ def _resolve_env_in_obj(obj: Any) -> Any:
         return [_resolve_env_in_obj(v) for v in obj]
     return _subst_env(obj)
 
-def _env_to_dict(prefix: str = _ENV_PREFIX) -> dict[str, Any]:
+def _env_to_dict() -> dict[str, Any]:
     envmap: dict[str, Any] = {}
     for k, v in os.environ.items():
-        if not k.startswith(prefix):
+        if not k.startswith(_ENV_PREFIX):
             continue
-        path = k[len(prefix):].lower().split("__")
+        path = k[len(_ENV_PREFIX):].lower().split("__")
         cur = envmap
         for part in path[:-1]:
             cur = cur.setdefault(part, {})
@@ -163,8 +201,12 @@ class Config:
             data: dict[str, Any] | None = None,
             path: str | Path | None = None):
         self._lock = threading.RLock()
+        self._legacy_env_vars: tuple[str, ...] = ()
         if data is None:
-            data = self._load_dict(path if path is not None else _default_config_path())
+            self._legacy_env_vars = _normalize_legacy_env()
+            if path is None:
+                path = _default_config_path()
+            data = self._load_dict(path)
         self._cfg: dict[str, Any] = dict(data)
         self._data = self._cfg  # back-compat alias for old tests
 
@@ -256,6 +298,10 @@ class Config:
             self._cfg.clear()
             self._cfg.update(fresh._cfg)
             self._data = self._cfg  # keep the back-compat alias valid
+            self._legacy_env_vars = fresh._legacy_env_vars
+
+    def legacy_env_vars(self) -> tuple[str, ...]:
+        return self._legacy_env_vars
 
     # attribute sugar (cfg.instance_name, cfg.auth, ...)
     def __getattr__(self, item):
@@ -278,6 +324,14 @@ def get_cfg() -> Config:
 def reload_cfg(path: str | None = None) -> Config:
     # hard reload from disk/env; keep the same object for back-compat
     _CFG_SINGLETON.replace(path=path)
+    legacy_vars = _CFG_SINGLETON.legacy_env_vars()
+    if legacy_vars:
+        logging.getLogger("pave").warning(
+            "Detected legacy PATCHVEC_* env vars. They still work in v0.5.9 by "
+            "mapping to PAVEDB_* when the new names are unset, but v0.6 will "
+            "ignore them. Rename them now: %s",
+            ", ".join(legacy_vars),
+        )
     return _CFG_SINGLETON
 
 CFG = _CFG_SINGLETON

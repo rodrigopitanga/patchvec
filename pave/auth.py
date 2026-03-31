@@ -127,8 +127,8 @@ async def tenant_rate_limit(
 # --- Startup security policy -------------------------------------------------
 
 def _is_dev(cfg) -> bool:
-    # check dev flag (CFG or PATCHVEC_DEV)
-    return bool(cfg.get("dev", False)) or str(cfg.get("PATCHVEC_DEV", "0")) == "1"
+    # check dev flag from config/env overlay
+    return bool(cfg.get("dev", False))
 
 def enforce_policy(cfg) -> None:
     """
@@ -142,7 +142,7 @@ def enforce_policy(cfg) -> None:
         if not dev:
             raise RuntimeError(
                 "auth.mode=none not allowed in production. "
-                "Set auth.mode=static with a key or run with PATCHVEC_DEV=1 for dev."
+                "Set auth.mode=static with a key or run with PAVEDB_DEV=1 for dev."
             )
         host = str(cfg.get("server.host", "127.0.0.1")).strip()
         if host not in ("127.0.0.1", "localhost"):
