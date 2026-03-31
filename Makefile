@@ -178,7 +178,6 @@ test-fast: install-dev
 
 .PHONY: test-relevance
 test-relevance: install-dev
-	@$(PIP_BIN) install -q ".[sbert]" "datasets>=3.5.0"
 	PAVETEST_REL=1 \
 	PAVETEST_REL_PROFILE="$(REL_PROFILE)" \
 	PAVETEST_REL_MODEL_ID="$(REL_MODEL_ID)" \

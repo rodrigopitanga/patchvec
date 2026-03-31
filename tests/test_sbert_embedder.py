@@ -6,8 +6,14 @@ from __future__ import annotations
 import types
 
 import numpy as np
+import pytest
 
-import pave.embedders.sbert as sbert_mod
+pytest.importorskip(
+    "sentence_transformers",
+    reason="sentence-transformers not installed",
+)
+
+import pave.embedders.sbert as sbert_mod  # noqa: E402
 
 
 class _DummyCFG:

@@ -38,18 +38,17 @@ setup(
         "python-dotenv>=1.0.1",
         "faiss-cpu>=1.7.1",
         "torch>=2.10.0",
+        "sentence-transformers>=2.7.0",
     ],
     extras_require={
         "cpu": [],
-        "sbert": [
-            "sentence-transformers>=2.7.0",
-        ],
         "openai": [
             "openai>=1.0.0",
         ],
         "test": [
             "pytest",
             "httpx",
+            "datasets>=3.5.0",
         ],
     },
     entry_points={
