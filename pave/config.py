@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
+from copy import deepcopy
 import json
 import logging
 import os, re, threading
@@ -208,7 +209,7 @@ class Config:
             if path is None:
                 path = _default_config_path()
             data = self._load_dict(path)
-        self._cfg: dict[str, Any] = dict(data)
+        self._cfg: dict[str, Any] = deepcopy(data)
         self._data = self._cfg  # back-compat alias for old tests
 
     # --- main loader, now a static/class member ---
@@ -234,7 +235,7 @@ class Config:
             )
         # Sidecar tenant data is loaded first as a base. Inline tenant config in
         # config.yml then overrides it, and env vars override both.
-        merged = _deep_merge(_DEFAULTS, sidecar_cfg)
+        merged = _deep_merge(deepcopy(_DEFAULTS), sidecar_cfg)
         merged = _deep_merge(merged, file_cfg)
         merged = _deep_merge(merged, env_cfg)
         for key in _PATH_KEYS:
@@ -285,8 +286,7 @@ class Config:
 
     def as_dict(self) -> dict[str, Any]:
         with self._lock:
-            # shallow copy is enough for read-only views in tests/health
-            return _deep_merge({}, self._cfg)
+            return deepcopy(self._cfg)
 
     def snapshot(self) -> dict[str, Any]:
         return self.as_dict()

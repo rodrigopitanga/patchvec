@@ -1,6 +1,9 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+from pave.config import Config
+
+
 def test_overlay_get_set_snapshot(cfg):
     # baseline efetivo (sem depender de arquivo em dev)
     assert cfg.get("auth.mode", "none") == "none"
@@ -39,3 +42,14 @@ def test_effective_defaults_when_missing(cfg, app, client):
     j = r.json()
     assert j["auth"] == "none"
     assert j["vector_store"] == "faiss"
+
+
+def test_runtime_overlay_does_not_mutate_future_default_configs(tmp_path):
+    cfg = Config(path=tmp_path / "missing.yml")
+    cfg.set("vector_store.type", "custom")
+    cfg.set("auth.api_keys", {"acme": "sekret"})
+
+    fresh = Config(path=tmp_path / "still-missing.yml")
+
+    assert fresh.get("vector_store.type") == "faiss"
+    assert fresh.get("auth.api_keys") == {}
