@@ -222,7 +222,12 @@ The suite is split into **fast** (default) and **slow** tests:
 ```bash
 make test-fast   # seconds — no model loaded, FakeEmbedder only
 make test        # full suite, loads real embeddings for slow tests
+make test-relevance  # opt-in public-corpus retrieval regression checks
 ```
+
+`make test-relevance` is intentionally separate from `make test` for now.
+It may download a public Hugging Face dataset and a multilingual
+sentence-transformers model on first run.
 
 ### Fast vs slow tests
 

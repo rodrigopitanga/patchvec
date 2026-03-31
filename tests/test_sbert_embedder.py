@@ -190,3 +190,48 @@ def test_dim_probes_when_model_dimension_missing(monkeypatch) -> None:
     emb = sbert_mod.SbertEmbedder()
     assert emb.dim == 3
     assert seen["texts"] == ["_"]
+
+
+def test_explicit_model_overrides_cfg(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    class FakeModel:
+        def __init__(self, model_name: str, *, device: str) -> None:
+            seen["model_name"] = model_name
+            seen["device"] = device
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return 5
+
+        def encode(self, texts, **_kwargs):
+            return np.array([[1.0] * 5 for _ in texts], dtype=np.float32)
+
+    monkeypatch.setattr(
+        sbert_mod,
+        "SentenceTransformer",
+        FakeModel,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        sbert_mod,
+        "CFG",
+        _DummyCFG(
+            {
+                "embedder.sbert.model": "sentence-transformers/from-cfg",
+                "embedder.sbert.device": "cpu",
+                "embedder.sbert.batch_size": 16,
+            }
+        ),
+        raising=True,
+    )
+
+    emb = sbert_mod.SbertEmbedder(
+        model_name="sentence-transformers/from-arg",
+        device="cuda",
+        batch_size=8,
+    )
+
+    assert emb.dim == 5
+    assert emb.batch_size == 8
+    assert seen["model_name"] == "sentence-transformers/from-arg"
+    assert seen["device"] == "cuda"

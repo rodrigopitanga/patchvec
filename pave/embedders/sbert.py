@@ -24,15 +24,28 @@ class SbertEmbedder:
             return "mps"
         return "cpu"
 
-    def __init__(self) -> None:
-        model_name = CFG.get(
+    def __init__(
+        self,
+        *,
+        model_name: str | None = None,
+        device: str | None = None,
+        batch_size: int | None = None,
+    ) -> None:
+        model_name = model_name or CFG.get(
             "embedder.sbert.model",
             "sentence-transformers/all-MiniLM-L6-v2",
         )
         device = self._resolve_device(
-            CFG.get("embedder.sbert.device", "auto")
+            device if device is not None else CFG.get(
+                "embedder.sbert.device",
+                "auto",
+            )
         )
-        self.batch_size = int(CFG.get("embedder.sbert.batch_size", 64))
+        self.batch_size = int(
+            batch_size
+            if batch_size is not None
+            else CFG.get("embedder.sbert.batch_size", 64)
+        )
         self.model = SentenceTransformer(model_name, device=device)
         try:
             self._dim = int(self.model.get_sentence_embedding_dimension())

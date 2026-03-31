@@ -129,7 +129,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-28 | ~~Structured log emission~~ | 🧩 | ~~JSON lines per operation with request_id, tenant, latency~~ | v0.5.8 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | ~~`log.warning` on every `ok: false` return site; audit codes and choose level per error class~~ | v0.5.9 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.8 |
-| P2-29 | Multilingual relevance fixtures | 🧩 | Recall validation | v0.5.9 |
+| P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | ~~Recall validation~~ | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | ~~Latency contract~~ | v0.5.9 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v0.6 |
 | P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v0.7b |
@@ -286,7 +286,7 @@ latency on every search/ingest/delete.~~
   remove dead code, simplify filter path (P1-37).~~
 - ~~Build store orchestrator: CollectionDB + FaissBackend
   + embedder (P1-31).~~
-- Build multilingual relevance fixtures (P2-29).
+- ~~Build public cross-language retrieval fixtures (P2-29).~~
 - ~~Add benchmark CI gate + p99 latency SLO (P2-30).~~
 - ~~`make build-check`: install from local wheel in temp venv, alive test (P3-52).~~
 - ~~`make docker-check`: alive test against prebuilt Docker image (P3-51).~~

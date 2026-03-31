@@ -1,0 +1,27 @@
+{
+  "models": [
+    {
+      "id": "multi-minilm-l12",
+      "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "capabilities": ["cross_lingual"]
+    }
+  ],
+  "profiles": [
+    {
+      "id": "tatoeba-core-xling",
+      "description": "Cross-language regression profile from Tatoeba bitext mining pairs.",
+      "dataset": {
+        "path": "mteb/tatoeba-bitext-mining",
+        "split": "test",
+        "lang_field": "lang",
+        "query_field": "sentence1",
+        "document_field": "sentence2",
+        "language_pairs": ["deu-eng", "spa-eng", "por-eng"],
+        "rows_per_pair": 12,
+        "min_text_chars": 16
+      },
+      "required_capabilities": ["cross_lingual"],
+      "expected_k": 5
+    }
+  ]
+}

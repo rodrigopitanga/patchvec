@@ -106,6 +106,7 @@ help:
 	echo "Verify:"; \
 	echo "  $${B}test$${R}            Run pytest (full suite)"; \
 	echo "  test-fast        Run pytest (skip slow/real-embedding tests)"; \
+	echo "  test-relevance   Opt-in public-corpus retrieval regression checks"; \
 	echo "  check            Run end-to-end API check (reuse :8086, else ephemeral; flags: CHECK_FORCE_EPHEMERAL=1, CHECK_SERVER_URL=URL)"; \
 	echo "  build-check      Install local wheel in temp venv, init instance, boot installed server, alive test"; \
 	echo ""; \
@@ -174,6 +175,15 @@ test: install-dev
 .PHONY: test-fast
 test-fast: install-dev
 	PYTHONPATH=. $(PYTHON_BIN) -m pytest -q -m "not slow"
+
+.PHONY: test-relevance
+test-relevance: install-dev
+	@$(PIP_BIN) install -q ".[sbert]" "datasets>=3.5.0"
+	PAVETEST_REL=1 \
+	PAVETEST_REL_PROFILE="$(REL_PROFILE)" \
+	PAVETEST_REL_MODEL_ID="$(REL_MODEL_ID)" \
+	PYTHONPATH=. $(PYTHON_BIN) -m pytest -q tests/test_relevance.py \
+		-m "slow and relevance" -v --tb=short
 
 .PHONY: serve
 serve: install
@@ -838,6 +848,8 @@ LAT_CONCUR        ?= 42
 LAT_FILTERS       ?= none,exact,wildcard,mixed
 STR_LENGTH        ?= 90
 STR_CONCUR        ?= 8
+REL_PROFILE       ?= tatoeba-core-xling
+REL_MODEL_ID      ?= multi-minilm-l12
 BENCH_TAG         ?=
 _ts          ?= $(shell date -u +%Y-%m-%d_%H%M%S)
 _results_dir ?= benchmarks/results
