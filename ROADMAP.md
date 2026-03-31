@@ -71,7 +71,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
 | P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
-| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.6 |
+| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.7 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
 | P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.6 |
@@ -107,6 +107,9 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-31 | ~~Store orchestrator~~ | 🧱 | ~~Orchestrate backend + meta + catalog~~ | v0.5.9 |
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
 | P1-33 | GlobalDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.6 |
+| P1-40 | Search timing breakdown in response | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.6 |
+| P1-41 | Persistent query log | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.6 |
+| P1-42 | Query replay endpoint | 🧩 | Re-execute stored query by log ID; depends on P1-41 | v0.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -121,14 +124,17 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-20 | Collection limit / tenant | 🧩 | Cap growth | v0.6 |
 | P2-21 | Storage limit / tenant | 🧩 | Cap storage | v0.6 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v0.7 |
-| P2-23 | Developer visibility tools | 🧱 | DX, debuggability | v0.7 |
+| P2-23 | Chunk inspector + collection browser | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.6 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v0.8 |
 | P2-25 | Collection version tagging | 🧩 | Portability, migration | v0.6 |
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v0.8 |
-| P2-27 | Image ingest + embeddings | 🧱 | Multimodal adoption | v0.8 |
+| P2-42 | Result diff API | 🔧 | Compare two search runs: added/removed/reordered | v0.7 |
+| P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v0.7 |
+| P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v0.7 |
+| P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v0.7 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | ~~JSON lines per operation with request_id, tenant, latency~~ | v0.5.8 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | ~~`log.warning` on every `ok: false` return site; audit codes and choose level per error class~~ | v0.5.9 |
-| P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.8 |
+| P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.7 |
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | ~~Recall validation~~ | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | ~~Latency contract~~ | v0.5.9 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v0.6 |
@@ -152,26 +158,22 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-24 | Revamp UI | 🧱 | v0.7 |
 | P3-25 | Multilingual UI/errors/docs | 🧱 | v0.7 |
 | P3-26 | Embedder/store contract | 🧱 | v0.6 |
-| P3-27 | Chunking strategies | 🧱 | v0.9 |
 | P3-28 | Extensible ingest plugin architecture | 🧱 | v0.8 |
-| P3-29 | Audio/video ingest + embeddings | 🧱 | v0.9 |
 | P3-30 | Retain original uploaded files (opt-in) | 🧱 | v0.9 |
 | P3-31 | Async ingest jobs + job status API | 🧱 | v0.9 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v0.9 |
 | P3-34 | ~~Relicensing (AGPLv3 candidate)~~ | 🧱 | v0.5.9 |
 | P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.5.9–v0.6 |
-| P3-36 | Multimodal collections (cross-modal search) | 🧱 | v1.0+ |
+| P3-36 | Multimodal collections (cross-modal search) | 🧱 | post-1.0 |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
 | P3-40 | Publish pip freeze snapshot | 🧩 | v0.6 |
 | P3-41 | Swagger UI tenant/collection defaults | 🧩 | v0.7b |
 | P3-42 | Alive test in CI | 🧩 | v0.7b |
-| P3-43 | Go client | 🧱 | v0.8 |
+| P3-43 | Go client | 🧱 | post-1.0 |
 | P3-44 | Persistent metrics in UI | 🧩 | v0.8 |
 | P3-45 | Independence principle audit | 🔧 | v0.8 |
 | P3-46 | Matrix CI builds | 🧱 | v0.9 |
-| P3-47 | Additional media types: graphic/geom | 🧱 | v1.0 |
-| P3-48 | Additional media types: AV | 🧱 | v1.0 |
-| P3-49 | Additional media types: georeferenced | 🧱 | v1.0 |
+| P3-47 | Additional media types | 🧱 | post-1.0 |
 | P3-50 | ~~Split main.py routes into APIRouter modules (health, admin, collections, documents, search)~~ | 🧩 | v0.5.9 |
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
@@ -296,12 +298,10 @@ latency on every search/ingest/delete.~~
 - ~~TXT preprocessor: emit char `offset` in chunk metadata (P2-41).~~
 - ~~Relicensing review (AGPLv3 candidate) (P3-34).~~
 
-### 0.6 — Stability
+### 0.6 — Stability + Inspectability
 
 - Define embedder/store separation contract (P3-26).
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
-- Add hybrid reranking (vector similarity + BM25/token
-  matching) (P1-07).
 - GlobalDB + catalog separation (PLAN-SQLITE Phase 2), including
   collection backend/embedder config wiring (P1-33).
 - Per-collection embeddings (P1-32).
@@ -309,12 +309,20 @@ latency on every search/ingest/delete.~~
 - Response envelope standardization (P1-14).
 - Per-collection hot caches with isolation (P1-22).
 - Global `request_id` echo across endpoints and responses (P1-11).
-- Freeze search response schema (`matches`, `latency_ms`, `match_reason`, `request_id`) (P1-23).
+- Freeze search response schema (`matches`, `latency_ms`,
+  `match_reason`, `request_id`) (P1-23).
+- Search timing breakdown in response: embed/search/filter/hydrate
+  split alongside existing `latency_ms` (P1-40).
+- Persistent query log: store query text, filters, config snapshot,
+  result IDs in SQLite (P1-41).
+- Query replay endpoint: re-execute stored query by log ID (P1-42).
+- Chunk inspector + collection browser: list chunks, get chunk
+  by ID (text + metadata + provenance), doc→chunk tree (P2-23).
 - Dev vs prod config defaults (P1-25).
-- ~~Explicit config bootstrap for pip installs (`pavecli init`, `--home`,
-  explicit runtime paths) (P1-34).~~
-- Add capability-based filter pushdown with parity checks against canonical
-  post-filter semantics (P1-35).
+- ~~Explicit config bootstrap for pip installs (`pavecli init`,
+  `--home`, explicit runtime paths) (P1-34).~~
+- Add capability-based filter pushdown with parity checks against
+  canonical post-filter semantics (P1-35).
 - Admin key auto-generate + persist (P1-27).
 - Config reference doc + CI drift check (P1-26).
 - Tenant admin infrastructure (P2-19).
@@ -326,80 +334,91 @@ latency on every search/ingest/delete.~~
 - Rebranding phase 2 (external/user-visible surface) (P3-35).
 - ~~List tenants and collections via API (CLI parity) (P2-12).~~
 
-### 0.7a — Adoption
-- Python client package (`pave`): HTTP mode for remote instances; library mode for
-  in-process use (no HTTP). Same package, two transports.
-- Embedded/library mode: run PatchVec in-process without HTTP server (expose
-  service + store layer as a Python API; single-tenant default).
+### 0.7a — Adoption + Control
+
+- Python client package (`pave`): HTTP mode for remote instances;
+  library mode for in-process use (no HTTP). Same package, two
+  transports.
+- Embedded/library mode: run PaveDB in-process without HTTP server
+  (expose service + store layer as a Python API; single-tenant
+  default).
 - Batch ingest endpoint (list of documents in one call).
 - Honor `meta.priority` boosts during scoring (P2-11).
+- Add hybrid reranking (vector similarity + BM25/token
+  matching) (P1-07).
+- Result diff API: compare two search runs — added/removed/reordered
+  hits (P2-42).
+- Eval assertion API: define expected results per query, batch run,
+  track pass/fail over time (P2-43).
+- Regression detection: compare eval runs across versions, flag
+  drift (P2-44).
+- Config snapshot per collection: record embedder model + version +
+  search params at ingest time (P2-45).
+- Structured log retention: rolling window + purge via
+  `operation_log` table (SQLite Phase 3); powers P2-13 (P2-39).
 
 ### 0.7b — Reach
-- `pavecli --host`: route CLI commands through the HTTP client instead of the service
-  layer directly; depends on Python client. CLI becomes a thin wrapper.
-- JavaScript/TypeScript client: typed, bootstrapped from OpenAPI spec, published to
-  npm. Covers web frontends and Node.js backends.
-- LangChain `VectorStore` + `Retriever` adapter (covers LangGraph + CrewAI).
-- Developer visibility tools: chunk inspector, indexed document browser, metadata
-  explorer — debuggability as a first-class feature.
+- `pavecli --host`: route CLI commands through the HTTP client
+  instead of the service layer directly; depends on Python client.
+  CLI becomes a thin wrapper.
+- JavaScript/TypeScript client: typed, bootstrapped from OpenAPI
+  spec, published to npm. Covers web frontends and Node.js backends.
+- LangChain `VectorStore` + `Retriever` adapter (covers LangGraph
+  + CrewAI).
 - Default tenant/collection selectors in Swagger UI.
 - Collection-level structured log export for analytics.
-- Alive test in CI pipeline (post-deploy health check against a real environment).
+- Alive test in CI pipeline (post-deploy health check).
 - Docs website (public docs, API reference).
 - Revamp UI.
-- Multilingual support for UI, error messages, and docs.
 - Usage stats to mothership (opt-in/anon).
 
 ### 0.8 — Governance
 - MCP server (expose search/ingest/list as MCP tools).
 - LlamaIndex `VectorStore` adapter.
-- Go client: generated from OpenAPI spec, published as a Go module; covers
-  cloud-native and infrastructure consumers.
 - Document versioning, rebuild tooling.
 - Persistent metrics in the UI.
-- Structured log retention: rolling window + purge via `operation_log` table
-  (SQLite Phase 3); powers P2-13 collection log export.
 - Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
-  `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml` into SQL on
-  first boot; SQL becomes source of truth for keys and limits thereafter.
-- OIDC/JWT as opt-in alternative auth (`auth.oidc.issuer` config); API keys
-  remain permanently supported. PatchVec accepts either on any request.
-- Extensible ingest plugin architecture (foundation for additional media types;
-  plugin interface must be stable before any specific media type ships).
-- Image ingest + embeddings (separate image collections, CLIP-style models;
-  multimodal collections deferred to post-1.0).
-- Delete by ID list and delete by metadata query (single-collection scope first).
-- Tenant profiles: manifest-driven resource limits (memory, storage, concurrency,
-  models available), profile templates (e.g. free/paid tiers); PatchVec enforces
-  limits, does not handle billing or onboarding.
-- Collection migration tooling: detect version mismatches, provide upgrade path
-  across PatchVec/txtai/FAISS version changes.
-- Commit to independence principle: auth, tenant profiles, collections, and
-  server config are orthogonal — no coupling between layers.
+  `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml`
+  into SQL on first boot; SQL becomes source of truth for keys
+  and limits thereafter.
+- OIDC/JWT as opt-in alternative auth (`auth.oidc.issuer` config);
+  API keys remain permanently supported. PaveDB accepts either on
+  any request.
+- Extensible ingest plugin architecture (stable plugin interface
+  for custom preprocessors and future media types).
+- Delete by ID list and delete by metadata query
+  (single-collection scope first).
+- Tenant profiles: manifest-driven resource limits (memory,
+  storage, concurrency, models available), profile templates
+  (e.g. free/paid tiers); PaveDB enforces limits, does not
+  handle billing or onboarding.
+- Collection migration tooling: detect version mismatches,
+  provide upgrade path across PaveDB/FAISS version changes.
+- Commit to independence principle: auth, tenant profiles,
+  collections, and server config are orthogonal — no coupling
+  between layers.
 
 ### 0.9 — Scale
 - Async ingest, parallel purge.
 - Horizontal scalability, tenant groups, sub-index routing.
-- Chunking strategies (semantic, hybrid) foundations.
-- Retain original uploaded files, opt-in (originals + versioning hooks).
+- Retain original uploaded files, opt-in (originals + versioning
+  hooks).
 - Async ingest jobs with status tracking API.
 - Per-tenant parallel ingest limits.
-- Audio/video ingest + embeddings (transcription pipeline for audio; key-frame +
-  audio track for video; separate collections, multimodal deferred).
-- Matrix CI builds (Python 3.10/3.11/3.12 × core ML versions) as pre-1.0
-  compatibility gate.
+- Matrix CI builds (Python 3.10/3.11/3.12 × core ML versions)
+  as pre-1.0 compatibility gate.
 
 ### 1.0 — Contract
-- Lock routes, publish final OpenAPI spec, ship SDK client.
-- Additional media types: graphic/geom (feature detection).
-- Additional media types: AV (transcriptions, pattern detection).
-- Additional media types: georeferenced content.
+- Lock routes, publish final OpenAPI spec, ship SDK clients.
 - Audit logs for admin actions.
 
-### 1.0+ — Post-freeze backlog (no IDs yet)
+### Post-1.0 backlog (no IDs yet)
+- Additional media types (image, audio/video, graphic/geom,
+  georeferenced) via ingest plugin architecture.
+- Multimodal collections (cross-modal search).
+- Go client.
 - Tenant job notifications (webhook/email).
 - Tenant syndicates (opt-in grouping, no mandatory hierarchy).
-- Rust client (WASM target; browser-side or embedded use cases).
 - Multimodal collections: images, audio, and text in a shared vector space
   (cross-modal search; requires model architecture commitment).
 - Vector dimension/schema guardrails.
