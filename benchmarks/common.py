@@ -2,7 +2,7 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Shared helpers for PatchVec benchmark scripts.
+Shared helpers for PaveDB benchmark scripts.
 """
 from __future__ import annotations
 

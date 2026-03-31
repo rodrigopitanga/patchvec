@@ -200,7 +200,7 @@ def test_legacy_patchvec_env_still_works_and_logs_warning(
     assert "PATCHVEC_DATA_DIR" in warnings[0]
 
 
-def test_pavedb_env_takes_precedence_over_patchvec_and_still_warns(
+def test_pavedb_env_takes_precedence_over_patchvec_without_warning(
     monkeypatch, tmp_path, caplog
 ):
     monkeypatch.setenv("PATCHVEC_DATA_DIR", str(tmp_path / "legacy-data"))
@@ -210,13 +210,7 @@ def test_pavedb_env_takes_precedence_over_patchvec_and_still_warns(
     cfg = reload_cfg()
 
     assert cfg.get("data_dir") == str(tmp_path / "new-data")
-    warnings = [
-        record.getMessage()
-        for record in caplog.records
-        if "PATCHVEC_" in record.getMessage()
-    ]
-    assert len(warnings) == 1
-    assert "PATCHVEC_DATA_DIR" in warnings[0]
+    assert not any("PATCHVEC_" in record.getMessage() for record in caplog.records)
 
 
 def test_tenants_sidecar_only_overlays_tenant_keys(tmp_path):

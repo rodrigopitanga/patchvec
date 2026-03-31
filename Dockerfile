@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 
-# PatchVec (pave) Dockerfile
+# PaveDB (pave) Dockerfile
 
 ARG BASE_IMAGE=python:3.11-slim
 FROM ${BASE_IMAGE}

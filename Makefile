@@ -1,4 +1,4 @@
-# Patchvec — Makefile
+# PaveDB — Makefile
 #
 # Basic usage:
 #   make install            # default: base deps
@@ -9,7 +9,7 @@
 
 PKG_NAME        := patchvec
 PKG_ICON	:= 🍰
-PKG_LONGNAME    := $(PKG_ICON) Patchvec
+PKG_LONGNAME    := $(PKG_ICON) PaveDB
 PKG_INTERNAL   	:= pave
 REGISTRY_HOST	?= registry.gitlab.com
 REGISTRY_GROUP	?= flowlexi
@@ -240,16 +240,16 @@ bump:
 	    sed -i -E 's/(LABEL +version=)\"[^\"]*\"/\1"$(VERSION)"/' Dockerfile; \
 	  fi; \
 	fi
-	# docker-compose.yml: image: patchvec:x.y.z
-	@if [ -f docker-compose.yml ] && grep -qE 'image:\s*patchvec:' docker-compose.yml; then \
-	  sed -i -E 's/(image:\s*patchvec:).*/\1$(VERSION)/' docker-compose.yml; \
+	# docker-compose.yml: image: $(IMAGE_NAME):x.y.z
+	@if [ -f docker-compose.yml ] && grep -qE 'image:\s*$(IMAGE_NAME):' docker-compose.yml; then \
+	  sed -i -E 's/(image:\s*$(IMAGE_NAME):).*/\1$(VERSION)/' docker-compose.yml; \
 	fi
 	# README.md example tags for docker build/run
-	@if [ -f README.md ] && grep -q 'docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t patchvec:' README.md; then \
-	  sed -i -E 's@(docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t patchvec:).*@\1$(VERSION) \.@' README.md; \
+	@if [ -f README.md ] && grep -q 'docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):' README.md; then \
+	  sed -i -E 's@(docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):).*@\1$(VERSION) \.@' README.md; \
 	fi
-	@if [ -f README.md ] && grep -q 'docker run --rm -p 8086:8086 -v $$\(pwd\)/data:/app/data patchvec:' README.md; then \
-	  sed -i -E 's@(docker run --rm -p 8086:8086 -v \$$\(pwd\)/data:/app/data patchvec:).*@\1$(VERSION)@' README.md; \
+	@if [ -f README.md ] && grep -q 'docker run --rm -p 8086:8086 -v $$\(pwd\)/data:/app/data $(IMAGE_NAME):' README.md; then \
+	  sed -i -E 's@(docker run --rm -p 8086:8086 -v \$$\(pwd\)/data:/app/data $(IMAGE_NAME):).*@\1$(VERSION)@' README.md; \
 	fi
 	@echo "✅ Bumped to $(VERSION). Review changes, then commit:"
 	@echo "   git add -A && git commit -m \"chore: bump version to $(VERSION)\""
@@ -570,7 +570,7 @@ _build-check-run: venv
 	if ! command -v curl >/dev/null 2>&1; then echo "curl not found"; exit 127; fi; \
 	wheel="$$(ls -1t dist/*.whl 2>/dev/null | head -1)"; \
 	[ -n "$$wheel" ] || { echo "No wheel found under dist/"; exit 1; }; \
-	tmp_root="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-build-check.XXXXXX")"; \
+	tmp_root="$$(mktemp -d "$${TMPDIR:-/tmp}/pavedb-build-check.XXXXXX")"; \
 	venv_dir="$$tmp_root/venv"; \
 	instance_dir="$$tmp_root/instance"; \
 	log_file="$$tmp_root/server.log"; \
@@ -644,7 +644,7 @@ DOCKER_CHECK_URL  ?= http://$(DOCKER_CHECK_HOST):$(DOCKER_CHECK_PORT)
 DOCKER_CHECK_TIMEOUT_S ?= 45
 DOCKER_CHECK_OPENAI_KEY ?= docker-check-dummy-key
 DOCKER_CHECK_OPENAI_DIM ?= 1536
-DOCKER_CHECK_CONTAINER_PREFIX ?= patchvec-docker-check
+DOCKER_CHECK_CONTAINER_PREFIX ?= pavedb-docker-check
 DOCKER_CHECK_IMAGE ?= $(if $(REGISTRY),$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu,$(IMAGE_NAME):$(VERSION)-cpu)
 
 .PHONY: _docker-check-run
@@ -770,7 +770,7 @@ _check-with-server: install
 	elif [ "$(CHECK_FORCE_EPHEMERAL)" = "1" ]; then \
 	  managed=1; \
 	  check_url="$(CHECK_EPHEMERAL_URL)"; \
-	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-check.XXXXXX")"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/pavedb-check.XXXXXX")"; \
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> CHECK_FORCE_EPHEMERAL=1; starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
@@ -789,7 +789,7 @@ _check-with-server: install
 	else \
 	  managed=1; \
 	  check_url="$(CHECK_EPHEMERAL_URL)"; \
-	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-check.XXXXXX")"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/pavedb-check.XXXXXX")"; \
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> No active server on $(CHECK_DEFAULT_URL); starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
@@ -882,7 +882,7 @@ _bench-with-server:
 	elif [ "$(BENCH_FORCE_EPHEMERAL)" = "1" ]; then \
 	  managed=1; \
 	  bench_url="$(_ephemeral_url)"; \
-	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-bench.XXXXXX")"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/pavedb-bench.XXXXXX")"; \
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> BENCH_FORCE_EPHEMERAL=1; starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
@@ -899,7 +899,7 @@ _bench-with-server:
 	else \
 	  managed=1; \
 	  bench_url="$(_ephemeral_url)"; \
-	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/patchvec-bench.XXXXXX")"; \
+	  data_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/pavedb-bench.XXXXXX")"; \
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> No active server on $(_default_url); starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
@@ -938,7 +938,7 @@ _bench-with-server:
 
 .PHONY: bench-latency bench-latency-run
 bench-latency: install-dev
-	@summary=$$(mktemp /tmp/patchvec-bench-summary.XXXXXX); \
+	@summary=$$(mktemp /tmp/pavedb-bench-summary.XXXXXX); \
 	for filt in $$(echo "$(LAT_FILTERS)" | tr ',' ' '); do \
 	  echo ""; \
 	  echo "==> Latency: filtering=$$filt"; \

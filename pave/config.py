@@ -71,10 +71,11 @@ def _normalize_legacy_env() -> tuple[str, ...]:
         suffix = key[len(_LEGACY_ENV_PREFIX):]
         if not _is_supported_legacy_suffix(suffix):
             continue
-        seen.append(key)
         new_key = _ENV_PREFIX + suffix
-        if new_key not in os.environ:
-            os.environ[new_key] = value
+        if new_key in os.environ:
+            continue
+        os.environ[new_key] = value
+        seen.append(key)
     return tuple(sorted(set(seen)))
 
 

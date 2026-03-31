@@ -163,7 +163,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-31 | Async ingest jobs + job status API | 🧱 | v0.9 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v0.9 |
 | P3-34 | ~~Relicensing (AGPLv3 candidate)~~ | 🧱 | v0.5.9 |
-| P3-35 | Rebranding (PaveDB candidate) | 🧱 | v0.5.9–v0.6 |
+| P3-35 | ~~Rebranding phase 1 (PaveDB candidate)~~; phase 2 pending | 🧱 | v0.5.9–v0.6 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | post-1.0 |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
 | P3-40 | Publish pip freeze snapshot | 🧩 | v0.6 |
@@ -292,7 +292,7 @@ latency on every search/ingest/delete.~~
 - ~~Add benchmark CI gate + p99 latency SLO (P2-30).~~
 - ~~`make build-check`: install from local wheel in temp venv, alive test (P3-52).~~
 - ~~`make docker-check`: alive test against prebuilt Docker image (P3-51).~~
-- Rebranding phase 1 (internal-only surface changes) (P3-35).
+- ~~Rebranding phase 1 (runtime/operator surface changes) (P3-35).~~
 - ~~Split `main.py` into APIRouter modules per domain (P3-50).~~
 - ~~Add service-layer error logging for `ok: false` sites (P2-40).~~
 - ~~TXT preprocessor: emit char `offset` in chunk metadata (P2-41).~~
@@ -300,6 +300,8 @@ latency on every search/ingest/delete.~~
 
 ### 0.6 — Stability + Inspectability
 
+- Rebranding phase 2: public-facing rename, env fallback removal,
+  and `patchvec` → `pavedb` redirect/shim path (P3-35).
 - Define embedder/store separation contract (P3-26).
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
 - GlobalDB + catalog separation (PLAN-SQLITE Phase 2), including

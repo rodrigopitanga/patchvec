@@ -2,7 +2,7 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Stress test for PatchVec.
+Stress test for PaveDB.
 
 Usage:
     python benchmarks/stress.py [--url URL] [--duration SECS] [--concurrency C]
@@ -701,11 +701,11 @@ def _error_rate_violation(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PatchVec stress test")
+    parser = argparse.ArgumentParser(description="PaveDB stress test")
     parser.add_argument(
         "--url",
         default="http://localhost:8086",
-        help="PatchVec base URL",
+        help="PaveDB base URL",
     )
     parser.add_argument(
         "--duration",

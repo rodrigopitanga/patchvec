@@ -2,13 +2,13 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Search latency benchmark for PatchVec.
+Search latency benchmark for PaveDB.
 
 Usage:
     python benchmarks/search_latency.py [options]
 
 Options:
-    --url URL            PatchVec base URL
+    --url URL            PaveDB base URL
     --queries N          Number of queries (default 100)
     --concurrency C      Concurrent requests (default 10)
     --filtering MODE     none/exact/wildcard/mixed
@@ -494,12 +494,12 @@ def _latency_slo_violation(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="PatchVec search latency benchmark"
+        description="PaveDB search latency benchmark"
     )
     parser.add_argument(
         "--url",
         default="http://localhost:8086",
-        help="PatchVec base URL",
+        help="PaveDB base URL",
     )
     parser.add_argument(
         "--queries",

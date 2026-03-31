@@ -11,14 +11,14 @@ def read_long_description():
         path = here / candidate
         if path.exists():
             return path.read_text(encoding="utf-8"), "text/markdown"
-    return "Patchvec — A lightweight, pluggable vector search microservice.", "text/plain"
+    return "PaveDB — A lightweight, pluggable vector search microservice.", "text/plain"
 
 long_description, long_type = read_long_description()
 
 setup(
     name="patchvec",                       # external name
     version="0.5.8.1",
-    description="Patchvec — A lightweight, pluggable vector search microservice.",
+    description="PaveDB — A lightweight, pluggable vector search microservice.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Rodrigo Rodrigues da Silva",
