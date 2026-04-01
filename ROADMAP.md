@@ -7,11 +7,11 @@ tl;dr: This roadmap tracks production readiness and integration milestones. To c
 task, open an issue titled `claim: <task ID>` and link your branch or PR.
 Detailed design plans live under `docs/` and are indexed after the task tables.
 
-> PatchVec is a general-purpose vector search microservice. The roadmap that follows
-> below is driven by production readiness for its first downstream consumer — an
-> application that maps natural-language queries to structured codes via semantic search
-> in a non-English language. The core product metric is **time saved to reach the
-> correct results**. Every TODO is evaluated against that metric and general production
+> PatchVec is a general-purpose vector search engine. The roadmap that follows is
+> driven by production readiness for its first downstream consumer — an application
+> that maps natural-language queries to structured codes via semantic search in a
+> non-English language. The core product metric is **time saved to reach the correct
+> results**. Every TODO is evaluated against that metric and general production
 > readiness.
 
 ## Design Principles
@@ -60,10 +60,10 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 
 | ID | Task | Effort | Why it blocks | Source |
 |---|---|---|---|---|
-| P0-01 | ~~Multilingual embedding model~~ |  | Non-EN recall | `txtai_store.py` |
+| P0-01 | ~~Multilingual embedding model~~ |  | Non-EN recall | v0.5.7 |
 | P0-02 | ~~`match_reason` on every hit~~ |  | Trust + explanation gap | v0.5.7 |
 | P0-03 | ~~Latency histograms~~ |  | No latency visibility | v0.5.7 |
-| P0-04 | ~~Negation pre-filter~~ |  | Tail latency | `txtai_store.py` |
+| P0-04 | ~~Negation pre-filter~~ |  | Tail latency | v0.5.7 |
 | P0-05 | ~~`trace_id` propagation~~ |  | No request correlation | v0.5.8 |
 
 ### P1 — Critical for first B2B pilots
@@ -71,30 +71,30 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
 | P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
-| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v0.7 |
+| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v1.2 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
-| P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.6 |
+| P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.9 |
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
-| P1-14 | Response envelope standardization | 🧱 | SDK-friendly API | v0.6 |
-| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v0.7 |
-| P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v0.7 |
-| P1-17 | Get document by ID | 🧩 | Visibility, library mode | v0.6 |
+| P1-14 | Response envelope standardization | 🧱 | SDK-friendly API | v0.9 |
+| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v1.1 |
+| P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v1.1 |
+| P1-17 | Get document by ID | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
 | P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation
   | v0.5.8 |
 | P1-21 | ~~Serve listings + store catalog counts in health/metrics~~ | 🧩 | Internal store query layer
   | v0.5.8 |
-| P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v0.6 |
-| P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.6 |
-| P1-24 | Python client package | 🧱 | SDK foundation | v0.7 |
-| P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v0.6 |
-| P1-34 | ~~Server config bootstrap~~ | 🧩 | ~~Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs~~ | v0.6 |
-| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v0.6 |
-| P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v0.6 |
-| P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v0.6 |
+| P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v1.0 |
+| P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.9 |
+| P1-24 | Python client package | 🧱 | SDK foundation | v1.1 |
+| P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v1.0 |
+| P1-34 | ~~Server config bootstrap~~ | 🧩 | ~~Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs~~ | v1.0 |
+| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v1.0 |
+| P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v1.0 |
+| P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.0 |
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs
   `rate_limit_buckets` table (Phase 3); seeded from `tenants.max_rpm` config field
   | post-SQLite |
@@ -105,74 +105,75 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | ~~Drop txtai dep, rename store/embedder, dead code removal, filter path simplification~~ | v0.5.9 |
 | P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | ~~Superseded by Step 2 in PLAN-STORE~~ | superseded |
 | P1-31 | ~~Store orchestrator~~ | 🧱 | ~~Orchestrate backend + meta + catalog~~ | v0.5.9 |
-| P1-32 | Per-collection embeddings | 🧱 | Model per collection | v0.6 |
-| P1-33 | GlobalDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.6 |
-| P1-40 | Search timing breakdown in response | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.6 |
-| P1-41 | Persistent query log | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.6 |
-| P1-42 | Query replay endpoint | 🧩 | Re-execute stored query by log ID; depends on P1-41 | v0.6 |
+| P1-32 | Per-collection embeddings | 🧱 | Model per collection | v1.0 |
+| P1-33 | GlobalDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
+| P1-40 | Search timing breakdown in response | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
+| P1-41 | Persistent query log | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
+| P1-42 | Query replay endpoint | 🧩 | Re-execute stored query by log ID; depends on P1-41 | v0.9 |
+| P1-43 | `/v1/` route prefix | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
-| P2-11 | `meta.priority` boosts |  | Surface priority items | v0.7 |
-| P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v0.6 |
-| P2-13 | Collection log export | 🧱 | Search analytics | v0.7b |
-| P2-14 | Document versioning | 🧱 | Audit trails | v0.8 |
-| P2-19 | Tenant admin infra | 🧱 | Admin ops | v0.6 |
-| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v0.8 |
-| P2-20 | Collection limit / tenant | 🧩 | Cap growth | v0.6 |
-| P2-21 | Storage limit / tenant | 🧩 | Cap storage | v0.6 |
-| P2-22 | Usage stats to mothership |  | Capacity planning | v0.7 |
-| P2-23 | Chunk inspector + collection browser | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.6 |
-| P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v0.8 |
-| P2-25 | Collection version tagging | 🧩 | Portability, migration | v0.6 |
-| P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v0.8 |
-| P2-42 | Result diff API | 🔧 | Compare two search runs: added/removed/reordered | v0.7 |
-| P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v0.7 |
-| P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v0.7 |
-| P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v0.7 |
+| P2-11 | `meta.priority` boosts |  | Surface priority items | v1.2 |
+| P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v1.0 |
+| P2-13 | Collection log export | 🧱 | Search analytics | v1.4 |
+| P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
+| P2-19 | Tenant admin infra | 🧱 | Admin ops | v1.5 |
+| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v1.6 |
+| P2-20 | Collection limit / tenant | 🧩 | Cap growth | v1.5 |
+| P2-21 | Storage limit / tenant | 🧩 | Cap storage | v1.5 |
+| P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
+| P2-23 | Chunk inspector + collection browser | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
+| P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
+| P2-25 | Collection version tagging | 🧩 | Portability, migration | v1.5 |
+| P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v1.6 |
+| P2-42 | Result diff API | 🔧 | Compare two search runs: added/removed/reordered | v1.2 |
+| P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v1.2 |
+| P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v1.2 |
+| P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v1.2 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | ~~JSON lines per operation with request_id, tenant, latency~~ | v0.5.8 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | ~~`log.warning` on every `ok: false` return site; audit codes and choose level per error class~~ | v0.5.9 |
-| P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v0.7 |
+| P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | ~~Recall validation~~ | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | ~~Latency contract~~ | v0.5.9 |
-| P2-31 | Formalize collection independence | 🔧 | Portability contract | v0.6 |
-| P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v0.7b |
-| P2-33 | JS/TS client | 🧱 | Web + Node adoption | v0.7b |
-| P2-34 | LangChain adapter | 🧱 | Framework coverage | v0.7b |
-| P2-35 | MCP server | 🧱 | AI agent integration | v0.8 |
-| P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v0.8 |
-| P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.0 |
+| P2-31 | Formalize collection independence | 🔧 | Portability contract | v1.5 |
+| P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v1.3 |
+| P2-33 | JS/TS client | 🧱 | Web + Node adoption | v1.3 |
+| P2-34 | LangChain adapter | 🧱 | Framework coverage | v1.3 |
+| P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
+| P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
+| P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v2.0 |
 | P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | ~~Provenance contract (replace `chunk` key with `offset`)~~ | v0.5.9 |
 
 ### P3 — Scale and long-term
 
 | ID | Task | Effort | Source |
 |---|---|---|---|
-| P3-15 | Async ingest + parallel purge |  | v0.9 |
-| P3-16 | Horizontal scalability + routing | 🧱 | v0.9 |
-| P3-17 | OIDC/JWT auth (additive; API keys remain) | 🧱 | v0.8 |
-| P3-18 | API freeze + SDK client | 🧱 | v1.0 |
-| P3-23 | Docs website | 🧩 | v0.7 |
-| P3-24 | Revamp UI | 🧱 | v0.7 |
-| P3-25 | Multilingual UI/errors/docs | 🧱 | v0.7 |
-| P3-26 | Embedder/store contract | 🧱 | v0.6 |
-| P3-28 | Extensible ingest plugin architecture | 🧱 | v0.8 |
-| P3-30 | Retain original uploaded files (opt-in) | 🧱 | v0.9 |
-| P3-31 | Async ingest jobs + job status API | 🧱 | v0.9 |
-| P3-32 | Per-tenant parallel ingest limits | 🧱 | v0.9 |
+| P3-15 | Async ingest + parallel purge |  | v1.8 |
+| P3-16 | Horizontal scalability + routing | 🧱 | v1.8 |
+| P3-17 | OIDC/JWT auth (additive; API keys remain) | 🧱 | v1.6 |
+| P3-18 | API freeze + SDK client | 🧱 | v2.0 |
+| P3-23 | Docs website | 🧩 | v1.4 |
+| P3-24 | Revamp UI | 🧱 | v1.4 |
+| P3-25 | Multilingual UI/errors/docs | 🧱 | v1.4 |
+| P3-26 | Embedder/store contract | 🧱 | v1.0 |
+| P3-28 | Extensible ingest plugin architecture | 🧱 | v1.6 |
+| P3-30 | Retain original uploaded files (opt-in) | 🧱 | v1.8 |
+| P3-31 | Async ingest jobs + job status API | 🧱 | v1.8 |
+| P3-32 | Per-tenant parallel ingest limits | 🧱 | v1.8 |
 | P3-34 | ~~Relicensing (AGPLv3 candidate)~~ | 🧱 | v0.5.9 |
-| P3-35 | ~~Rebranding phase 1 (PaveDB candidate)~~; phase 2 pending | 🧱 | v0.5.9–v0.6 |
+| P3-35 | ~~Rebranding phase 1 (PaveDB candidate)~~; phase 2 pending | 🧱 | v0.5.9–v0.9 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | post-1.0 |
-| P3-37 | Collection migration tooling (version compat) | 🧱 | v0.8 |
-| P3-40 | Publish pip freeze snapshot | 🧩 | v0.6 |
-| P3-41 | Swagger UI tenant/collection defaults | 🧩 | v0.7b |
-| P3-42 | Alive test in CI | 🧩 | v0.7b |
-| P3-43 | Go client | 🧱 | post-1.0 |
-| P3-44 | Persistent metrics in UI | 🧩 | v0.8 |
-| P3-45 | Independence principle audit | 🔧 | v0.8 |
-| P3-46 | Matrix CI builds | 🧱 | v0.9 |
+| P3-37 | Collection migration tooling (version compat) | 🧱 | v1.7 |
+| P3-40 | Publish pip freeze snapshot | 🧩 | v1.0 |
+| P3-41 | Swagger UI tenant/collection defaults | 🧩 | v1.4 |
+| P3-42 | Alive test in CI | 🧩 | v1.4 |
+| P3-43 | Go client | 🧱 | post-1.8 |
+| P3-44 | Persistent metrics in UI | 🧩 | v1.7 |
+| P3-45 | Independence principle audit | 🔧 | v1.6 |
+| P3-46 | Matrix CI builds | 🧱 | v1.8 |
 | P3-47 | Additional media types | 🧱 | post-1.0 |
 | P3-50 | ~~Split main.py routes into APIRouter modules (health, admin, collections, documents, search)~~ | 🧩 | v0.5.9 |
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
@@ -194,51 +195,51 @@ Substantial features are specified under `docs/` before implementation.
 
 ## Release Schedule (internal driver)
 
-### v0.1 — Prototype
+### PatchVec v0.1 — Prototype
 - First search + ingest pipeline; single-tenant, FAISS-backed, sbert embeddings.
 - CLI-driven TXT ingestion and REST search endpoint; minimal auth stub.
 
-### v0.2 — Isolation
+### PatchVec v0.2 — Isolation
 - Multi-tenant routing (`/{tenant}/{collection}`) with per-tenant API key auth.
 - Collection creation, deletion, and document management endpoints.
 
-### v0.3 — Extension
+### PatchVec v0.3 — Extension
 - QdrantStore skeleton, OpenAI embedder proof of concept, unified `CFG` config.
 - Full CLI mode added.
 
-### v0.4 — Modularity
+### PatchVec v0.4 — Modularity
 - Codebase split into `stores/`, `embedders/`, `auth.py`, `service.py`, `cli.py`,
   `preprocess.py`, `metrics.py`.
 
-### v0.5 — Pluggability
+### PatchVec v0.5 — Pluggability
 - `BaseStore` ABC, `StoreFactory` + `EmbedderFactory`; runtime backend selection.
 - `/health` endpoint; `DummyStore` for isolated testing.
 
-### v0.5.1 — Hardening
+### PatchVec v0.5.1 — Hardening
 - Auth refactored into dependency-injected `auth_ctx()`; unified GET/POST search.
 - Comprehensive pytest suite; factories migrated to `match` syntax.
 
-### v0.5.2 — Ingestion
+### PatchVec v0.5.2 — Ingestion
 - CSV and PDF ingest alongside TXT; `TxtaiEmbedder`, `OpenAIEmbedder`, `SbertEmbedder`.
 - Fixed JSON body search route; docker-compose stub added.
 
-### v0.5.3 — Foundation
+### PatchVec v0.5.3 — Foundation
 - Makefile release flow, GitLab/GitHub CI/CD, `.env.example`, `tenants.yml`.
 - README split into user + contributor docs; REST curl examples; PyPI install path.
 
-### v0.5.4 — Launch
+### PatchVec v0.5.4 — Launch
 - Initial public release; CSV ingestion knobs, deterministic doc-ID re-ingest.
 - Request metrics standardized; Docker GPU/CPU + PyPI publish pipeline bootstrapped.
 
-### v0.5.5 — Refinement
+### PatchVec v0.5.5 — Refinement
 - FAISS index initialization on collection creation; correct text retrieval from store.
 - Auth edge cases fixed; entry point hardened for production binding.
 
-### v0.5.6 — Deployment
+### PatchVec v0.5.6 — Deployment
 - Docker GPU/CPU split pipeline; Swagger/OpenAPI UI with branding and auth helpers.
 - Ingestion timestamps; improved FAISS concurrency and chunk text persistence fallback.
 
-### v0.5.7 — Readiness
+### PatchVec v0.5.7 — Readiness
 - ~~Switch default embedding model to multilingual (e.g., `paraphrase-multilingual-
 MiniLM-L12-v2`).~~
 - ~~Return a `match_reason` field alongside every search hit.~~
@@ -258,7 +259,7 @@ and logs (market practice §7).~~
 - ~~Push legacy typing synthax to Python 3.10~~
 - ~~Update copyright notices, polish logging infrastructure~~
 
-### v0.5.8 — Resilience
+### PatchVec v0.5.8 — Resilience
 
 - ~~Error code standardization (consistent codes/messages).~~
 - ~~Add ingest size limits with clear errors.~~
@@ -275,7 +276,7 @@ practice §5).~~
 latency on every search/ingest/delete.~~
 - ~~Support renaming collections through the API and CLI.~~
 
-### v0.5.9 — Relevance
+### PatchVec v0.5.9 — Relevance (last PatchVec release)
 
 - ~~Extract VectorBackend protocol seam (P1-29).~~
 - ~~Set backend seam to `search(vector, k)` and split `pave/backends/`
@@ -298,18 +299,12 @@ latency on every search/ingest/delete.~~
 - ~~TXT preprocessor: emit char `offset` in chunk metadata (P2-41).~~
 - ~~Relicensing review (AGPLv3 candidate) (P3-34).~~
 
-### 0.6 — Stability + Inspectability
+### PaveDB v0.9 — Inspectability
 
-- Rebranding phase 2: public-facing rename, env fallback removal,
-  and `patchvec` → `pavedb` redirect/shim path (P3-35).
-- Define embedder/store separation contract (P3-26).
-- ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
 - GlobalDB + catalog separation (PLAN-SQLITE Phase 2), including
   collection backend/embedder config wiring (P1-33).
-- Per-collection embeddings (P1-32).
 - Get document by ID endpoint (P1-17).
 - Response envelope standardization (P1-14).
-- Per-collection hot caches with isolation (P1-22).
 - Global `request_id` echo across endpoints and responses (P1-11).
 - Freeze search response schema (`matches`, `latency_ms`,
   `match_reason`, `request_id`) (P1-23).
@@ -320,6 +315,19 @@ latency on every search/ingest/delete.~~
 - Query replay endpoint: re-execute stored query by log ID (P1-42).
 - Chunk inspector + collection browser: list chunks, get chunk
   by ID (text + metadata + provenance), doc→chunk tree (P2-23).
+- Mount all routes under `/v1/` prefix; drop unversioned routes
+  (no compat shim pre-GA). Contract: frozen at v1.0, additive
+  only after (new endpoints, optional fields). `/v2/` introduced
+  only if a `/v1/` shape must break (P1-43).
+- Rebranding phase 2: public-facing rename, env fallback removal,
+  and `patchvec` → `pavedb` redirect/shim path (P3-35).
+
+### PaveDB v1.0 — Stability
+
+- Define embedder/store separation contract (P3-26).
+- ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
+- Per-collection embeddings (P1-32).
+- Per-collection hot caches with isolation (P1-22).
 - Dev vs prod config defaults (P1-25).
 - ~~Explicit config bootstrap for pip installs (`pavecli init`,
   `--home`, explicit runtime paths) (P1-34).~~
@@ -327,16 +335,10 @@ latency on every search/ingest/delete.~~
   canonical post-filter semantics (P1-35).
 - Admin key auto-generate + persist (P1-27).
 - Config reference doc + CI drift check (P1-26).
-- Tenant admin infrastructure (P2-19).
-- Per-tenant collection count limit (P2-20).
-- Per-tenant storage limit (P2-21).
-- Collection version tagging (P2-25).
-- Formalize collection independence from tenant (P2-31).
 - Publish `pip freeze` snapshot as release artifact (P3-40).
-- Rebranding phase 2 (external/user-visible surface) (P3-35).
 - ~~List tenants and collections via API (CLI parity) (P2-12).~~
 
-### 0.7a — Adoption + Control
+### PaveDB v1.1 — Adoption
 
 - Python client package (`pave`): HTTP mode for remote instances;
   library mode for in-process use (no HTTP). Same package, two
@@ -345,6 +347,9 @@ latency on every search/ingest/delete.~~
   (expose service + store layer as a Python API; single-tenant
   default).
 - Batch ingest endpoint (list of documents in one call).
+
+### PaveDB v1.2 — Control
+
 - Honor `meta.priority` boosts during scoring (P2-11).
 - Add hybrid reranking (vector similarity + BM25/token
   matching) (P1-07).
@@ -359,7 +364,8 @@ latency on every search/ingest/delete.~~
 - Structured log retention: rolling window + purge via
   `operation_log` table (SQLite Phase 3); powers P2-13 (P2-39).
 
-### 0.7b — Reach
+### PaveDB v1.3 — Reach
+
 - `pavecli --host`: route CLI commands through the HTTP client
   instead of the service layer directly; depends on Python client.
   CLI becomes a thin wrapper.
@@ -367,18 +373,29 @@ latency on every search/ingest/delete.~~
   spec, published to npm. Covers web frontends and Node.js backends.
 - LangChain `VectorStore` + `Retriever` adapter (covers LangGraph
   + CrewAI).
+- MCP server (expose search/ingest/list as MCP tools).
+- LlamaIndex `VectorStore` adapter.
+
+### PaveDB v1.4 — Polish
+
 - Default tenant/collection selectors in Swagger UI.
 - Collection-level structured log export for analytics.
 - Alive test in CI pipeline (post-deploy health check).
 - Docs website (public docs, API reference).
 - Revamp UI.
+- Multilingual UI/errors/docs.
 - Usage stats to mothership (opt-in/anon).
 
-### 0.8 — Governance
-- MCP server (expose search/ingest/list as MCP tools).
-- LlamaIndex `VectorStore` adapter.
-- Document versioning, rebuild tooling.
-- Persistent metrics in the UI.
+### PaveDB v1.5 — Lifecycle
+
+- Tenant admin infrastructure (P2-19).
+- Per-tenant collection count limit (P2-20).
+- Per-tenant storage limit (P2-21).
+- Collection version tagging (P2-25).
+- Formalize collection independence from tenant (P2-31).
+
+### PaveDB v1.6 — Governance
+
 - Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
   `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml`
   into SQL on first boot; SQL becomes source of truth for keys
@@ -386,21 +403,27 @@ latency on every search/ingest/delete.~~
 - OIDC/JWT as opt-in alternative auth (`auth.oidc.issuer` config);
   API keys remain permanently supported. PaveDB accepts either on
   any request.
-- Extensible ingest plugin architecture (stable plugin interface
-  for custom preprocessors and future media types).
-- Delete by ID list and delete by metadata query
-  (single-collection scope first).
 - Tenant profiles: manifest-driven resource limits (memory,
   storage, concurrency, models available), profile templates
   (e.g. free/paid tiers); PaveDB enforces limits, does not
   handle billing or onboarding.
-- Collection migration tooling: detect version mismatches,
-  provide upgrade path across PaveDB/FAISS version changes.
+- Extensible ingest plugin architecture (stable plugin interface
+  for custom preprocessors and future media types).
+- Delete by ID list and delete by metadata query
+  (single-collection scope first).
 - Commit to independence principle: auth, tenant profiles,
   collections, and server config are orthogonal — no coupling
   between layers.
 
-### 0.9 — Scale
+### PaveDB v1.7 — Maturity
+
+- Document versioning, rebuild tooling.
+- Collection migration tooling: detect version mismatches,
+  provide upgrade path across PaveDB/FAISS version changes.
+- Persistent metrics in the UI.
+
+### PaveDB v1.8 — Scale
+
 - Async ingest, parallel purge.
 - Horizontal scalability, tenant groups, sub-index routing.
 - Retain original uploaded files, opt-in (originals + versioning
@@ -408,16 +431,16 @@ latency on every search/ingest/delete.~~
 - Async ingest jobs with status tracking API.
 - Per-tenant parallel ingest limits.
 - Matrix CI builds (Python 3.10/3.11/3.12 × core ML versions)
-  as pre-1.0 compatibility gate.
+  as pre-2.0 compatibility gate.
 
-### 1.0 — Contract
+### PaveDB v2.0 — Ground Truth
+
 - Lock routes, publish final OpenAPI spec, ship SDK clients.
 - Audit logs for admin actions.
 
-### Post-1.0 backlog (no IDs yet)
+### PaveDB post-2.0 backlog (no IDs yet)
 - Additional media types (image, audio/video, graphic/geom,
   georeferenced) via ingest plugin architecture.
-- Multimodal collections (cross-modal search).
 - Go client.
 - Tenant job notifications (webhook/email).
 - Tenant syndicates (opt-in grouping, no mandatory hierarchy).
@@ -454,40 +477,24 @@ production. The loopback-only dev mode is a good guardrail.
 - **Data archive/restore** with lock acquisition is operationally useful for
 backup and migration.
 
-### What needs attention (code-level)
+### What needed attention (code-level) — resolved
 
-1. **`eval()` in filter matching** — `txtai_store.py:309,315` uses `eval()` for
-numeric and datetime comparisons. While the inputs are constrained, this is a code smell
-that should be replaced with `operator` module comparisons. It also makes the filter
-path harder to reason about for security audits. (done v0.5.7)
-
-2. **Global singleton at import time** — `main.py:362` calls `build_app()` at
-module level, which instantiates the store and config eagerly. This makes testing harder
-(requires monkeypatching) and prevents lazy initialization. (done v0.5.8)
-
-3. **`assert` in production code** — `txtai_store.py:265` uses `assert` to verify
-chunk text round-trips. Assertions are stripped when Python runs with `-O`. This should
-be a proper check. (done v0.5.7)
-
-4. **Lock dict is not thread-safe** — `txtai_store.py:14-16` (`_LOCKS` dict) is
-accessed without synchronization. Two threads could race to create the same lock. Use
-`threading.Lock()` to guard the dict itself or use `collections.defaultdict` with a
-global lock. (done v0.5.7)
-
-5. **Embedder factory unused** — `pave/embedders/factory.py` exists but is never
-called. The TxtaiStore creates its own Embeddings instance internally (`_config()`).
-This means the pluggable embedder architecture is dead code for the default store. The
-STORE split tasks (P1-29/P1-29b/P1-29c/P1-31) + per-collection embeddings
-(P1-32) resolve this. P1-30 is superseded by P1-29b.
-(schedule v0.5.9-v0.6)
-
-6. **QdrantStore is a dead stub** — Every method raises `NotImplementedError`.
-It ships as a runtime dependency (`qdrant-client` in `setup.py`) but cannot be used.
-This adds ~50MB of install weight for no functionality. (schedule v0.6)
-
-7. **Preprocess module reads config at import** — `preprocess.py:10-11` reads
-`TXT_CHUNK_SIZE` and `TXT_CHUNK_OVERLAP` at module load. Changing config at runtime has
-no effect on chunking parameters. (schedule v0.6)
+1. ~~**`eval()` in filter matching** — replaced with `operator` module
+comparisons. (done v0.5.7)~~
+2. ~~**Global singleton at import time** — `build_app()` made lazy.
+(done v0.5.8)~~
+3. ~~**`assert` in production code** — replaced with runtime check.
+(done v0.5.7)~~
+4. ~~**Lock dict not thread-safe** — guarded with module-level lock.
+(done v0.5.7)~~
+5. ~~**Embedder factory unused** — resolved by store split
+(P1-29/P1-31). Embedder factory is now the active path.
+(done v0.5.9)~~
+6. ~~**QdrantStore dead stub** — deleted along with `qdrant-client`
+dependency. (done v0.5.9, P1-37)~~
+7. ~~**Preprocess reads config at import** — chunking parameters
+now passed through constructor/function args. (done v0.5.9,
+P1-31)~~
 
 ---
 
@@ -513,18 +520,11 @@ data to prove and monitor value.
 
 ### 2. Define an explicit latency SLO and enforce it in CI
 
-Production decisioning APIs require p99 latency SLOs. PatchVec has no SLO, no benchmark
-suite, no regression gate.
+~~Production decisioning APIs require p99 latency SLOs.~~
 
-**Why it matters:** Without a latency contract between PatchVec and its consumers, there
-is no way to detect regressions before they hit end users. Without benchmarks, there is
-no baseline to optimize against.
-
-**Gap:** No CI SLO gate. No repeatable latency benchmarks tied to CI.
-
-**Action:** Ship a `benchmarks/` directory with a repeatable load test (e.g., `locust`
-or plain `httpx` + `asyncio`) that indexes a sample dataset, fires concurrent searches,
-and asserts p99 < threshold. Integrate into CI as a gating check.
+**Status:** Done (v0.5.9). Benchmark suite with `--slo-p99-ms` and
+`--max-error-pct` exit gates, wired into Makefile and GitLab CI
+(P2-30).
 
 ### 3. Hot-reload data and configuration without restart
 
@@ -532,50 +532,41 @@ Production APIs require hot-reloading configuration without downtime. PatchVec's
 equivalent: updating indexed data or swapping embedding models without restarting the
 server.
 
-**Current state:** Document purge + re-index works live (via `purge_doc` +
-`ingest_document`). But:
-- Embedding model is loaded once at startup (`TxtaiStore._config()` reads
-config at init time, `load_or_init` caches per-collection).
-- `preprocess.py` reads `TXT_CHUNK_SIZE` / `TXT_CHUNK_OVERLAP` at import.
-- Config changes require process restart.
+**Current state (v0.5.9):** Document purge + re-index works live. Embedder
+is constructed per-collection via factory. Chunking parameters are passed
+through constructor args (no import-time config reads). Config changes
+still require process restart for the embedder model.
 
-**Action for v0.5.7:** ~~Document the live-data-update path (purge + ingest)~~ as an
-explicit operational procedure. For v0.6 (per-collection embeddings), design model hot-
-swap via a `/admin/reload` endpoint.
+**Action for v0.5.7:** ~~Document the live-data-update path (purge +
+ingest)~~ as an explicit operational procedure. For v1.0 (per-collection
+embeddings), design model hot-swap via a `/admin/reload` endpoint.
 
 ### 4. Pre-computation beats post-filtering
 
-The equivalent of spatial indexing for geo queries: pushing filters into txtai's SQL
-query instead of fetching overfetch x 5 and filtering in Python.
+The equivalent of spatial indexing for geo queries: pushing filters into
+the SQLite pre-filter instead of post-filtering in Python.
 
-**Current state:** `_split_filters()` routes exact matches and `!` negation to
-`pre_f` (SQL), and keeps wildcards/comparison/date-style operators in `pos_f`
-(Python post-filter). This is the compatibility baseline.
+**Current state (v0.5.9):** `CollectionDB.filter_by_meta()` handles
+exact-match and negation pushdown. Wildcards and comparisons remain in
+the canonical Python post-filter (`matches_filters()`). The legacy
+`_split_filters()` was removed in P1-37.
 
-**Why it matters:** If consumers fire multiple parallel searches and most use post-
-filtering, tail latency multiplies. At scale, this becomes the bottleneck.
+**Why it matters:** If consumers fire multiple parallel searches and
+most use post-filtering, tail latency multiplies. At scale, this
+becomes the bottleneck.
 
-**Action:** Negation (`!value`) already goes to SQL (`[field] <> 'value'`) —
-done v0.5.7. Keep the current pre/post split for reproducibility. Next step
-(`P1-35`) is capability-based pushdown with canonical Python post-filter
-parity checks.
+**Action:** Negation (`!value`) already goes to SQL (`<>`) — done
+v0.5.7. Next step (P1-35) is capability-based pushdown with parity
+checks against canonical post-filter semantics.
 
 ### 5. Graceful degradation under overload
 
 Production APIs must degrade gracefully (e.g., shed low-priority work, return partial
 results) rather than failing entirely under load.
 
-**Current state:** PatchVec has no backpressure mechanism. Under high load:
-- uvicorn's threadpool fills up silently.
-- JSON file I/O (`_load_meta`, `_save_meta`) becomes a bottleneck.
-- No circuit breaker, no request shedding, no timeout on search.
-
-**Why it matters:** Public-facing consumers may experience traffic spikes. Without
-degradation strategy, all users get 500s instead of some getting slower responses.
-
-**Action for v0.5.8:** Add a configurable search timeout (default 5s). If exceeded,
-return partial results with a `"truncated": true` flag. Add a `max_concurrent_searches`
-config with 503 Fast-Fail when exceeded.
+~~**Status:** Done (v0.5.8). Configurable search timeout +
+`max_concurrent_searches` with 503 fast-fail (P1-20). Per-tenant
+rate limiting (P1-08).~~
 
 ### 6. Benchmark suite as a first-class artifact
 
@@ -587,12 +578,9 @@ choosing between embedding models, you need comparable latency/recall numbers. W
 consumers evaluate PatchVec against alternatives, benchmarks are the first thing they
 look for.
 
-**Gap:** ~~No `benchmarks/` directory. No load test.~~ No recall evaluation against a
-ground-truth dataset.
-
-**Action:** Create `benchmarks/search_latency.py` (load test) and
-`benchmarks/recall_eval.py` (quality evaluation against hand-labeled queries). Document
-baseline numbers in README.
+~~**Status:** Done (v0.5.9). `benchmarks/search_latency.py` and
+`benchmarks/stress.py` with SLO gates (P2-30). Public relevance
+regression suite (P2-29).~~
 
 ### 7. Request/response traceability as contract
 
@@ -610,35 +598,31 @@ PatchVec. (done v0.5.7)
 Production APIs must handle concurrent requests correctly as a must-have, not a nice-to-
 have.
 
-**Current state:** PatchVec has `_LOCKS` dict (`txtai_store.py:14`) which is itself not
-thread-safe. Two concurrent `load_or_init` calls for the same collection can race on
-`_emb` dict. The `collection_lock()` pattern is correct for index writes, but the lock
-registry has a gap.
-
-**Action:** Guard `_LOCKS` with a module-level `threading.Lock()`. Audit all paths from
-HTTP handler to store for thread-safety. (done v0.5.7)
+~~**Status:** Done (v0.5.7). Lock registry guarded with module-level
+lock. Concurrency safety hardened further in store split (P1-31,
+v0.5.9).~~
 
 ### Summary: What the market expects from a real-time decisioning API
 
 | Practice | Geo-bidding benchmark | PatchVec | Status |
 |----------|----------------------|----------|--------|
 | Latency in response body | `latency_ms` | Returned by search | **DONE** |
-| Latency SLO + benchmarks | p99 <50ms | No CI gate | **Missing** |
+| Latency SLO + benchmarks | p99 <50ms | CI gate + SLO exit (P2-30) | **DONE** |
 | Hot-reload without downtime | Hot reload | Model swap needs restart | **Partial** |
-| Pre-computation / indexing | Precompute | Negation pre-filter | **DONE** |
+| Pre-computation / indexing | Precompute | SQLite pushdown + negation | **DONE** |
 | Graceful degradation | Shed load | Search timeout + concurrency cap | **DONE** |
 | Request ID propagation | `request_id` | Echoed in responses | **DONE** |
-| Concurrency safety | Thread-safe | Lock dict guarded | **DONE** |
-| Budget / quota governance | Quotas | Per-tenant concurrent cap | **DONE** |
+| Concurrency safety | Thread-safe | Store-level locking (P1-31) | **DONE** |
+| Budget / quota governance | Quotas | Per-tenant rate limiting (P1-08) | **DONE** |
 
-Two of eight practices are still missing or partial (latency SLO CI gate, hot-reload).
+One of eight practices is still partial (hot-reload / model swap).
 
 ---
 
 ## Pluggability: PatchVec as a General-Purpose Vector Search Microservice
 
 > Secondary priority — after the first consumer reaches GA. But
-> architectural decisions made now (v0.5.7–0.6) determine whether this
+> architectural decisions made in v0.5.7–v1.0 determine whether this
 > path is cheap or a rewrite.
 
 ### The landscape (as of early 2026)
@@ -666,19 +650,20 @@ SDK needed on the agent side.
 (Assistants/Retrieval). NOT a standard others implement. Implementing compatibility
 would be cargo-culting with no adoption benefit.
 
-### What PatchVec has today
+### What PatchVec has today (v0.5.9)
 
 | Surface | Status | Notes |
 |---------|--------|-------|
-| REST API (FastAPI) | **Solid** | OpenAPI spec; clean routes. |
+| REST API (FastAPI) | **Solid** | OpenAPI spec; APIRouter modules per domain. |
 | OpenAPI schema | **Solid** | Swagger UI with filtered views (search/ingest). |
 | Multi-tenancy | **Solid** | `tenant/collection` namespacing — a real differentiator. |
 | File preprocessing | **Unique** | CSV/PDF/TXT built-in. |
-| Python SDK (client) | **Missing** | No `pave` package for HTTP consumption. |
-| LangChain adapter | **Missing** | No `VectorStore` subclass. |
-| LlamaIndex adapter | **Missing** | No `VectorStore` implementation. |
-| MCP server | **Missing** | No tool exposure for AI agents. |
-| gRPC | **Missing** | REST-only. |
+| Benchmarks + SLO | **Solid** | Latency + stress suites with CI gate (P2-30). |
+| Structured logging | **Solid** | JSON ops log with request_id, tenant, latency (P2-28). |
+| Python SDK (client) | **Planned** | v1.1 — `pave` package for HTTP + library mode. |
+| LangChain adapter | **Planned** | v1.3 — `VectorStore` subclass. |
+| LlamaIndex adapter | **Planned** | v1.3 — `VectorStore` implementation. |
+| MCP server | **Planned** | v1.3 — tool exposure for AI agents. |
 
 ### What PatchVec does NOT need
 
@@ -694,8 +679,8 @@ gRPC matters at >10k req/s with sub-5ms budgets. Not the current reality.
 
 #### 1. Python SDK — `pave` client package (~150 lines)
 
-A thin HTTP wrapper that maps PatchVec's REST API to Python method calls. This is the
-foundation everything else wraps.
+A thin HTTP wrapper that maps PatchVec's REST API to Python method calls.
+This is the foundation everything else wraps.
 
 ```python
 from pave import PaveClient
@@ -711,7 +696,7 @@ raw `httpx`/`requests` calls, which nobody does in 2026. This is table-stakes.
 
 **Effort:** Low. ~150 lines wrapping the existing REST endpoints.
 
-**When:** v0.7 (after API stabilizes in 0.6).
+**When:** v1.1 (after API stabilizes in v1.0).
 
 #### 2. LangChain `VectorStore` adapter (~200 lines)
 
@@ -741,14 +726,14 @@ frameworks.
 
 **Effort:** ~200 lines. Depends on Python SDK.
 
-**When:** v0.7 (immediately after SDK).
+**When:** v1.3 (immediately after SDK).
 
 #### 3. MCP server (~300 lines)
 
 Expose PatchVec operations as MCP tools:
 - `search_collection(tenant, collection, query, k, filters)` → search
 - `ingest_document(tenant, collection, file_path)` → upload
-- `list_collections(tenant)` → list (needs P2-12 first)
+- `list_collections(tenant)` → list (~~needs P2-12 first~~ done)
 
 ```json
 {
@@ -770,7 +755,7 @@ compatible AI assistant search indexed data directly.
 
 **Effort:** ~300 lines. MCP Python SDK is well-documented.
 
-**When:** v0.8 (after API freeze candidates are stable).
+**When:** v1.3 (after API freeze candidates are stable).
 
 #### 4. LlamaIndex adapter (~200 lines)
 
@@ -782,7 +767,7 @@ Similar to LangChain but implements LlamaIndex's `VectorStore` protocol:
 **Why:** Second-largest orchestrator framework. Smaller ROI than LangChain but completes
 the coverage.
 
-**When:** v0.8 or v0.9.
+**When:** v1.3.
 
 ### PatchVec's positioning in the vector DB landscape
 
@@ -793,69 +778,71 @@ millisecond latency. Its niche is:
 workloads under 10M vectors.
 
 | | PatchVec | ChromaDB | Qdrant | Pinecone |
-|---|---------|----------|--------|----------|
+|---|--------|----------|--------|----------|
 | Deployment | Single-process | Single-process | Docker/K8s | Managed |
 | Multi-tenancy | Built-in | No | Namespaces | Namespaces |
 | File preprocessing | CSV/PDF/TXT | No | No | No |
 | Embedding choice | Pluggable | BYO | BYO | BYO |
 | Filtering | Expressive | Basic | Rich | Basic |
+| Inspectability | Query log, replay, chunk inspector | No | No | No |
 | License | AGPL-3.0 | Apache-2.0 | Apache-2.0 | Proprietary |
 
-The **built-in preprocessing** and **multi-tenancy** are real differentiators. ChromaDB,
-the closest lightweight competitor, has neither.
+The **built-in preprocessing**, **multi-tenancy**, and **inspectability**
+are real differentiators. ChromaDB, the closest lightweight competitor,
+has none of them.
 
 ### Architectural decisions that affect pluggability NOW
 
-These are decisions in v0.5.7–0.6 that determine whether the integration layer (v0.7+)
+These are decisions in v0.5.7–v1.0 that determine whether the integration layer (v1.1+)
 is cheap or expensive:
 
 1. **Stabilize the search response schema** — If `do_search()` returns
 `{matches: [{id, score, text, meta}]}` today and changes later, every adapter breaks.
 Freeze the response shape in v0.5.7. Add new fields (`latency_ms`, `match_reason`,
-`request_id`) now, so the schema is stable by v0.6.
+`request_id`) now, so the schema is stable by v1.0.
 
 2. **Document delete by ID** (P1-6) — LangChain's `delete()` method
 requires this. Without it, the LangChain adapter ships incomplete.
 
-3. **Per-collection embedding config** (0.6) — LangChain's `from_texts()`
-passes an `embedding` parameter. PatchVec must be able to accept external embeddings OR
-let the caller specify which model to use. Currently the model is global and internal to
-TxtaiStore.
+3. **Per-collection embedding config** (v1.0) — LangChain's `from_texts()`
+passes an `embedding` parameter. PatchVec must be able to accept external
+embeddings OR let the caller specify which model to use per collection.
+Embedder factory (v0.5.9) provides the foundation; per-collection config
+wiring lands in v1.0 (P1-32).
 
 4. ~~**List collections** (P2-12)~~ — Both LangChain and MCP need enumeration.
 Status: done.
 
 5. ~~**`BaseStore.search()` return type** — Currently returns
 `List[Dict[str, Any]]`. For SDK/adapter consumption, a typed dataclass (e.g.,
-`SearchResult(id, score, text, meta)`) would be cleaner. This is a v0.6 candidate.~~
+`SearchResult(id, score, text, meta)`) would be cleaner. This is a v0.9 candidate.~~
 
 ### Integration roadmap
 
 | Version | Deliverable | Depends on |
 |---------|------------|------------|
-| v0.7.0 | Python client (`pave`): HTTP + library mode | Stable REST API (v0.6) |
-| v0.7.0 | Embedded mode, batch ingest, get-doc-by-ID | Python client |
-| v0.7.5 | `pavecli --host` (remote CLI via HTTP client) | Python client |
-| v0.7.5 | JS/TS client (npm) | OpenAPI spec (auto-generated, then typed) |
-| v0.7.5 | LangChain `VectorStore` adapter | Python client |
-| v0.8 | Go client (Go module, generated) | Stable OpenAPI spec |
-| v0.8 | MCP server | Python client |
-| v0.8 | LlamaIndex adapter | Python client |
+| v1.1 | Python client (`pave`): HTTP + library mode | Stable REST API (v1.0) |
+| v1.1 | Embedded mode, batch ingest | Python client |
+| v1.3 | `pavecli --host` (remote CLI via HTTP client) | Python client |
+| v1.3 | JS/TS client (npm) | OpenAPI spec (auto-generated, then typed) |
+| v1.3 | LangChain `VectorStore` adapter | Python client |
+| v1.3 | MCP server | Python client |
+| v1.3 | LlamaIndex adapter | Python client |
+| post-1.8 | Go client (Go module, generated) | Stable OpenAPI spec |
 | ~~v0.9~~ | ~~Typed response models~~ | ~~API freeze~~ |
-| 1.0 | Published integrations on PyPI/npm (`pave-langchain`, `pave-mcp`) | API freeze |
-| 1.0+ | Rust client (WASM target) | API freeze |
+| 2.0 | Published integrations on PyPI/npm (`pave-langchain`, `pave-mcp`) | API freeze |
+| post-2.0 | Rust client (WASM target) | API freeze |
 
 ### What this means for the revised version milestones
 
-**v0.6** gains:
+**v0.9** gains:
 - Freeze search response schema (add `latency_ms`, `match_reason`, `request_id`).
-- ~~List collections API (enables MCP and LangChain enumeration).~~
 - Typed return models as internal preparation.
 
-**v0.7** gains:
+**v1.1** gains:
 - Python SDK client package.
-- LangChain VectorStore adapter.
 
-**v0.8** gains:
+**v1.3** gains:
+- LangChain VectorStore adapter.
 - MCP server.
 - LlamaIndex adapter.

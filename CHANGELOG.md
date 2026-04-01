@@ -1,6 +1,94 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.5.9rc0 — 2026-04-01
+
+### Store
+- CollectionDB read-only open for fallback reads
+- Close abandoned CollectionDBs on cache flush
+- Extract vector backend seam (P1-29a)
+- Clean VectorBackend protocol, add FaissBackend, activate embedder path (P1-29b)
+- Adapt SbertEmbedder to Embedder protocol (P1-29b)
+- Add QdrantVectorBackend stub (P1-29b)
+- [fix] validate FAISS index dimension on load
+- [fix] harden chunk/archive I/O against TOCTOU races
+- Add chunk_meta CollectionDB storage (P1-29c)
+- Add exact-negation CollectionDB pushdown (P1-29c)
+- Sanitize metadata keys and values before inserting to chunk metadata table
+- Split document/chunk metadata storage and pushdown (P1-29c)
+- Remove dead txtai backend and legacy methods (P1-37)
+- Simplify filter path — pass normed_filters directly to filter_by_meta (P1-37)
+- Drop txtai dependency, promote SbertEmbedder to default (P1-37)
+- Rename TxtaiStore → FaissStore, simplify file names, reshape provider-scoped...
+- Fix filter_by_meta mixed-OR key narrowing incorrect results
+- Reject invalid sanitized metadata keys (P1-36)
+- Extract filters and sanitization to pave/filters.py (P1-31)
+- LocalStore orchestrator replaces FaissStore (P1-31)
+
+### Build
+- Fix make install-dev output under .ONESHELL
+- Update make check to use faiss config
+- Add make build-check target (P3-52)
+- Include openai extra in Docker image
+- Add make docker-check target (P3-51)
+- Gate release on smoke checks
+- Rename build/CI identifiers and benchmark labels to pavedb (P3-35)
+
+### Documentation
+- Add third-party license audit and dependency policy
+- Add Step 2 benchmark results to `docs/PLAN-STORE.md` (before/after FAISS cuto...
+- Refresh docs for faiss/sbert naming (P1-37)
+- Clarify collection logical-vs-physical mapping
+- Remove unsupported qdrant runtime mode references
+- Add inspectability/control layer to roadmap
+
+### Performance
+- Implement variant filtering latency modes, with fresh model per variant run a...
+- Latency results before and after metadata k,v table implementation, several f...
+- Benchmarks after txtai removal
+- Add --slo-p99-ms exit gate to search_latency (P2-30)
+- Add --max-error-pct exit gate to stress (P2-30)
+- Wire SLO flags into Makefile targets (P2-30)
+
+### Config
+- Fix tenants sidecar precedence and dev config loading
+- Map supported legacy PATCHVEC_* env vars to PAVEDB_* (P3-35)
+- [fix] isolate default config state across instances
+
+### Service
+- Add error logging at all ok:false service layer return sites (P2-40)
+- [fix] wrap create_collection and health probe in collection_lock
+- [fix] reorder archive restore and lock exclusion, rewrite data_export tests (...
+
+### Testing
+- Drop unsafe skipped concurrent upsert race case
+- Rename test_faiss_* → test_store_* (P1-31)
+- Add opt-in public relevance regression checks (P2-29)
+
+### Tests
+- FaissBackend and TxtaiEmbedder tests.
+- Cover chunk_meta CollectionDB storage (P1-29c)
+- Cover pushdown edge cases (P1-29c)
+
+### API
+- Split main.py routes into APIRouter modules (P3-50)
+
+### Bug Fixes
+- Harden store lifecycle races found by bench-stress
+
+### CLI
+- [conf] add explicit instance bootstrap and runtime paths (P1-34)
+
+### Core
+- Rename operator-visible identifiers to pavedb (P3-35)
+
+### Deps
+- Package sbert runtime and relevance deps
+
+### Infrastructure
+- Add benchmark CI job with SLO gate (P2-30)
+
+---
 ## 0.5.8.1 — 2026-03-07
 
 ### API
