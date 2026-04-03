@@ -1,7 +1,7 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.5.9rc0 — 2026-04-01
+## 0.5.9 — 2026-04-03
 
 ### Store
 - CollectionDB read-only open for fallback reads
