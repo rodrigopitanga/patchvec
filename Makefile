@@ -352,18 +352,17 @@ release:
 	BRANCH_REMOTES="$(RELEASE_BRANCH_REMOTES)"; \
 	TAG_TOUCHED=0; \
 	POST_TAG=0; \
-	trap 'status=$$?; if [ "$$status" -ne 0 ] && [ "$$POST_TAG" = "1" ] && [ "$$TAG_TOUCHED" = "1" ]; then echo "Release failed after tagging; deleting tag v$(VERSION) (keeping bumped commit)."; git tag -d "v$(VERSION)" >/dev/null 2>&1 || true; fi; exit $$status' ERR; \
 	revert_changes() { \
 	  echo "Reverting version bumps and changelog..."; \
 	  git restore --staged CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
 	  git checkout -- CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
 	}; \
+	trap 'status=$$?; if [ "$$status" -ne 0 ] && [ "$$POST_TAG" = "1" ] && [ "$$TAG_TOUCHED" = "1" ]; then echo "Release failed after tagging; deleting tag v$(VERSION) (keeping bumped commit)."; git tag -d "v$(VERSION)" >/dev/null 2>&1 || true; fi; exit $$status' ERR; \
 	if [ "$(SKIP_BUMP)" != "1" ]; then \
 	  echo "Bumping to $(VERSION) via 'make bump'..."; \
-	  $(MAKE) bump VERSION=$(VERSION); \
+	  $(MAKE) bump VERSION=$(VERSION) || { echo "Version bump failed."; revert_changes; exit 1; }; \
 	fi; \
-	$(MAKE) changelog-write VERSION=$(VERSION) || { echo "Changelog generation failed"; exit 1; }; \
-	git add CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
+	$(MAKE) changelog-write VERSION=$(VERSION) || { echo "Changelog generation failed."; revert_changes; exit 1; }; \
 	echo "Running tests..."; \
 	$(MAKE) test || { echo "Tests failed."; revert_changes; exit 1; }; \
 	if [ "$(SKIP_PYPI_BUILD)" != "1" ]; then \
@@ -374,12 +373,7 @@ release:
 	else \
 	  echo "Skipping dists build (SKIP_PYPI_BUILD=1)."; \
 	fi; \
-	if git diff --cached --quiet; then \
-	  echo "Nothing to commit — release commit already exists, skipping."; \
-	else \
-	  git commit -m "chore(release): v$(VERSION)"; \
-	fi; \
-	$(MAKE) -o build package; \
+	$(MAKE) -o build package || { echo "Packaging failed."; revert_changes; exit 1; }; \
 	if [ -n "$(REGISTRY)" ]; then IMAGE_BASE="$(REGISTRY)/$(IMAGE_NAME)"; else IMAGE_BASE="$(IMAGE_NAME)"; fi; \
 	if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
 	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-gpu $(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu"; \
@@ -391,6 +385,7 @@ release:
 	fi; \
 	if [ "$(SKIP_DOCKER_BUILD)" = "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
 	  echo "Invalid flags: SKIP_DOCKER_BUILD=1 requires SKIP_DOCKER_PUSH=1."; \
+	  revert_changes; \
 	  exit 1; \
 	elif [ "$(SKIP_DOCKER_BUILD)" = "1" ]; then \
 	  echo "Skipping Docker build/push (SKIP_DOCKER_BUILD=1)."; \
@@ -401,14 +396,20 @@ release:
 	    echo "Building and validating Docker image(s) (no push)..."; \
 	  fi; \
 	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-gpu"; \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
-	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-cpu"; \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0 || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-gpu" || { echo "docker-check failed."; revert_changes; exit 1; }; \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1 || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-cpu" || { echo "docker-check failed."; revert_changes; exit 1; }; \
 	  else \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
-	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-$$IMG_SUFFIX"; \
+	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU) || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-$$IMG_SUFFIX" || { echo "docker-check failed."; revert_changes; exit 1; }; \
 	  fi; \
+	fi; \
+	git add CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
+	if git diff --cached --quiet; then \
+	  echo "Nothing to commit — release commit already exists, skipping."; \
+	else \
+	  git commit -m "chore(release): v$(VERSION)" || { echo "Release commit failed."; revert_changes; exit 1; }; \
 	fi; \
 	if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
 	  printf "Tag v$(VERSION) already exists. Re-tag? [y/N] "; \
