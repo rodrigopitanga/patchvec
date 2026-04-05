@@ -83,10 +83,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
-| P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation
-  | v0.5.8 |
-| P1-21 | ~~Serve listings + store catalog counts in health/metrics~~ | 🧩 | Internal store query layer
-  | v0.5.8 |
+| P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation | v0.5.8 |
+| P1-21 | ~~Serve listings + store catalog counts in health/metrics~~ | 🧩 | Internal store query layer | v0.5.8 |
 | P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v1.0 |
 | P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.9 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v1.1 |
@@ -95,9 +93,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v1.0 |
 | P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v1.0 |
 | P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.0 |
-| P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs
-  `rate_limit_buckets` table (Phase 3); seeded from `tenants.max_rpm` config field
-  | post-SQLite |
+| P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3) | post-SQLite |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | ~~Initial backend seam for store split~~ | v0.5.9 |
 | P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | ~~Finish FAISS cutover~~ | v0.5.9 |
 | P1-29c | ~~CollectionDB k/v pre-filter~~ | 🔧 | ~~First pushdown stage~~ | v0.5.9 |
@@ -106,7 +102,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | ~~Superseded by Step 2 in PLAN-STORE~~ | superseded |
 | P1-31 | ~~Store orchestrator~~ | 🧱 | ~~Orchestrate backend + meta + catalog~~ | v0.5.9 |
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v1.0 |
-| P1-33 | GlobalDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
+| P1-33 | CatalogDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
 | P1-40 | Search timing breakdown in response | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
 | P1-41 | Persistent query log | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
 | P1-42 | Query replay endpoint | 🧩 | Re-execute stored query by log ID; depends on P1-41 | v0.9 |
@@ -302,7 +298,7 @@ latency on every search/ingest/delete.~~
 ### PaveDB v0.9 — Inspectability
 
 - ~~Get document by ID endpoint (P1-17).~~
-- GlobalDB + catalog separation (PLAN-SQLITE Phase 2), including
+- CatalogDB + catalog separation (PLAN-SQLITE Phase 2), including
   collection backend/embedder config wiring (P1-33).
 - Response envelope standardization (P1-14).
 - Global `request_id` echo across endpoints and responses (P1-11).

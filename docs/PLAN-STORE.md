@@ -233,7 +233,7 @@ Store orchestrator ──→  compose all layers, own concurrency
   filtering (k/v table).** No more txtai SQL queries for filtering.
 - **Single vector backend type per instance.** Mixed backends per
   instance is a 2.0+ concern.
-- **Per-collection embedder config** stored in `GlobalDB` (Phase 2
+- **Per-collection embedder config** stored in `CatalogDB` (Phase 2
   SQLite, future step).
 - **Per-collection means logical isolation, not fixed physical
   topology.** A collection is an independent lifecycle/config unit.
@@ -665,7 +665,7 @@ pattern as today's `TxtaiStore.search()`.
 | `_unwrap_store` | `service.py` | deleted |
 | archive ops | `service.py` | `LocalStore.dump_archive()` / `.restore_archive()` |
 | archive helpers | `service.py` | `LocalStore` private (`_write_zip`, `_validate_zip_members`, `_remove_path`) |
-| listing | `FaissStore` | `LocalStore` (filesystem or `GlobalDB`) |
+| listing | `FaissStore` | `LocalStore` (filesystem or `CatalogDB`) |
 | chunk text sidecars | `FaissStore` | `LocalStore` (private) |
 | filter/sanit logic | `FaissStore` | `pave/filters.py` (backend-agnostic) |
 | filter value sanit | `metadb.py` `_normalize_filter_value` | `pave/filters.py` `sanit_sql` (shared) |
@@ -866,13 +866,13 @@ race fixes are useful for perf interpretation too:
 
 ---
 
-## Step 5 — GlobalDB + catalog separation (owned by PLAN-SQLITE)
+## Step 5 — CatalogDB + catalog separation (owned by PLAN-SQLITE)
 
 This step is specified in `docs/PLAN-SQLITE.md` (Phase 2) and
 tracked as roadmap item `P1-33`.
 
 `PLAN-STORE` treats Step 5 as an external dependency:
-- `GlobalDB` becomes the source of truth for listing/catalog.
+- `CatalogDB` becomes the source of truth for listing/catalog.
 - `get_collection_config()` provides per-collection embedder
   config.
 - `LocalStore` orchestrator integrates that interface.
@@ -888,11 +888,11 @@ model config is a hard requirement for multi-model deployments.
 
 ### How it works
 
-With the orchestrator (Step 4) and `GlobalDB` (Step 5) in place:
+With the orchestrator (Step 4) and `CatalogDB` (Step 5) in place:
 
 1. `create_collection(tenant, name, embed_model="...")` stores
-   model spec in `GlobalDB.collections.embed_model`.
-2. `_load_or_init` reads `embed_model` from `GlobalDB`, calls
+   model spec in `CatalogDB.collections.embed_model`.
+2. `_load_or_init` reads `embed_model` from `CatalogDB`, calls
    `embedder_factory.get(model_spec)` to resolve the model,
    creates `FaissBackend` with the right dimension.
 3. Collections without explicit `embed_model` use the instance
@@ -947,7 +947,7 @@ Step 1  VectorBackend protocol (v0.5.9) ✓
                 │
                 └──→ Step 4  LocalStore orchestrator (v0.5.9)
                        │
-                       ├──→ Step 5  GlobalDB (PLAN-SQLITE P2)
+                       ├──→ Step 5  CatalogDB (PLAN-SQLITE P2)
                        │
                        └──→ Step 6  Per-collection embeddings
 ```
@@ -974,7 +974,7 @@ Store-plan-owned items (revised):
 | P1-32 | Per-collection embeddings | 🧱 | v0.6 | P1-31, P1-33 |
 
 Existing items affected:
-- **P1-33** (GlobalDB + catalog separation) owned by PLAN-SQLITE.
+- **P1-33** (CatalogDB + catalog separation) owned by PLAN-SQLITE.
 - **P3-26** (embedder/store contract) resolved by Steps 2-4.
 - **P1-30** superseded — embedder extraction is part of Step 2.
 

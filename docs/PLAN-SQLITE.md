@@ -6,17 +6,16 @@
 PatchVec replaces ad-hoc JSON/filesystem metadata with a layered SQLite store.
 Each phase adds a new layer; earlier phases are prerequisites for later ones.
 
-Note: current runtime still uses txtai internal SQLite for content/metadata.
-This plan adds PatchVec-owned SQLite layers for catalog, metadata, and
-operational state. During PLAN-STORE migration (P1-29b/P1-29c/P1-31), txtai
-state is progressively replaced by backends + CollectionDB + Store.
+Runtime store is `LocalStore` (`pave/stores/local.py`) with
+`FaissBackend` + `CollectionDB` per collection. The PLAN-STORE
+migration (P1-29b/P1-29c/P1-31) is complete; txtai is no longer
+a runtime dependency.
 
 Roadmap ownership:
 - Phase 1 → `P1-09`
-- Phase 2 → `P1-33`
-- Phase 2 is PLAN-STORE Step 5 dependency (for `P1-32` via `P1-31`).
-- Transitional note: current runtime still has `backend.search(sql)` in
-  `TxtaiStore`; this is removed in the remaining `P1-29b` cutover slice.
+- Phase 2 → `P1-33` (PLAN-STORE Step 5 dependency, for `P1-32`)
+- Phase 2 builds on the current `LocalStore` + `CollectionDB`
+  architecture.
 
 ---
 
@@ -139,7 +138,7 @@ user base).
 directory, raise `LegacyMetadataError` with a clear message. Prevents silent data
 loss on upgrade.
 
-### New module: `pave/meta_store.py`
+### New module: `pave/metadb.py`
 
 ```python
 class CollectionDB:
@@ -208,7 +207,7 @@ meta_batch = col_db.get_meta_batch(candidate_rids)   # WAL read, concurrent
 
 | File | Change |
 |------|--------|
-| `pave/meta_store.py` | New — `CollectionDB` |
+| `pave/metadb.py` | New — `CollectionDB` |
 | `pave/stores/txtai_store.py` | Replace JSON I/O with `CollectionDB` |
 | `tests/test_meta_store.py` | New — unit tests |
 
@@ -337,16 +336,51 @@ Notes:
 
 ---
 
-## Phase 2 — Global Store (tenant + collection listing)
+## Phase 2 — CatalogDB + Catalog Separation
 
-**Target: v0.6**
+**Target: v0.9**
 **Roadmap item: `P1-33`**
 
 ### Problem
 
-`list_tenants` and `list_collections` walk the filesystem and check for file
-presence. This works but does not scale and cannot support doc/chunk counts or
-per-collection metadata without reading every collection's `meta.db`.
+`LocalStore` listing and catalog methods walk the filesystem:
+- `list_collections()` (`local.py:236`): scans `t_<tenant>/`
+  for `c_*/meta.db` entries.
+- `list_tenants()` (`local.py:252`): scans `data_dir` for
+  `t_*` directories — including empty ones.
+- `catalog_metrics()` (`local.py:268`): walks every tenant and
+  collection directory, opening each `meta.db` for counts.
+
+This works but does not scale, mixes control-plane catalog with
+data-plane collection state, and cannot support per-collection
+config (backend type, embedder model) without a central store.
+
+### Contract
+
+`CatalogDB` becomes the **only source of truth** for:
+- Tenant and collection listing.
+- Collection-level configuration (backend, embedder).
+
+No permanent filesystem-walk fallback for listing.
+
+### Semantic decisions
+
+These are decided up front, not deferred to implementation:
+
+1. **`_system/*` collections are not cataloged.** Startup and
+   readiness probes create `_system/health` via
+   `create_collection()` (`main.py:75`, `health.py:41`).
+   `create_collection` skips the CatalogDB insert when
+   `tenant == "_system"`. Listing and metrics never see
+   `_system/*` collections.
+
+2. **Tenant semantics change (breaking).** A tenant exists only
+   if it has at least one cataloged collection. Empty `t_*`
+   directories on disk are not tenants. This changes the current
+   behavior of `list_tenants()` which counts any `t_*` dir.
+   Tests that create empty tenant dirs and expect them in
+   listings (`test_admin_tenants.py`,
+   `test_store_catalog_metrics.py`) must be updated.
 
 ### Schema
 
@@ -354,62 +388,156 @@ One `catalog.db` at `{data_dir}/catalog.db`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS collections (
-    tenant       TEXT NOT NULL,
-    name         TEXT NOT NULL,   -- slug: URL-safe, used in paths/URLs/keys
-    display_name TEXT,            -- human label; free-form, shown in UI/responses
-    meta_json    TEXT,            -- operator metadata: description, tags, owner, etc.
-    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    tenant              TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    display_name        TEXT,
+    meta_json           TEXT,
+    backend_type        TEXT,
+    backend_config_json TEXT,
+    embedder_type       TEXT,
+    embed_model         TEXT,
+    embed_config_json   TEXT,
+    created_at          TEXT NOT NULL
+        DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     PRIMARY KEY (tenant, name)
 );
 ```
 
+Column notes:
+- `name` is the slug (URL-safe, used in paths/URLs/keys).
+  `display_name` is the human label; renaming it does not
+  affect paths.
+- `backend_type`, `backend_config_json`: backend identity and
+  constructor config. Populated with instance defaults on
+  creation; per-collection override is P1-32.
+- `embedder_type`, `embed_model`, `embed_config_json`: embedder
+  identity and config. Same population strategy.
+- `meta_json`: operator metadata (description, tags, owner).
+- `created_at`: automatic, zero-maintenance timestamp.
+
 **`name` (slug) assignment rules:**
-- Explicit API-provided slug → used as-is
-- Display name provided (typical UI flow) → slug auto-derived: lowercase,
-  spaces → underscores, strip non-alphanum/dash/underscore
-- Neither provided → UUID
+- Explicit API-provided slug → used as-is.
+- Display name provided → slug auto-derived: lowercase,
+  spaces → underscores, strip non-alphanum/dash/underscore.
+- Neither provided → UUID.
 
-The slug is the stable identity used in filesystem paths, URLs, and all
-internal keys. `display_name` is what users see and can rename freely without
-affecting paths or existing references. Same principle applies to tenants when
-a tenant registry is introduced.
+Doc and chunk counts are derived on demand from each
+collection's Phase 1 `meta.db`
+(`SELECT COUNT(DISTINCT docid), COUNT(*) FROM chunks`) — no
+sync burden.
 
-`created_at` is automatic (SQLite DEFAULT) — zero maintenance, answers
-"how old is this collection?" for visibility and governance.
-Doc and chunk counts are derived on demand from each collection's Phase 1
-`meta.db` (`SELECT COUNT(DISTINCT docid), COUNT(*) FROM chunks`) — no
-separate documents table needed and no sync burden.
-
-### `GlobalDB` class (new in `pave/meta_store.py`)
+### `CatalogDB` class (`pave/metadb.py`)
 
 ```python
-class GlobalDB:
+class CatalogDB:
     def open(self, path: Path) -> None
-    def register_collection(self, tenant: str, name: str) -> None
-    def unregister_collection(self, tenant: str, name: str) -> None
-    def rename_collection(self, tenant: str, old: str, new: str) -> None
-    def list_tenants(self) -> list[str]
-    def list_collections(self, tenant: str) -> list[str]
-        # Returns collection names; counts derived from per-collection meta.db
-    def get_collection_config(self, tenant: str, name: str) -> dict[str, Any] | None
-        # Returns e.g. {backend_type, backend_config_json,
-        #               embedder_type, embed_model, embed_config_json}
     def close(self) -> None
+    def bootstrap(self, data_dir: Path) -> None
+        # Reconcile catalog.db against on-disk collections.
+        # Seed missing rows; remove orphaned rows.
+        # Skip _system/*.
+    def register_collection(
+        self, tenant: str, name: str,
+        display_name: str | None = None,
+        meta_json: str | None = None,
+        backend_type: str | None = None,
+        backend_config_json: str | None = None,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embed_config_json: str | None = None,
+    ) -> None
+    def unregister_collection(
+        self, tenant: str, name: str,
+    ) -> None
+    def rename_collection(
+        self, tenant: str, old: str, new: str,
+    ) -> None
+    def list_tenants(self) -> list[str]
+        # SELECT DISTINCT tenant FROM collections
+    def list_collections(self, tenant: str) -> list[str]
+        # Returns collection names for tenant.
+    def get_collection_config(
+        self, tenant: str, name: str,
+    ) -> dict[str, Any] | None
+        # Returns persisted backend/embedder config dict.
+        # None if collection not found.
+    def collection_count(self) -> int
+    def tenant_count(self) -> int
 ```
 
-One global write lock (`threading.Lock`) for writes; WAL for concurrent reads.
+One `threading.Lock` inside CatalogDB for catalog writes.
+WAL mode for concurrent reads.
 
-### Integration
+### Bootstrap and repair
 
-- Transitional wiring (pre-P1-31): `TxtaiStore` opens and syncs `GlobalDB`
-  on create/delete/rename.
-- Listing APIs read via store methods backed by `GlobalDB`.
-- Target wiring (P1-31): Store orchestrator owns `GlobalDB` lifecycle and list
-  paths; `service.py` delegates only to Store.
-- Backend/embedder mapping is read from `GlobalDB`; store passes explicit
-  constructor keys per backend type (local path for local backends, service
-  coordinates for remote backends).
-- ~~Filesystem walk kept as fallback during transition only.~~ not necessary.
+On `LocalStore` startup (before serving requests):
+
+1. Open `catalog.db` (create if missing).
+2. Scan `data_dir` for `t_*/c_*/meta.db` paths.
+3. For each discovered collection where `tenant != "_system"`:
+   `INSERT OR IGNORE` into `collections` with defaults.
+4. For each catalog row whose `t_<tenant>/c_<name>/meta.db`
+   no longer exists on disk: `DELETE` from `collections`.
+5. Log a summary: seeded N, removed M orphans.
+
+This makes existing installs with collections but no
+`catalog.db` upgrade seamlessly on first boot.
+
+### LocalStore integration
+
+All integration is against `LocalStore`
+(`pave/stores/local.py`). TxtaiStore is gone (P1-31 done).
+
+**Lifecycle methods:**
+- `create_collection()`: after `_load_or_init()` + `_save()`,
+  insert into CatalogDB. Skip insert if `tenant == "_system"`.
+- `delete_collection()`: after filesystem removal, delete from
+  CatalogDB.
+- `rename_collection()`: after `os.rename()`, update CatalogDB.
+
+**Query methods (replace filesystem walk):**
+- `list_collections()`: `CatalogDB.list_collections(tenant)`.
+- `list_tenants()`: `CatalogDB.list_tenants()`.
+- `catalog_metrics()`: tenant/collection counts from CatalogDB;
+  doc/chunk counts still from per-collection `meta.db`
+  (opened read-only, same as today).
+
+**Locking:** per-collection lock model unchanged. CatalogDB has
+its own write lock — never held while holding a collection
+lock (no nested lock risk).
+
+### Failure model
+
+Filesystem is the **durable truth** for collection payloads.
+`catalog.db` is the control-plane index.
+
+For create/delete/rename:
+1. Perform the filesystem change (already atomic for rename).
+2. Update CatalogDB.
+3. On CatalogDB failure after successful filesystem op: fail
+   loudly (log error, propagate exception). Do **not** attempt
+   filesystem rollback — startup reconciliation will heal the
+   catalog on next boot.
+
+### P1-32 preparation
+
+`get_collection_config()` exists and reads persisted
+backend/embedder settings from `catalog.db`. `LocalStore`
+still uses instance defaults initially (all collections share
+the same `FaissBackend` + embedder), but the schema and read
+path are in place so P1-32 (per-collection embeddings) does
+not require another catalog migration.
+
+### Test plan
+
+| Category | What to test |
+|---|---|
+| Unit: CatalogDB | Migrations, CRUD, `bootstrap()` |
+| Integration | create/delete/rename/listing via `LocalStore` |
+| Upgrade | Existing on-disk collections with no `catalog.db` discovered on first boot |
+| Metrics | Counts from catalog + `meta.db`, not dir walk |
+| `_system` exclusion | Startup creates `_system/health`; listings and metrics never show it |
+| Tenant semantics | Empty tenant dir → not listed |
 
 ---
 
