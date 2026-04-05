@@ -80,7 +80,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-14 | Response envelope standardization | 🧱 | SDK-friendly API | v0.9 |
 | P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v1.1 |
 | P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v1.1 |
-| P1-17 | Get document by ID | 🧩 | Visibility, library mode | v0.9 |
+| P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
 | P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation
@@ -301,9 +301,9 @@ latency on every search/ingest/delete.~~
 
 ### PaveDB v0.9 — Inspectability
 
+- ~~Get document by ID endpoint (P1-17).~~
 - GlobalDB + catalog separation (PLAN-SQLITE Phase 2), including
   collection backend/embedder config wiring (P1-33).
-- Get document by ID endpoint (P1-17).
 - Response envelope standardization (P1-14).
 - Global `request_id` echo across endpoints and responses (P1-11).
 - Freeze search response schema (`matches`, `latency_ms`,

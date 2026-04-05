@@ -386,6 +386,42 @@ class CollectionDB:
             row = cur.fetchone()
             return int(row[0]) if row else None
 
+    def get_document(self, docid: str) -> dict[str, Any] | None:
+        """Return document metadata and chunk ids for *docid*."""
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT version, ingested_at, meta_json "
+                "FROM documents WHERE docid=?",
+                (docid,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            version, ingested_at, meta_json = row
+            if isinstance(ingested_at, str) and ingested_at.endswith("+00:00"):
+                ingested_at = ingested_at.replace("+00:00", "Z")
+            metadata: dict[str, Any] = {}
+            try:
+                loaded = json.loads(meta_json) if meta_json else {}
+            except Exception:
+                loaded = {}
+            if isinstance(loaded, dict):
+                metadata = loaded
+
+            chunk_cur = conn.execute(
+                "SELECT rid FROM chunks WHERE docid=? ORDER BY rowid",
+                (docid,),
+            )
+            chunk_ids = [str(chunk_row[0]) for chunk_row in chunk_cur.fetchall()]
+            return {
+                "docid": docid,
+                "version": int(version or 0),
+                "ingested_at": ingested_at,
+                "metadata": metadata,
+                "chunk_ids": chunk_ids,
+                "chunk_count": len(chunk_ids),
+            }
+
     def get_doc_chunk_counts(self) -> tuple[int, int]:
         """Return (doc_count, chunk_count) for this collection."""
         with self._reader() as conn:

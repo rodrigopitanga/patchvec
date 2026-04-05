@@ -172,6 +172,44 @@ def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str
         }
 
 
+def get_document(
+    store,
+    tenant: str,
+    collection: str,
+    docid: str,
+) -> dict[str, Any]:
+    try:
+        doc = store.get_document(tenant, collection, docid)
+        if doc is None:
+            log.info(
+                "get_document not_found tenant=%s coll=%s docid=%s",
+                tenant, collection, docid,
+            )
+            return {
+                "ok": False,
+                "code": "document_not_found",
+                "error": f"document '{docid}' not found",
+                "error_type": "not_found",
+            }
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "collection": collection,
+            **doc,
+        }
+    except Exception as e:
+        log.warning(
+            "get_document failed tenant=%s coll=%s docid=%s: %s",
+            tenant, collection, docid, e,
+        )
+        return {
+            "ok": False,
+            "code": "get_document_failed",
+            "error": str(e),
+            "error_type": "failed",
+        }
+
+
 def _default_docid(filename: str) -> str:
     # Uppercase
     base = filename.upper()

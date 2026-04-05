@@ -149,6 +149,41 @@ def test_get_doc_chunk_counts(tmp_path):
     db.close()
 
 
+def test_get_document_returns_doc_metadata_and_chunk_ids(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc5",
+        [
+            ("doc5::chunk_0", "chunks/doc5__chunk_0.txt", {"offset": 0}),
+            ("doc5::chunk_1", "chunks/doc5__chunk_1.txt", {"offset": 50}),
+        ],
+        doc_meta={
+            "docid": "doc5",
+            "filename": "doc5.txt",
+            "ingested_at": "2026-04-04T00:00:00Z",
+            "lang": "pt",
+        },
+    )
+
+    data = db.get_document("doc5")
+
+    assert data is not None
+    assert data["docid"] == "doc5"
+    assert data["version"] == 1
+    assert data["ingested_at"].endswith("Z")
+    assert data["metadata"] == {
+        "docid": "doc5",
+        "filename": "doc5.txt",
+        "ingested_at": "2026-04-04T00:00:00Z",
+        "lang": "pt",
+    }
+    assert data["chunk_ids"] == ["doc5::chunk_0", "doc5::chunk_1"]
+    assert data["chunk_count"] == 2
+    assert db.get_document("missing") is None
+    db.close()
+
+
 def test_chunk_meta_populated_on_upsert(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))

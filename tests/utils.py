@@ -231,6 +231,29 @@ class DummyStore(BaseStore):
         ret = 1 if docid in data else 0
         return bool(ret)
 
+    def get_document(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> dict[str, Any] | None:
+        cat = os.path.join(self._dir(tenant, collection), "catalog.json")
+        try:
+            data = json.load(open(cat, "r", encoding="utf-8"))
+        except Exception:
+            data = {}
+        chunk_ids = list(data.get(docid, []))
+        if not chunk_ids:
+            return None
+        return {
+            "docid": docid,
+            "version": 1,
+            "ingested_at": None,
+            "metadata": {"docid": docid},
+            "chunk_ids": chunk_ids,
+            "chunk_count": len(chunk_ids),
+        }
+
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
                       doc_meta: dict[str, Any] | None = None) -> int:
@@ -328,6 +351,15 @@ class SpyStore(BaseStore):
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
         self.calls.append(("has_doc", tenant, collection, docid))
         return self.impl.has_doc(tenant, collection, docid)
+
+    def get_document(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> dict[str, Any] | None:
+        self.calls.append(("get_document", tenant, collection, docid))
+        return self.impl.get_document(tenant, collection, docid)
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],

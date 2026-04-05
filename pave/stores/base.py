@@ -57,6 +57,14 @@ class BaseStore(ABC):
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool: ...
 
     @abstractmethod
+    def get_document(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> dict[str, Any] | None: ...
+
+    @abstractmethod
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int: ...
 
     @abstractmethod

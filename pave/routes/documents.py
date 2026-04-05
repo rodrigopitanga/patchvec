@@ -15,6 +15,7 @@ from pave.metrics import inc
 from pave.service import (
     ServiceError,
     delete_document as svc_delete_document,
+    get_document as svc_get_document,
     ingest_document as svc_ingest_document,
 )
 from pave.stores.base import BaseStore
@@ -158,6 +159,33 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                 500,
                 result.get("code", "delete_document_failed"),
                 result.get("error", "failed to delete document"),
+            )
+        return result
+
+    @router.get(
+        "/collections/{tenant}/{collection}/documents/{docid}",
+        responses=resp(401, 403, 404, 429, 500),
+    )
+    @ops_event("get_doc", coll="collection", docid="docid")
+    def get_document(
+        tenant: str,
+        collection: str,
+        docid: str,
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_get_document(store, tenant, collection, docid)
+        if not result.get("ok"):
+            error_type = result.get("error_type", "failed")
+            status_map = {
+                "not_found": 404,
+                "failed": 500,
+            }
+            return error(
+                status_map.get(error_type, 500),
+                result.get("code", "get_document_failed"),
+                result.get("error", "failed to get document"),
             )
         return result
 
