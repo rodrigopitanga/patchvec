@@ -29,12 +29,31 @@ def test_catalog_metrics_counts_docs_and_chunks(cfg, tmp_path):
         [("0", "delta", {"lang": "en"})],
     )
 
-    # Keep parity with list_tenants: tenant directories count even if empty.
+    # Empty tenant directories are not cataloged tenants anymore.
     data_dir = Path(cfg.get("data_dir"))
     (data_dir / "t_empty").mkdir(parents=True, exist_ok=True)
 
     snap = store.catalog_metrics()
-    assert snap["tenant_count"] == 2
+    assert snap["tenant_count"] == 1
     assert snap["collection_count"] == 2
     assert snap["doc_count"] == 3
     assert snap["chunk_count"] == 4
+
+
+def test_catalog_metrics_excludes_system_collections(cfg, tmp_path):
+    cfg.set("data_dir", str(tmp_path))
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("_system", "health")
+    store.index_records(
+        "acme",
+        "c1",
+        "doc1",
+        [("0", "alpha", {"lang": "en"})],
+    )
+
+    snap = store.catalog_metrics()
+
+    assert snap["tenant_count"] == 1
+    assert snap["collection_count"] == 1
+    assert snap["doc_count"] == 1
+    assert snap["chunk_count"] == 1

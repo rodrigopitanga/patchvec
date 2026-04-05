@@ -24,25 +24,34 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 from pave.backends import FaissBackend, VectorBackend
 from pave.embedders import Embedder
 from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
-from pave.metadb import CollectionDB
+from pave.metadb import CatalogDB, CollectionDB
 from pave.stores.base import (
     BaseStore,
     MetadataValidationError,
     Record,
     SearchResult,
 )
-from pave.config import get_logger
+from pave.config import get_cfg, get_logger
 
 log = get_logger()
 
 class LocalStore(BaseStore):
-    def __init__(self, data_dir: str, embedder: Embedder) -> None:
+    def __init__(
+        self,
+        data_dir: str,
+        embedder: Embedder,
+        cat_db: CatalogDB | None = None,
+    ) -> None:
         self._data_dir = data_dir
         self._embedder = embedder
         self._emb: dict[tuple[str, str], VectorBackend] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
+        self._catalog = cat_db or CatalogDB()
+        self._catalog_path: Path | None = None
+        self._catalog_guard = Lock()
         self._locks: dict[str, Lock] = {}
         self._locks_guard = Lock()
+        self._ensure_catalog()
 
     def _get_lock(self, key: str) -> Lock:
         if key not in self._locks:
@@ -65,6 +74,68 @@ class LocalStore(BaseStore):
 
     def _db_path(self, tenant: str, collection: str) -> Path:
         return Path(self._base_path(tenant, collection)) / "meta.db"
+
+    def _catalog_db_path(self) -> Path:
+        return Path(self._data_dir).resolve() / "catalog.db"
+
+    def _default_collection_config(self) -> dict[str, Any]:
+        cfg = get_cfg()
+        backend_type = str(cfg.get("vector_store.type")).lower()
+        embedder_type = str(cfg.get("embedder.type")).lower()
+        embed_model = cfg.get(f"embedder.{embedder_type}.model")
+        return {
+            "backend_type": backend_type,
+            "backend_config": {},
+            "embedder_type": embedder_type,
+            "embed_model": str(embed_model) if embed_model is not None else None,
+            "embedder_config": {},
+        }
+
+    def _ensure_catalog(self) -> CatalogDB:
+        with self._catalog_guard:
+            catalog_path = self._catalog_db_path()
+            if self._catalog_path == catalog_path and self._catalog._conn is not None:
+                return self._catalog
+
+            if self._catalog._conn is not None:
+                try:
+                    self._catalog.close()
+                except Exception:
+                    pass
+
+            self._catalog.open(catalog_path)
+            defaults = self._default_collection_config()
+            seeded, removed = self._catalog.bootstrap(
+                Path(self._data_dir),
+                backend_type=defaults["backend_type"],
+                backend_config=defaults["backend_config"],
+                embedder_type=defaults["embedder_type"],
+                embed_model=defaults["embed_model"],
+                embed_config=defaults["embedder_config"],
+            )
+            if seeded or removed:
+                log.info(
+                    "CatalogDB bootstrap: seeded=%s removed_orphans=%s path=%s",
+                    seeded,
+                    removed,
+                    catalog_path,
+                )
+            self._catalog_path = catalog_path
+            return self._catalog
+
+    def _register_catalog_collection(self, tenant: str, name: str) -> None:
+        if tenant == "_system":
+            return
+        defaults = self._default_collection_config()
+        self._ensure_catalog().register_collection(
+            tenant,
+            name,
+            backend_type=defaults["backend_type"],
+            backend_config=defaults["backend_config"],
+            embedder_type=defaults["embedder_type"],
+            embed_model=defaults["embed_model"],
+            embed_config=defaults["embedder_config"],
+        )
 
     def _load_or_init(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
@@ -113,6 +184,7 @@ class LocalStore(BaseStore):
         with self._collection_lock(tenant, name):
             self._load_or_init(tenant, name)
             self._save(tenant, name)
+        self._register_catalog_collection(tenant, name)
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         with self._collection_lock(tenant, collection):
@@ -129,6 +201,8 @@ class LocalStore(BaseStore):
             path = Path(self._base_path(tenant, collection))
             if path.exists() or path.is_symlink():
                 self._remove_path(path)
+        if tenant != "_system":
+            self._ensure_catalog().unregister_collection(tenant, collection)
 
     def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
@@ -173,6 +247,10 @@ class LocalStore(BaseStore):
         finally:
             locks[1].release()
             locks[0].release()
+
+        if tenant != "_system":
+            self._register_catalog_collection(tenant, old_name)
+            self._ensure_catalog().rename_collection(tenant, old_name, new_name)
 
     @staticmethod
     def _is_transient_db_read_error(exc: Exception) -> bool:
@@ -234,98 +312,47 @@ class LocalStore(BaseStore):
                 pass
 
     def list_collections(self, tenant: str) -> list[str]:
-        tenant_path = os.path.join(self._data_dir, f"t_{tenant}")
-        if not os.path.isdir(tenant_path):
-            return []
-        collections: list[str] = []
-        for entry in os.listdir(tenant_path):
-            if not entry.startswith("c_"):
-                continue
-            collection = entry[2:]
-            if not collection:
-                continue
-            coll_dir = os.path.join(tenant_path, entry)
-            if os.path.isfile(os.path.join(coll_dir, "meta.db")):
-                collections.append(collection)
-        return collections
+        return self._ensure_catalog().list_collections(tenant)
 
     def list_tenants(self) -> list[str]:
-        data_dir_path = Path(self._data_dir).resolve()
-        if not data_dir_path.is_dir():
-            return []
-        tenants: list[str] = []
-        for entry in data_dir_path.iterdir():
-            if not entry.is_dir():
-                continue
-            name = entry.name
-            if not name.startswith("t_"):
-                continue
-            tenant = name[2:]
-            if tenant:
-                tenants.append(tenant)
-        return tenants
+        return self._ensure_catalog().list_tenants()
+
+    def get_collection_config(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> dict[str, Any] | None:
+        return self._ensure_catalog().get_collection_config(tenant, collection)
 
     def catalog_metrics(self) -> dict[str, int]:
         """Return tenant/collection/doc/chunk counters from store metadata."""
-        data_dir_path = Path(self._data_dir).resolve()
-        if not data_dir_path.is_dir():
-            return {
-                "tenant_count": 0,
-                "collection_count": 0,
-                "doc_count": 0,
-                "chunk_count": 0,
-            }
-
-        tenants: set[str] = set()
-        collection_count = 0
+        catalog = self._ensure_catalog()
         doc_count = 0
         chunk_count = 0
 
-        for tenant_dir in data_dir_path.iterdir():
-            if not tenant_dir.is_dir():
+        for tenant, collection in catalog.list_collection_refs():
+            db_path = self._db_path(tenant, collection)
+            if not db_path.is_file():
                 continue
-            tname = tenant_dir.name
-            if not tname.startswith("t_"):
-                continue
-            tenant = tname[2:]
-            if not tenant:
-                continue
-            tenants.add(tenant)
 
-            for coll_dir in tenant_dir.iterdir():
-                if not coll_dir.is_dir():
-                    continue
-                cname = coll_dir.name
-                if not cname.startswith("c_"):
-                    continue
-                collection = cname[2:]
-                if not collection:
-                    continue
-
-                db_path = coll_dir / "meta.db"
-                if not db_path.is_file():
-                    continue
-
-                collection_count += 1
-                key = (tenant, collection)
-
-                col_db = self._dbs.get(key)
-                close_after = False
-                if col_db is None:
-                    col_db = CollectionDB()
-                    col_db.open(db_path, read_only=True)
-                    close_after = True
-                try:
-                    docs, chunks = col_db.get_doc_chunk_counts()
-                    doc_count += docs
-                    chunk_count += chunks
-                finally:
-                    if close_after:
-                        col_db.close()
+            key = (tenant, collection)
+            col_db = self._dbs.get(key)
+            close_after = False
+            if col_db is None:
+                col_db = CollectionDB()
+                col_db.open(db_path, read_only=True)
+                close_after = True
+            try:
+                docs, chunks = col_db.get_doc_chunk_counts()
+                doc_count += docs
+                chunk_count += chunks
+            finally:
+                if close_after:
+                    col_db.close()
 
         return {
-            "tenant_count": len(tenants),
-            "collection_count": collection_count,
+            "tenant_count": catalog.tenant_count(),
+            "collection_count": catalog.collection_count(),
             "doc_count": doc_count,
             "chunk_count": chunk_count,
         }
@@ -471,6 +498,7 @@ class LocalStore(BaseStore):
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
         dict-records, updates SQLite metadata, saves index. Thread critical.
         """
+        chunk_count = 0
         with self._collection_lock(tenant, collection):
             self._load_or_init(tenant, collection)
             key = (tenant, collection)
@@ -557,7 +585,11 @@ class LocalStore(BaseStore):
             log.debug(
                 f"INGEST-PREPARED: {len(rids_to_add)} chunks {_rids}{_sfx}"
             )
-            return len(rids_to_add)
+            chunk_count = len(rids_to_add)
+
+        if chunk_count:
+            self._register_catalog_collection(tenant, collection)
+        return chunk_count
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> list[SearchResult]:
@@ -661,8 +693,17 @@ class LocalStore(BaseStore):
     def _flush_caches(self, *, async_close: bool = True) -> None:
         old_dbs = list(self._dbs.values())
         old_backends = list(self._emb.values())
+        with self._catalog_guard:
+            old_catalog = self._catalog if self._catalog._conn is not None else None
+            self._catalog_path = None
         self._dbs.clear()
         self._emb.clear()
+
+        if old_catalog is not None:
+            try:
+                old_catalog.close()
+            except Exception:
+                pass
 
         if not old_dbs and not old_backends:
             return

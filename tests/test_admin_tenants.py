@@ -10,13 +10,14 @@ from pave.main import build_app
 from pave.ui import attach_ui
 
 
-def _mk_tenant_dirs(base: Path, *tenants: str) -> None:
-    for t in tenants:
-        (base / f"t_{t}").mkdir(parents=True, exist_ok=True)
+def _mk_collection(store, base: Path, tenant: str, collection: str) -> None:
+    store._data_dir = str(base)
+    store.create_collection(tenant, collection)
 
 
 def test_admin_list_tenants_sorted(client, temp_data_dir):
-    _mk_tenant_dirs(Path(temp_data_dir), "beta", "alpha")
+    _mk_collection(client.app.state.store.impl, Path(temp_data_dir), "beta", "docs")
+    _mk_collection(client.app.state.store.impl, Path(temp_data_dir), "alpha", "docs")
     r = client.get("/admin/tenants")
     assert r.status_code == 200
     data = r.json()
@@ -38,7 +39,7 @@ def test_admin_list_tenants_requires_admin(tmp_path):
         pass
 
     client = TestClient(app)
-    _mk_tenant_dirs(tmp_path, "acme")
+    app.state.store.create_collection("acme", "docs")
 
     r = client.get("/admin/tenants")
     assert r.status_code == 401

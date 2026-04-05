@@ -141,8 +141,12 @@ def test_cli_list_tenants(cli_env, tmp_path, capsys, monkeypatch):
 def test_cli_list_tenants_accepts_home_flag(cli_env, tmp_path, capsys):
     pvcli, _, _ = cli_env
     home = tmp_path / "instance"
-    (home / "data" / "t_beta").mkdir(parents=True, exist_ok=True)
-    (home / "data" / "t_alpha").mkdir(parents=True, exist_ok=True)
+    beta = home / "data" / "t_beta" / "c_docs" / "meta.db"
+    alpha = home / "data" / "t_alpha" / "c_docs" / "meta.db"
+    beta.parent.mkdir(parents=True, exist_ok=True)
+    alpha.parent.mkdir(parents=True, exist_ok=True)
+    beta.touch()
+    alpha.touch()
 
     pvcli.main_cli(["list-tenants", "--home", str(home)])
     out = json.loads(capsys.readouterr().out)
