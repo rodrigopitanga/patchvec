@@ -8,11 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from pave.metadb import CollectionDB, LegacyMetadataError
+from pave.metadb import CatalogDB, CollectionDB, LegacyMetadataError
 
 
 def _meta_db(tmp_path: Path) -> Path:
     return tmp_path / "t_acme" / "c_demo" / "meta.db"
+
+
+def _catalog_db(tmp_path: Path) -> Path:
+    return tmp_path / "catalog.db"
 
 
 def test_open_creates_schema(tmp_path):
@@ -35,6 +39,20 @@ def test_open_creates_schema(tmp_path):
         "chunk_meta",
         "document_meta",
     } <= names
+    db.close()
+
+
+def test_catalog_db_open_creates_schema(tmp_path):
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+    conn = db._conn
+    assert conn is not None
+    cur = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name IN ('schema_migrations', 'collections')"
+    )
+    names = {row[0] for row in cur.fetchall()}
+    assert {"schema_migrations", "collections"} <= names
     db.close()
 
 
@@ -181,6 +199,61 @@ def test_get_document_returns_doc_metadata_and_chunk_ids(tmp_path):
     assert data["chunk_ids"] == ["doc5::chunk_0", "doc5::chunk_1"]
     assert data["chunk_count"] == 2
     assert db.get_document("missing") is None
+    db.close()
+
+
+def test_catalog_db_bootstrap_seeds_and_prunes_orphans(tmp_path):
+    existing = CollectionDB()
+    existing.open(tmp_path / "t_acme" / "c_docs" / "meta.db")
+    existing.close()
+
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+    db.register_collection("ghost", "orphan", backend_type="faiss")
+
+    seeded, removed = db.bootstrap(
+        tmp_path,
+        backend_type="faiss",
+        backend_config={},
+        embedder_type="sbert",
+        embed_model="fake",
+        embed_config={},
+    )
+
+    assert seeded == 1
+    assert removed == 1
+    assert db.list_tenants() == ["acme"]
+    assert db.list_collections("acme") == ["docs"]
+    db.close()
+
+
+def test_catalog_db_get_collection_config(tmp_path):
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+    db.register_collection(
+        "acme",
+        "docs",
+        display_name="Docs",
+        meta={"owner": "ops"},
+        backend_type="faiss",
+        backend_config={"metric": "cosine"},
+        embedder_type="sbert",
+        embed_model="fake",
+        embed_config={"normalize": True},
+    )
+
+    cfg = db.get_collection_config("acme", "docs")
+
+    assert cfg is not None
+    assert cfg["display_name"] == "Docs"
+    assert cfg["meta"] == {"owner": "ops"}
+    assert cfg["backend_type"] == "faiss"
+    assert cfg["backend_config"] == {"metric": "cosine"}
+    assert cfg["embedder_type"] == "sbert"
+    assert cfg["embed_model"] == "fake"
+    assert cfg["embedder_config"] == {"normalize": True}
+    assert cfg["created_at"]
+    assert db.get_collection_config("acme", "missing") is None
     db.close()
 
 

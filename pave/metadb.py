@@ -26,7 +26,7 @@ class LegacyMetadataError(RuntimeError):
     pass
 
 
-_MIGRATIONS: dict[int, list[str]] = {
+_COLLECTION_MIGRATIONS: dict[int, list[str]] = {
     1: [
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -89,6 +89,34 @@ _MIGRATIONS: dict[int, list[str]] = {
         """
         CREATE INDEX IF NOT EXISTS document_meta_kv
             ON document_meta (key, value)
+        """,
+    ],
+}
+
+_CATALOG_MIGRATIONS: dict[int, list[str]] = {
+    1: [
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version    INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS collections (
+            tenant              TEXT NOT NULL,
+            name                TEXT NOT NULL,
+            display_name        TEXT,
+            meta_json           TEXT,
+            backend_type        TEXT,
+            backend_config_json TEXT,
+            embedder_type       TEXT,
+            embed_model         TEXT,
+            embed_config_json   TEXT,
+            created_at          TEXT NOT NULL DEFAULT (
+                strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+            ),
+            PRIMARY KEY (tenant, name)
+        )
         """,
     ],
 }
@@ -232,10 +260,10 @@ class CollectionDB:
         cur = conn.execute("SELECT MAX(version) FROM schema_migrations")
         row = cur.fetchone()
         current = int(row[0] or 0)
-        for version in sorted(_MIGRATIONS):
+        for version in sorted(_COLLECTION_MIGRATIONS):
             if version <= current:
                 continue
-            for stmt in _MIGRATIONS[version]:
+            for stmt in _COLLECTION_MIGRATIONS[version]:
                 conn.execute(stmt)
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
             conn.execute(
@@ -637,3 +665,342 @@ class CollectionDB:
                         merged.update(chunk_meta)
                     out[rid] = merged
             return out
+
+
+class CatalogDB:
+    """Global SQLite catalog for collection listing and config."""
+
+    def __init__(self) -> None:
+        self.path: Path | None = None
+        self._rconn: sqlite3.Connection | None = None
+        self._wconn: sqlite3.Connection | None = None
+        self._write_lock = threading.Lock()
+        self._state_cv = threading.Condition()
+        self._active_readers = 0
+        self._closing = False
+
+    def _open_conn(self, path: Path) -> sqlite3.Connection:
+        conn = sqlite3.connect(str(path), check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    def open(self, path: Path) -> None:
+        path = path.resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
+        with self._state_cv:
+            self._rconn = self._open_conn(path)
+            self._wconn = self._open_conn(path)
+            self._active_readers = 0
+            self._closing = False
+        self._apply_migrations()
+
+    def close(self) -> None:
+        with self._state_cv:
+            if self._rconn is None and self._wconn is None:
+                self._closing = False
+                return
+            self._closing = True
+            while self._active_readers > 0:
+                self._state_cv.wait(timeout=0.05)
+            rconn = self._rconn
+            wconn = self._wconn
+            self._rconn = None
+            self._wconn = None
+            self._closing = False
+
+        if rconn is not None:
+            rconn.close()
+        if wconn is not None:
+            wconn.close()
+
+    @property
+    def _conn(self) -> sqlite3.Connection | None:
+        """Return read connection (for test introspection)."""
+        return self._rconn
+
+    def _require_rconn(self) -> sqlite3.Connection:
+        if self._rconn is None:
+            raise RuntimeError("CatalogDB not opened; call open() first.")
+        return self._rconn
+
+    def _require_wconn(self) -> sqlite3.Connection:
+        if self._wconn is None:
+            raise RuntimeError("CatalogDB not opened; call open() first.")
+        return self._wconn
+
+    @contextmanager
+    def _reader(self) -> Iterator[sqlite3.Connection]:
+        with self._state_cv:
+            if self._rconn is None:
+                raise RuntimeError("CatalogDB not opened; call open() first.")
+            if self._closing:
+                raise RuntimeError("CatalogDB is closing.")
+            self._active_readers += 1
+            conn = self._rconn
+        try:
+            yield conn
+        finally:
+            with self._state_cv:
+                if self._active_readers > 0:
+                    self._active_readers -= 1
+                if self._closing and self._active_readers == 0:
+                    self._state_cv.notify_all()
+
+    def _apply_migrations(self) -> None:
+        conn = self._require_wconn()
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations ("
+            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        cur = conn.execute("SELECT MAX(version) FROM schema_migrations")
+        row = cur.fetchone()
+        current = int(row[0] or 0)
+        for version in sorted(_CATALOG_MIGRATIONS):
+            if version <= current:
+                continue
+            for stmt in _CATALOG_MIGRATIONS[version]:
+                conn.execute(stmt)
+            now = datetime.now(tz.utc).isoformat(timespec="seconds")
+            conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at) "
+                "VALUES (?, ?)",
+                (version, now),
+            )
+        conn.commit()
+
+    @staticmethod
+    def _dump_json(payload: dict[str, Any] | None) -> str | None:
+        if payload is None:
+            return None
+        return json.dumps(payload, ensure_ascii=False)
+
+    @staticmethod
+    def _load_json(payload: str | None) -> dict[str, Any]:
+        if not payload:
+            return {}
+        try:
+            loaded = json.loads(payload)
+        except Exception:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    def bootstrap(
+        self,
+        data_dir: Path,
+        *,
+        display_name: str | None = None,
+        meta: dict[str, Any] | None = None,
+        backend_type: str | None = None,
+        backend_config: dict[str, Any] | None = None,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embed_config: dict[str, Any] | None = None,
+    ) -> tuple[int, int]:
+        data_dir = data_dir.resolve()
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        discovered: set[tuple[str, str]] = set()
+        for tenant_dir in data_dir.iterdir():
+            if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
+                continue
+            tenant = tenant_dir.name[2:]
+            if not tenant or tenant == "_system":
+                continue
+            for coll_dir in tenant_dir.iterdir():
+                if not coll_dir.is_dir() or not coll_dir.name.startswith("c_"):
+                    continue
+                name = coll_dir.name[2:]
+                if not name:
+                    continue
+                if (coll_dir / "meta.db").is_file():
+                    discovered.add((tenant, name))
+
+        conn = self._require_wconn()
+        seeded = 0
+        removed = 0
+        with self._write_lock, conn:
+            rows = conn.execute(
+                "SELECT tenant, name FROM collections"
+            ).fetchall()
+            existing = {(str(row[0]), str(row[1])) for row in rows}
+            to_seed = discovered - existing
+            if to_seed:
+                payload_rows = [
+                    (
+                        tenant,
+                        name,
+                        display_name,
+                        self._dump_json(meta),
+                        backend_type,
+                        self._dump_json(backend_config),
+                        embedder_type,
+                        embed_model,
+                        self._dump_json(embed_config),
+                    )
+                    for tenant, name in sorted(to_seed)
+                ]
+                conn.executemany(
+                    """
+                    INSERT OR IGNORE INTO collections (
+                        tenant,
+                        name,
+                        display_name,
+                        meta_json,
+                        backend_type,
+                        backend_config_json,
+                        embedder_type,
+                        embed_model,
+                        embed_config_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    payload_rows,
+                )
+                seeded = len(payload_rows)
+
+            orphans = existing - discovered
+            if orphans:
+                conn.executemany(
+                    "DELETE FROM collections WHERE tenant=? AND name=?",
+                    sorted(orphans),
+                )
+                removed = len(orphans)
+        return (seeded, removed)
+
+    def register_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        display_name: str | None = None,
+        meta: dict[str, Any] | None = None,
+        backend_type: str | None = None,
+        backend_config: dict[str, Any] | None = None,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embed_config: dict[str, Any] | None = None,
+    ) -> None:
+        conn = self._require_wconn()
+        with self._write_lock, conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO collections (
+                    tenant,
+                    name,
+                    display_name,
+                    meta_json,
+                    backend_type,
+                    backend_config_json,
+                    embedder_type,
+                    embed_model,
+                    embed_config_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tenant,
+                    name,
+                    display_name,
+                    self._dump_json(meta),
+                    backend_type,
+                    self._dump_json(backend_config),
+                    embedder_type,
+                    embed_model,
+                    self._dump_json(embed_config),
+                ),
+            )
+
+    def unregister_collection(self, tenant: str, name: str) -> None:
+        conn = self._require_wconn()
+        with self._write_lock, conn:
+            conn.execute(
+                "DELETE FROM collections WHERE tenant=? AND name=?",
+                (tenant, name),
+            )
+
+    def rename_collection(self, tenant: str, old: str, new: str) -> None:
+        conn = self._require_wconn()
+        with self._write_lock, conn:
+            cur = conn.execute(
+                "UPDATE collections SET name=? WHERE tenant=? AND name=?",
+                (new, tenant, old),
+            )
+            if cur.rowcount <= 0:
+                raise ValueError(
+                    f"catalog row missing for collection '{tenant}/{old}'"
+                )
+
+    def list_tenants(self) -> list[str]:
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT DISTINCT tenant FROM collections ORDER BY tenant"
+            )
+            return [str(row[0]) for row in cur.fetchall()]
+
+    def list_collections(self, tenant: str) -> list[str]:
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT name FROM collections WHERE tenant=? ORDER BY name",
+                (tenant,),
+            )
+            return [str(row[0]) for row in cur.fetchall()]
+
+    def list_collection_refs(self) -> list[tuple[str, str]]:
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT tenant, name FROM collections ORDER BY tenant, name"
+            )
+            return [
+                (str(row[0]), str(row[1]))
+                for row in cur.fetchall()
+            ]
+
+    def get_collection_config(
+        self,
+        tenant: str,
+        name: str,
+    ) -> dict[str, Any] | None:
+        with self._reader() as conn:
+            cur = conn.execute(
+                """
+                SELECT
+                    display_name,
+                    meta_json,
+                    backend_type,
+                    backend_config_json,
+                    embedder_type,
+                    embed_model,
+                    embed_config_json,
+                    created_at
+                FROM collections
+                WHERE tenant=? AND name=?
+                """,
+                (tenant, name),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            return {
+                "display_name": row[0],
+                "meta": self._load_json(row[1]),
+                "backend_type": row[2],
+                "backend_config": self._load_json(row[3]),
+                "embedder_type": row[4],
+                "embed_model": row[5],
+                "embedder_config": self._load_json(row[6]),
+                "created_at": row[7],
+            }
+
+    def collection_count(self) -> int:
+        with self._reader() as conn:
+            cur = conn.execute("SELECT COUNT(*) FROM collections")
+            row = cur.fetchone()
+            return int(row[0] or 0) if row is not None else 0
+
+    def tenant_count(self) -> int:
+        with self._reader() as conn:
+            cur = conn.execute("SELECT COUNT(DISTINCT tenant) FROM collections")
+            row = cur.fetchone()
+            return int(row[0] or 0) if row is not None else 0
