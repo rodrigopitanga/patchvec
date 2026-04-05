@@ -46,3 +46,9 @@ class SearchBody(BaseModel):
 class RenameCollectionBody(BaseModel):
     """API request body for collection rename."""
     new_name: str
+
+
+class CreateCollectionBody(BaseModel):
+    """Optional API request body for collection creation."""
+    embedder_type: str | None = None
+    embed_model: str | None = None

@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Request
 
 from pave.auth import AuthContext, tenant_rate_limit
 from pave.log import ops_event
 from pave.metrics import inc
-from pave.schemas import RenameCollectionBody
+from pave.schemas import CreateCollectionBody, RenameCollectionBody
 from pave.service import (
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
@@ -47,20 +47,32 @@ def build_collections_router(error, resp) -> APIRouter:
     @router.post(
         "/collections/{tenant}/{name}",
         status_code=201,
-        responses=resp(401, 403, 429, 500),
+        responses=resp(400, 401, 403, 429, 500),
     )
     @ops_event("create_collection")
     def create_collection(
         tenant: str,
         name: str,
+        body: CreateCollectionBody | None = Body(None),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        result = svc_create_collection(store, tenant, name)
+        result = svc_create_collection(
+            store,
+            tenant,
+            name,
+            embedder_type=body.embedder_type if body else None,
+            embed_model=body.embed_model if body else None,
+        )
         if not result.get("ok"):
+            error_type = result.get("error_type", "failed")
+            status_map = {
+                "invalid": 400,
+                "failed": 500,
+            }
             return error(
-                500,
+                status_map.get(error_type, 500),
                 result.get("code", "create_collection_failed"),
                 result.get("error", "failed to create collection"),
             )

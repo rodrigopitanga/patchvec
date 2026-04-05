@@ -18,7 +18,7 @@ from collections.abc import Iterable, Iterator
 from typing import Any
 
 import time as _time
-from pave.config import get_logger
+from pave.config import get_cfg, get_logger
 from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
@@ -35,14 +35,61 @@ class ServiceError(RuntimeError):
         self.message = message
 
 
-def create_collection(store, tenant: str, name: str) -> dict[str, Any]:
+def _resolve_global_embedder_config() -> tuple[str, str]:
+    cfg = get_cfg()
+    embedder_type = cfg.get("embedder.type").lower()
+    embed_model = cfg.get(f"embedder.{embedder_type}.model")
+    if not embed_model:
+        raise ServiceError(
+            "invalid_embedder_config",
+            f"no model configured for embedder.{embedder_type}.model",
+        )
+    return embedder_type, str(embed_model)
+
+
+def create_collection(
+    store,
+    tenant: str,
+    name: str,
+    *,
+    embedder_type: str | None = None,
+    embed_model: str | None = None,
+) -> dict[str, Any]:
     try:
+        global_type, global_model = _resolve_global_embedder_config()
+        resolved_type = (embedder_type or global_type).strip().lower()
+        resolved_model = str(embed_model or global_model).strip()
+
+        if resolved_type != global_type:
+            raise ServiceError(
+                "embedder_type_not_supported",
+                "per-collection embedder type not yet supported",
+            )
+        if resolved_model != global_model:
+            raise ServiceError(
+                "embed_model_not_supported",
+                "per-collection embed model not yet supported",
+            )
+
         store.create_collection(tenant, name)
         m_inc("collections_created_total", 1.0)
         return {
             "ok": True,
             "tenant": tenant,
-            "collection": name
+            "collection": name,
+            "embedder_type": global_type,
+            "embed_model": global_model,
+        }
+    except ServiceError as e:
+        log.info(
+            "create_collection rejected tenant=%s coll=%s: %s",
+            tenant, name, e.message,
+        )
+        return {
+            "ok": False,
+            "code": e.code,
+            "error": e.message,
+            "error_type": "invalid",
         }
     except Exception as e:
         log.warning(
@@ -53,6 +100,7 @@ def create_collection(store, tenant: str, name: str) -> dict[str, Any]:
             "ok": False,
             "code": "create_collection_failed",
             "error": str(e),
+            "error_type": "failed",
         }
 
 def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
